@@ -1,0 +1,97 @@
+# Tech Stack Template
+# Этот файл описывает технологический стек проекта в YAML формате
+# При обновлении memory bank заполняется автоматически на основе анализа проекта
+
+# Базовая информация о технологиях
+core:
+  language: ""                # Go 1.24+
+  language_version: ""        # Минимальная версия Go
+  type: ""                    # library | service | cli | monorepo
+
+# Основные архитектурные паттерны проекта
+patterns: []
+# Пример:
+# - name: "Value Objects"
+#   where: "percent/, quantity/, amount/"
+#   why: "Иммутабельные объекты для финансовых данных"
+# - name: "Integer Arithmetic"
+#   where: "Все пакеты"
+#   why: "Избежание ошибок float при финансовых вычислениях"
+
+# Стандарты кодирования (ссылки на гайды)
+coding_standards:
+  - name: "Effective Go Standards"
+    path: "guides/golang/effective_standards.md"
+    description: "Стандарты эффективного использования golang"
+  - name: "Coding Style"
+    path: "guides/golang/coding_style.md"
+    description: "Основные принципы написания читаемого кода"
+  - name: "Unit Tests Standards"
+    path: "guides/golang/unit_tests_standards.md"
+    description: "Стандарты тестирования"
+
+# DevOps стандарты и гайды
+devops:
+  # Containerization & Orchestration
+  containerization:
+    - name: "Docker"
+      path: "guides/devops/docker.md"
+      description: "Multi-stage builds, security hardening, image optimization"
+    - name: "Kubernetes"
+      path: "guides/devops/kubernetes.md"
+      description: "Resource management, health probes, security policies"
+
+  # Databases
+  databases:
+    - name: "PostgreSQL"
+      path: "guides/devops/postgresql.md"
+      topics: "PgBouncer, Read Replicas, HAProxy, Streaming Replication"
+    - name: "MySQL"
+      path: "guides/devops/mysql.md"
+      topics: "ProxySQL, MySQL Router, Galera Cluster, Master-Slave Replication"
+    - name: "MongoDB"
+      path: "guides/devops/mongodb.md"
+      topics: "Replica Sets, Sharded Clusters, Zone Sharding, mongos Routing"
+    - name: "Redis"
+      path: "guides/devops/redis.md"
+      topics: "Redis Cluster, Sentinel, Client Sharding, Proxy Solutions"
+    - name: "ClickHouse"
+      path: "guides/devops/clickhouse.md"
+      topics: "Sharding, Replication, CHProxy, Distributed Tables"
+
+  # Message Brokers
+  message_brokers:
+    - name: "Apache Kafka"
+      path: "guides/devops/kafka.md"
+      topics: "Partitioning, Consumer Groups, Rack Awareness, Replication"
+
+  # Общие принципы
+  principles:
+    - "Security First: Non-root users, image scanning, secrets management"
+    - "Resource Management: Always set requests and limits"
+    - "Observability: Health probes, metrics, structured logging"
+    - "Load Balancing: Обязательный раздел в каждом БД гайде"
+    - "Production Ready: Все конфигурации должны быть production-grade"
+
+# Основные зависимости проекта (заполняется при обновлении memory bank)
+dependencies: []
+# Пример:
+# - name: "github.com/shopspring/decimal"
+#   version: "v1.4.0"
+#   purpose: "Arbitrary precision decimal arithmetic"
+# - name: "github.com/stretchr/testify"
+#   version: "v1.11.1"
+#   purpose: "Testing toolkit (require, assert)"
+
+# Запрещённые практики в проекте
+forbidden_practices:
+  - "Глобальные переменные"
+  - "Изменяемые (mutable) Value Objects"
+  - "Игнорирование ошибок (не пиши `_ = function()`)"
+  - "Float64 для хранения денежных значений"
+  - "Обновление Memory Bank документов без коммита"
+
+# Метаданные
+metadata:
+  generated_at: ""            # Дата генерации (ISO 8601)
+  go_version: ""              # Версия Go из go.mod

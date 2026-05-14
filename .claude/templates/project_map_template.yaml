@@ -1,0 +1,72 @@
+# Project Map Template
+# Этот шаблон описывает структуру проекта в YAML формате
+# При обновлении memory bank заполняется автоматически на основе анализа проекта
+
+# Базовая информация о проекте
+project:
+  name: ""                    # Название проекта
+  module: ""                  # Go module path (из go.mod)
+  description: ""             # Краткое описание проекта (1-2 предложения)
+  type: ""                    # library | service | cli | monorepo
+
+# Структура директорий проекта
+# Каждый пакет описывается по шаблону:
+#   path: относительный путь от корня проекта
+#   description: краткое описание назначения (1 строка)
+#   type: package | cmd | internal | config | tests | docs
+#   files_count: примерное количество .go файлов (опционально)
+
+structure:
+  root_files:                 # Важные файлы в корне проекта
+    - file: "go.mod"
+      description: "Go module definition"
+    - file: "Makefile"
+      description: "Build automation commands"
+
+  packages: []                # Основные пакеты проекта
+  # Пример:
+  # - path: "pkg/storage"
+  #   description: "Database storage implementations"
+  #   type: package
+  #   exports:                # Экспортируемые типы/интерфейсы (опционально)
+  #     - "Storage"
+  #     - "StoragePG"
+
+  commands: []                # Entry points (cmd/)
+  # Пример:
+  # - path: "cmd/server"
+  #   description: "Main server application"
+  #   type: cmd
+
+  internal: []                # Internal packages
+  # Пример:
+  # - path: "internal/config"
+  #   description: "Configuration management"
+  #   type: internal
+
+  tests: []                   # Test packages
+  # Пример:
+  # - path: "tests"
+  #   description: "Integration tests"
+  #   type: tests
+
+# Ключевые интерфейсы проекта (опционально)
+# Помогает понять архитектуру и точки расширения
+interfaces:
+  - name: ""                  # Имя интерфейса
+    package: ""               # Путь к пакету
+    description: ""           # Назначение интерфейса
+    implementations: []       # Реализации (пути к файлам)
+
+# Зависимости между пакетами (опционально)
+# Помогает понять flow данных
+dependencies:
+  - from: ""                  # Зависимый пакет
+    to: []                    # От каких пакетов зависит
+
+# Метаданные
+metadata:
+  generated_at: ""            # Дата генерации (ISO 8601)
+  go_version: ""              # Версия Go (из go.mod)
+  total_go_files: 0           # Общее количество .go файлов
+  total_lines: 0              # Примерное количество строк кода (опционально)

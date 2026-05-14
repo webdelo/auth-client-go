@@ -1,0 +1,67 @@
+# MySQL DBA Rules Index
+# Детальный индекс правил MySQL для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "MY"
+  total_rules: 123
+  rule_id_range: "MY-001..MY-423"
+  last_updated: "2026-03-10"
+
+keywords:
+  - "mysql"
+  - "mariadb"
+  - "innodb"
+  - "go-sql-driver"
+  - "parseTime"
+  - "MyISAM"
+  - "FULLTEXT"
+  - "AUTO_INCREMENT"
+  - "ON DUPLICATE KEY"
+
+skill: ".claude/skills/mysql-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "go-sql-driver/mysql, connection pooling"
+    priority: 1
+    rule_id_range: "MY-001..MY-030"
+    rules_count: 30
+    keywords: ["go-sql-driver", "connection", "DSN", "parseTime"]
+  - path: "query_patterns.md"
+    description: "CRUD, JSON functions, ON DUPLICATE KEY"
+    priority: 2
+    rule_id_range: "MY-100..MY-140"
+    rules_count: 41
+    keywords: ["SELECT", "INSERT", "ON DUPLICATE KEY", "JSON", "query"]
+  - path: "optimization.md"
+    description: "Indexes, EXPLAIN, query cache"
+    priority: 2
+    rule_id_range: "MY-201..MY-234"
+    rules_count: 34
+    keywords: ["index", "EXPLAIN", "optimization", "slow query", "covering index"]
+  - path: "storage_engines.md"
+    description: "InnoDB internals, MyISAM comparison"
+    priority: 3
+    rule_id_range: "MY-300..MY-318"
+    rules_count: 19
+    keywords: ["InnoDB", "MyISAM", "engine", "buffer pool"]
+  - path: "replication.md"
+    description: "Master-slave, GTID replication"
+    priority: 3
+    rule_id_range: "MY-400..MY-423"
+    rules_count: 24
+    keywords: ["replication", "GTID", "master", "slave", "binlog"]
+
+key_rules:
+  - id: "MY-001"
+    rule: "Use InnoDB for all tables"
+    critical: true
+  - id: "MY-002"
+    rule: "Set parseTime=true in DSN"
+    critical: true
+  - id: "MY-003"
+    rule: "Use prepared statements"
+  - id: "MY-004"
+    rule: "Avoid SELECT * in production"
+  - id: "MY-005"
+    rule: "Use covering indexes for frequent queries"

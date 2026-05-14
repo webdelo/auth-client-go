@@ -1,0 +1,71 @@
+project:
+  name: "auth-client-go"
+  module: "github.com/webdelo/auth-client-go"
+  description: "Go SDK for webdelo/auth service. Thin wrapper over gRPC contract with ValidateToken caching, HTTP middleware, gRPC unary interceptor, refresh race serialization, typed errors. Consumed by BFF and other Go services that need to validate AUTH tokens or proxy login/refresh flows."
+  type: "lib"
+  upstream: "https://github.com/webdelo/auth-proto (gRPC contract)"
+
+structure:
+  root_files:
+    - file: "go.mod"
+      description: "Go module: github.com/webdelo/auth-client-go (Go 1.24)"
+    - file: "Makefile"
+      description: "Build / test / lint / generate-mocks targets (lib-style, no Docker)"
+    - file: "scratch.yaml"
+      description: "Scratch generator config (project_type: lib, integration_tests: true)"
+    - file: "README.md"
+      description: "SDK usage guide for consumers (entry point for external readers)"
+    - file: "CLAUDE.md"
+      description: "Guidance for Claude Code working in this repo"
+    - file: ".golangci.yaml"
+      description: "Linter config"
+    - file: "mockery.yaml"
+      description: "Mockery v3 config"
+
+  packages:
+    - path: "lib/"
+      description: "Public SDK API — все экспортируемые типы (Client, Config, errors, middleware, interceptor, context helpers)"
+      type: package
+    - path: "lib/internal/"
+      description: "Приватные детали реализации (cache, fingerprint helpers, refresh singleflight)"
+      type: package
+    - path: "lib/examples/"
+      description: "Примеры использования: basic Login+Validate, HTTP middleware-protected server, gRPC interceptor-protected server"
+      type: examples
+
+  dev_tools:
+    - path: "dev/tools/"
+      description: "release.sh, tools.mk, test-runner-main.go — scratch-generated dev infrastructure"
+
+  agent_workflow:
+    - path: ".claude/guides/"
+      description: "Правила (rules_index, golang/, libs/, project/, devops/) — copy of AUTH guides"
+    - path: ".claude/AGENTS.yaml"
+      description: "Agent catalog"
+    - path: ".claude/templates/"
+      description: "Templates для skills"
+    - path: ".memory_bank/"
+      description: "tech_stack, project_map, external_libs, dev_commands, tasks_list"
+    - path: "task_management/"
+      description: "REQ/TASK files (tasks, plans, results, reviews, specs, bug_reports, debug_reports, session_analysis)"
+
+  ci:
+    - path: ".github/workflows/ci.yaml"
+      description: "CI без Docker — Go lint + test + build"
+
+scope_boundaries:
+  in_scope:
+    - "gRPC client wrapper над auth-proto/go"
+    - "ValidateToken с in-memory TTL-кэшем"
+    - "HTTP middleware и gRPC unary interceptor для server-side AUTH-проверки"
+    - "Token-операции: Login, Refresh, Logout, LogoutAll, ChangePassword, GetCurrentUser"
+    - "Context helpers: WithUser, UserFromContext"
+    - "Cookie helpers для refresh-token (HttpOnly; Secure; SameSite=Strict; Path=/auth/refresh)"
+    - "HTTP request helpers: IPFromRequest, UserAgentFromRequest"
+    - "Типизированные ошибки: ErrInvalidToken, ErrExpired, ErrBlocked, ErrRateLimited, ErrUnavailable"
+  out_of_scope:
+    - "Admin операции: ListUsers, CreateUser, UpdateUserRole, BlockUser (consumer ходит напрямую в AUTH gRPC/REST)"
+    - "Session management: ListSessions, RevokeSession (то же)"
+    - "Хранение токенов пользователя (это policy consumer'а)"
+    - "DI framework (consumer выбирает свой)"
+    - "Логгер и метрики (передаются через adapter-интерфейсы)"

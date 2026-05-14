@@ -1,0 +1,77 @@
+build:
+  - command: "make build-examples"
+    description: "Build all example programs in lib/examples/"
+    category: build
+    preferred: true
+
+test:
+  - command: "make test"
+    description: "Run unit tests"
+    category: test
+    preferred: true
+  - command: "make test-race"
+    description: "Run unit tests with race detector"
+    category: test
+  - command: "make bench"
+    description: "Run benchmarks"
+    category: test
+  - command: "make coverage"
+    description: "Generate coverage report"
+    category: test
+
+lint:
+  - command: "make lint"
+    description: "Run golangci-lint"
+    category: lint
+    preferred: true
+  - command: "make lint-fix"
+    description: "Auto-fix lint issues"
+    category: lint
+  - command: "make fmt"
+    description: "Format code (go fmt)"
+    category: lint
+  - command: "make vet"
+    description: "Run go vet"
+    category: lint
+
+generate:
+  - command: "make generate-mocks"
+    description: "Generate mocks using mockery (config: mockery.yaml)"
+    category: generate
+    preferred: true
+
+audit:
+  - command: "make audit"
+    description: "Full quality check: vet + lint + test"
+    category: audit
+    preferred: true
+
+deps:
+  - command: "make tidy"
+    description: "Tidy dependencies (go mod tidy)"
+    category: deps
+    preferred: true
+
+mem_bank:
+  - command: "make init-mem-bank"
+    description: "Initialize memory bank (scratch)"
+    category: mem_bank
+  - command: "make update-mem-bank"
+    description: "Update memory bank templates (scratch)"
+    category: mem_bank
+
+release:
+  - command: "make release"
+    description: "Interactive release"
+    category: release
+    preferred: true
+  - command: "make release-dry-run"
+    description: "Preview release without making changes"
+    category: release
+  - command: "make release-with-notes"
+    description: "Release with AI-generated notes (requires claude CLI)"
+    category: release
+
+notes:
+  - "integration_tests scaffolding (test-integration target, dev/deployments/test.env, docker-compose с AUTH-контейнером) генерится не автоматически — добавляется в REQ-006 TASK-001."
+  - "ALWAYS use make commands. FORBIDDEN: raw `go build`/`go test -c` without `-o .temp/` flag — polutes project root."

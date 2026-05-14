@@ -1,0 +1,50 @@
+core:
+  language: "Go"
+  language_version: "1.24"
+  type: "lib"
+
+patterns:
+  - name: "Thin gRPC client wrapper"
+    where: "lib/"
+    why: "SDK is a thin layer over generated gRPC stubs from github.com/webdelo/auth-proto/go. Encapsulates non-trivial concerns: validation cache, fingerprint binding, error normalization, refresh race serialization."
+  - name: "No DI framework"
+    where: "lib/"
+    why: "Consumer brings its own DI. SDK exposes plain constructors (authclient.New(...)) and functional options."
+  - name: "Typed errors over gRPC codes"
+    where: "lib/errors.go"
+    why: "Consumers should not branch on raw codes.Unauthenticated — SDK normalizes into ErrInvalidToken, ErrExpired, ErrBlocked, ErrRateLimited, ErrUnavailable."
+
+coding_standards:
+  - name: "Effective Go Standards"
+    path: "guides/golang/effective_standards.md"
+    description: "Стандарты эффективного использования Go"
+  - name: "Coding Style"
+    path: "guides/golang/coding_style.md"
+    description: "Основные принципы написания читаемого кода"
+  - name: "Unit Tests Standards"
+    path: "guides/golang/unit_tests_standards.md"
+    description: "Стандарты unit-тестирования"
+  - name: "Integration Tests Standards"
+    path: "guides/golang/integration_tests_standards.md"
+    description: "Стандарты интеграционных тестов (gonkey, testcontainers)"
+
+devops:
+  containerization: []
+  databases: []
+  note: "SDK не имеет собственных infrastructure-зависимостей. Integration-тесты поднимают AUTH-контейнер через docker-compose (см. REQ-006)."
+
+dependencies:
+  - name: "github.com/webdelo/auth-proto/go"
+    version: "v0.1.0"
+    purpose: "gRPC contract for auth.v1 (single source of truth, shared with auth server)"
+  - name: "google.golang.org/grpc"
+    version: "(pinned to match auth-proto/go)"
+    purpose: "gRPC framework"
+  - name: "google.golang.org/protobuf"
+    version: "(pinned to match auth-proto/go)"
+    purpose: "Protobuf runtime"
+
+policies:
+  - "SDK НЕ ДОЛЖЕН зависеть от github.com/webdelo/auth (server module) — это бы тянуло internal-код сервера в consumer."
+  - "Версии grpc/protobuf обязаны совпадать с auth-proto/go (риск ABI-несовместимости)."
+  - "Public API SDK стабилизируется через semver на тегах репо: первый стабильный — v1.0.0, до этого v0.x.y (breaking changes допустимы)."

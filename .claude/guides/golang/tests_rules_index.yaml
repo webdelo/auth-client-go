@@ -1,0 +1,350 @@
+# Tests Rules Index
+# Индекс правил для написания и ревью тестов (unit и integration).
+# Агенты читают этот файл и загружают нужные стандарты по триггерам.
+
+metadata:
+  version: "1.0"
+  last_updated: "2026-02-18"
+  description: "Index of testing standards and rules for unit and integration tests"
+
+usage: |
+  1. Определи тип тестов (unit или integration)
+  2. Найди соответствующую секцию ниже
+  3. Прочитай указанные файлы из files[]
+  4. Применяй правила из critical_rules
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UNIT TESTS
+# ═══════════════════════════════════════════════════════════════════════════════
+unit_tests:
+  prefix: "UT"
+  path: ".claude/guides/golang/unit_tests_standards.md"
+  patterns_path: ".claude/guides/libs/testify.md"
+  mocks_path: ".claude/guides/libs/mockery.md"
+
+  triggers:
+    - "unit test"
+    - "тест"
+    - "test"
+    - "_test.go"
+    - "mock"
+    - "coverage"
+    - "table-driven"
+    - "testify"
+    - "mockery"
+
+  files:
+    - path: ".claude/guides/golang/unit_tests_standards.md"
+      description: "Unit test structure, naming, mocks, assertions, parallelism"
+      priority: 1
+    - path: ".claude/guides/libs/testify.md"
+      description: "Testify library: assert, require, mock, suite"
+      priority: 2
+    - path: ".claude/guides/libs/mockery.md"
+      description: "Mockery mock generation: config, CLI, Expecter API"
+      priority: 2
+
+  critical_rules:
+    # Test Structure
+    - id: "UT-0001"
+      title: "Table-driven tests mandatory"
+      description: "All unit tests MUST use table-driven test pattern"
+      severity: critical
+    - id: "UT-0002"
+      title: "One method = one test function"
+      description: "FORBIDDEN to create multiple functions for one method (e.g. TestMethod_Case1, TestMethod_Case2)"
+      severity: critical
+
+    # Naming
+    - id: "UT-0010"
+      title: "Function naming Test<Type>_<Method>"
+      description: "Test function names must follow Test<Type>_<Method> format"
+      severity: critical
+    - id: "UT-0011"
+      title: "First case must be happy_path"
+      description: "The first test case in every table must be named 'happy_path'"
+      severity: warning
+    - id: "UT-0012"
+      title: "Case naming in snake_case"
+      description: "Test case names use snake_case with verb prefix: return_error_when_repo_fails"
+      severity: warning
+
+    # Mocks
+    - id: "UT-0020"
+      title: "Mocks ONLY via mockery"
+      description: "FORBIDDEN to write mock structs manually. Use mocks/ directory."
+      severity: critical
+    - id: "UT-0021"
+      title: "Use Expecter API, not .On()"
+      description: "REQUIRED: .EXPECT().Method().Return().Once(). FORBIDDEN: .On('Method', ...)"
+      severity: critical
+    - id: "UT-0022"
+      title: "All mocks with explicit call count"
+      description: "All mock expectations MUST specify .Once(), .Times(0), or .Times(n)"
+      severity: critical
+    - id: "UT-0023"
+      title: "mock.Anything ЗАПРЕЩЁН ПОЛНОСТЬЮ"
+      description: "mock.Anything ЗАПРЕЩЁН для ЛЮБЫХ параметров (включая ctx, logger). Используй точные значения или mock.MatchedBy()"
+      severity: critical
+    - id: "UT-0024"
+      title: "New mocks for each subtest"
+      description: "Each subtest MUST create its own mock instances, never share between tests"
+      severity: critical
+    - id: "UT-0025"
+      title: "DB transaction mocking pattern"
+      description: "BeginTx → work → Commit/Rollback with explicit Times(0) for unused"
+      severity: warning
+    - id: "UT-0026"
+      title: "testMocks struct — always group mocks in a struct"
+      description: "FORBIDDEN: helper returning multiple mocks as return values. REQUIRED: testMocks struct + newTestMocks(t) + newHandlerFromMocks(t, m)"
+      severity: critical
+
+    - id: "UT-0028"
+      title: "No helper functions for test data, mocks, or assertions"
+      description: "FORBIDDEN: any helper function in test files that creates, configures, or returns test data, mocks, or assertions (newMockXxx, scanAnyArgs, makeTestData, assertResult). Exception: testMocks struct (UT-0026)."
+      severity: critical
+    - id: "UT-0029"
+      title: "No package-level shared variables for test data"
+      description: "FORBIDDEN: package-level shared variables for test data (e.g., var columnNames = []string{...}). Each test must define its own expected values inline."
+      severity: critical
+
+    # Assertions
+    - id: "UT-0030"
+      title: "require for critical checks"
+      description: "require stops the test — use for err, nil, must-succeed conditions"
+      severity: critical
+    - id: "UT-0031"
+      title: "assert for additional checks"
+      description: "assert continues the test — use for field values, flags"
+      severity: warning
+    - id: "UT-0032"
+      title: "No logic in tests — use closures in want"
+      description: "FORBIDDEN: if/switch in test assertions. REQUIRED: want closure"
+      severity: critical
+    - id: "UT-0033"
+      title: "JSON validation with assert.Contains"
+      description: "Use assert.Contains for JSON string validation, not assert.Equal"
+      severity: suggestion
+
+    # Parallelism
+    - id: "UT-0040"
+      title: "t.Parallel() at start of main test and each subtest"
+      description: "Call t.Parallel() at the very beginning of the main test function and each t.Run subtest"
+      severity: warning
+    - id: "UT-0041"
+      title: "tc := tc variable capture"
+      description: "REQUIRED: capture loop variable with tc := tc before t.Parallel()"
+      severity: critical
+    - id: "UT-0042"
+      title: "When NOT to use t.Parallel()"
+      description: "Skip t.Parallel() for: shared global state, DB integration tests, file system tests"
+      severity: warning
+
+    # Code Quality
+    - id: "UT-0050"
+      title: "Complex objects in private functions"
+      description: "Extract test data creation into private functions: newTestOrder(), newTestData()"
+      severity: warning
+    - id: "UT-0051"
+      title: "No magic numbers"
+      description: "Use named constants instead of literal values in assertions"
+      severity: warning
+    - id: "UT-0027"
+      title: "No decorative section separators"
+      description: "FORBIDDEN: // ──── bordered comment blocks in test files. Standard single-line doc comments are allowed."
+      severity: warning
+    - id: "UT-0100"
+      title: "One test file per tested struct/function source file"
+      description: "Test files should mirror source file structure. Each source file foo.go should have its tests in foo_test.go, not in a combined all_test.go. When multiple builders exist (BuildFoo, BuildBar), split into build_foo_test.go and build_bar_test.go."
+      severity: critical
+
+    # Repository Layer
+    - id: "UT-0110"
+      title: "Repository unit tests ОБЯЗАТЕЛЬНЫ"
+      description: "Unit-тесты для repository слоя обязательны. Gonkey НЕ заменяет unit-тесты — они покрывают разные аспекты (маппинг, PG-ошибки, edge cases vs полный путь через gRPC)."
+      severity: critical
+    - id: "UT-0111"
+      title: "Мок пула БД через unexported interface"
+      description: "Репозиторий определяет unexported interface пула (consumer-side, ES-0051). Мок генерируется mockery. В тесте — testMocks struct (UT-0026)."
+      severity: critical
+    - id: "UT-0112"
+      title: "Обязательные кейсы для repository тестов"
+      description: "Каждый метод: happy_path, edge cases (пустой вход, nil deps), PG-ошибки → domain errors, ошибки инфраструктуры (сбой Query/Exec/CopyFrom)."
+      severity: critical
+    - id: "UT-0113"
+      title: "Анти-паттерны в repository тестах"
+      description: "ЗАПРЕЩЕНО: mock.Anything для колонок/таблиц, пропуск теста конструктора, пропуск теста пустого входа, пропуск маппинга PG-ошибок."
+      severity: critical
+    - id: "UT-0114"
+      title: "fakeRows/fakeRow для Query/QueryRow тестов"
+      description: "Реализовать fakeRows (pgx.Rows) и fakeRow (pgx.Row) в shared_test.go пакета для тестов Query/QueryRow."
+      severity: warning
+
+    # Placement
+    - id: "UT-0060"
+      title: "Test placement rules"
+      description: "Unit tests → same package as tested code. Integration tests → tests/ package"
+      severity: critical
+
+    # Advanced
+    - id: "UT-0070"
+      title: "go-cmp for complex struct comparison"
+      description: "Use cmp.Diff for complex structs with cmpopts.IgnoreFields for timestamps"
+      severity: suggestion
+    - id: "UT-0071"
+      title: "synctest for time-dependent code"
+      description: "Use testing/synctest for code with timers, tickers (Go 1.24+)"
+      severity: suggestion
+
+    # Test Tables
+    - id: "UT-0080"
+      title: "Use map for simple scenarios"
+      description: "Prefer map[string]struct for simple cases where order doesn't matter"
+      severity: suggestion
+    - id: "UT-0081"
+      title: "Use slice when order matters"
+      description: "Use []struct when execution order matters or test case has many fields"
+      severity: suggestion
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTEGRATION TESTS (Gonkey)
+# ═══════════════════════════════════════════════════════════════════════════════
+integration_tests:
+  prefix: "IT"
+  path: ".claude/guides/golang/integration_tests_standards.md"
+  patterns_path: ".claude/guides/libs/gonkey.md"
+
+  triggers:
+    - "integration test"
+    - "интеграционный тест"
+    - "gonkey"
+    - "e2e"
+    - "yaml test"
+    - "fixture"
+    - "RUN_INTEGRATION_TESTS"
+    - "tests/"
+
+  files:
+    - path: ".claude/guides/golang/integration_tests_standards.md"
+      description: "Integration test structure, YAML format, fixtures, mocks, DB verification"
+      priority: 1
+    - path: ".claude/guides/libs/gonkey.md"
+      description: "Gonkey framework: full reference for YAML test cases"
+      priority: 2
+
+  critical_rules:
+    # Core Rules
+    - id: "IT-0001"
+      title: "Test file location: tests/*_test.go"
+      description: "Integration tests live in the tests/ package, separate from production code"
+      severity: critical
+    - id: "IT-0002"
+      title: "YAML naming: +happy.yaml / -app_error.yaml"
+      description: "Prefix + for positive cases, - for negative/app_error cases"
+      severity: critical
+    - id: "IT-0003"
+      title: "Always start with empty_db fixture"
+      description: "EVERY test case MUST begin with empty_db to ensure isolation"
+      severity: critical
+    - id: "IT-0004"
+      title: "Always specify calls: N for mocks"
+      description: "REQUIRED: every mock must have explicit calls count for verification"
+      severity: critical
+    - id: "IT-0005"
+      title: "Use JSON aggregation for dbQuery"
+      description: "Use json_build_object() for readable and maintainable DB assertions"
+      severity: warning
+    - id: "IT-0006"
+      title: "$matchRegexp() for dynamic fields"
+      description: "Use $matchRegexp() for UUIDs, timestamps, and auto-generated values"
+      severity: critical
+    - id: "IT-0007"
+      title: "BDD naming: КОГДА / ТОГДА"
+      description: "Test names MUST follow: КОГДА [condition] ТОГДА [expected result]"
+      severity: warning
+    - id: "IT-0008"
+      title: "RUN_INTEGRATION_TESTS=true to enable"
+      description: "Integration tests are opt-in via environment variable"
+      severity: critical
+    - id: "IT-0009"
+      title: "No business logic in tests"
+      description: "Tests verify component integration only, no business logic calculations"
+      severity: critical
+    - id: "IT-0010"
+      title: "No parallel execution"
+      description: "Integration tests share DB state and must run sequentially"
+      severity: critical
+
+    # Structure
+    - id: "IT-0020"
+      title: "Layer strategy"
+      description: "Each layer has specific scope: HTTP→routing, Kafka→side-effects, DB→records"
+      severity: warning
+    - id: "IT-0030"
+      title: "Mandatory project structure"
+      description: "tests/cases/, tests/fixtures/, tests/mocks_data/, tests/runner/"
+      severity: critical
+
+    # YAML Structure
+    - id: "IT-0040"
+      title: "HTTP API test structure"
+      description: "method, path, fixtures, headers, mocks, request, response, dbQuery, dbResponse"
+      severity: critical
+    - id: "IT-0041"
+      title: "Kafka consumer test structure"
+      description: "Use /events.batch-produce endpoint with topic and events params"
+      severity: warning
+    - id: "IT-0042"
+      title: "Negative test case structure"
+      description: "Verify app_error response AND that no DB records were created AND mock calls: 0"
+      severity: warning
+
+    # Fixtures
+    - id: "IT-0050"
+      title: "Base templates with $extend"
+      description: "Use templates with $extend for DRY fixture definitions"
+      severity: warning
+    - id: "IT-0051"
+      title: "Redis/Valkey fixture structure"
+      description: "databases.N.keys/sets/zsets structure for cache state"
+      severity: warning
+
+    # Runner
+    - id: "IT-0060"
+      title: "Test runner pattern"
+      description: "TestRunner struct with T, Mocks, CaseDirs, EnvVars fields"
+      severity: warning
+
+    # Mocks
+    - id: "IT-0070"
+      title: "Mock strategies"
+      description: "nop (0 calls), constant (inline body), file (from file), sequence (retry)"
+      severity: warning
+    - id: "IT-0071"
+      title: "Request constraints validation"
+      description: "Use requestConstraints to validate external service request format"
+      severity: warning
+
+    # DB Verification
+    - id: "IT-0080"
+      title: "PostgreSQL JSON aggregation"
+      description: "SELECT json_build_object(...)::text AS row for readable assertions"
+      severity: warning
+    - id: "IT-0081"
+      title: "ClickHouse JSON verification"
+      description: "SELECT toJSONString(map(...)) AS row for ClickHouse assertions"
+      severity: warning
+    - id: "IT-0082"
+      title: "Count verification"
+      description: "SELECT COUNT(*)::text AS count for counting records"
+      severity: suggestion
+
+    # Response Validation
+    - id: "IT-0090"
+      title: "Exact response matching"
+      description: "Use exact JSON for static, predictable response fields"
+      severity: warning
+    - id: "IT-0091"
+      title: "Comparison parameters"
+      description: "ignoreArraysOrdering, disallowExtraFields, ignoreDbOrdering"
+      severity: suggestion

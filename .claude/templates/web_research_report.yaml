@@ -1,0 +1,108 @@
+# Web Research Report Template (YAML)
+# Используется агентом web-searcher для структурированного вывода
+
+metadata:
+  date: "YYYY-MM-DD"
+  researcher: "web-searcher"
+  query: "Исходный запрос на исследование"
+  topic_slug: "topic-name"  # для имени файла
+
+# === SOURCES ===
+sources:
+  - id: "SRC-001"
+    url: "https://example.com/docs"
+    title: "Название страницы"
+    type: "official_docs"  # official_docs | github | blog | stackoverflow | other
+    relevance: "high"  # high | medium | low
+    accessed: "2026-01-05"
+
+# === FINDINGS ===
+findings:
+  - id: "FIND-001"
+    topic: "Краткая тема"
+    summary: "Одно предложение - суть находки"
+    source_id: "SRC-001"
+    details: |
+      Подробное описание в markdown формате.
+      Может содержать:
+      - Списки
+      - **Форматирование**
+
+      ```go
+      // Примеры кода
+      func Example() {}
+      ```
+    confidence: "high"  # high | medium | low
+    tags:
+      - "best-practice"
+      - "performance"
+
+# === BEST PRACTICES ===
+best_practices:
+  - id: "BP-001"
+    name: "Название практики"
+    description: |
+      Описание best practice
+    when_to_use: "Когда применять"
+    source_id: "SRC-001"
+    code_example: |
+      // Пример кода
+      func GoodPractice() {}
+
+# === PITFALLS ===
+pitfalls:
+  - id: "PIT-001"
+    name: "Название проблемы"
+    description: "Описание проблемы"
+    solution: "Как избежать/решить"
+    source_id: "SRC-002"
+
+# === CODE EXAMPLES ===
+code_examples:
+  - id: "EX-001"
+    title: "Название примера"
+    description: "Что демонстрирует"
+    source_id: "SRC-001"
+    language: "go"
+    code: |
+      package main
+
+      func main() {
+          // Пример кода
+      }
+    notes: "Дополнительные заметки"
+
+# === VERSION COMPATIBILITY ===
+versions:
+  - version: "v1.x"
+    status: "deprecated"
+    notes: "Заметки о версии"
+  - version: "v2.x"
+    status: "current"
+    notes: "Текущая стабильная версия"
+
+# === RECOMMENDATIONS ===
+recommendations:
+  - id: "REC-001"
+    priority: "high"  # high | medium | low
+    title: "Заголовок рекомендации"
+    description: |
+      Подробное описание рекомендации
+    rationale: "Почему это рекомендуется"
+
+# === SUMMARY ===
+summary:
+  sources_count: 0
+  findings_count: 0
+  best_practices_count: 0
+  pitfalls_count: 0
+  key_insight: "Главный вывод исследования"
+  confidence_score: 8  # 1-10
+  confidence_reason: "Почему такая оценка уверенности"
+
+# === ADDITIONAL RESOURCES ===
+additional_resources:
+  - title: "Название ресурса"
+    url: "https://example.com"
+    description: "Краткое описание"
+

@@ -1,0 +1,140 @@
+# Code Research Report Template (YAML)
+# Используется агентом code-researcher для структурированного вывода
+# Может быть агрегирован report-aggregator
+
+# === METADATA ===
+metadata:
+  date: "YYYY-MM-DD"
+  researcher: "code-researcher"
+  query: "Исходный запрос на исследование"
+  task_slug: "task-summary"  # для имени файла
+  duration_seconds: 0  # время выполнения исследования
+
+# === SEARCH STRATEGY ===
+search_strategy:
+  approach: "Описание подхода к поиску"
+  patterns_used:
+    - pattern: "**/*_test.go"
+      purpose: "Поиск тестовых файлов"
+    - pattern: "func.*Handler"
+      purpose: "Поиск хендлеров"
+  tools_used:
+    - "Glob"
+    - "Grep"
+    - "Read"
+
+# === FILES ANALYZED ===
+files_analyzed:
+  - id: "FILE-001"
+    path: "path/to/file.go"
+    purpose: "Краткое описание почему файл релевантен"
+    lines_read: 150
+    key_sections:
+      - start_line: 10
+        end_line: 50
+        description: "Описание секции"
+
+# === KEY FINDINGS ===
+findings:
+  - id: "FIND-001"
+    category: "architecture"  # architecture | pattern | implementation | bug | optimization | security
+    title: "Краткий заголовок находки"
+    importance: "high"  # critical | high | medium | low
+    file: "path/to/file.go"
+    line: 123
+    code_reference: |
+      // Релевантный код
+      func example() {}
+    description: |
+      Подробное описание находки.
+      Контекст и импликации.
+    related_files:
+      - "path/to/related.go"
+      - "path/to/another.go"
+
+# === CODE PATTERNS ===
+patterns:
+  - id: "PAT-001"
+    name: "Название паттерна"
+    type: "design_pattern"  # design_pattern | coding_convention | anti_pattern | idiom
+    files_count: 5
+    example_files:
+      - "path/to/example1.go"
+      - "path/to/example2.go"
+    description: |
+      Описание паттерна и как он используется в проекте
+    code_example: |
+      // Пример использования паттерна
+      type Handler struct {
+          service Service
+      }
+
+# === ARCHITECTURE INSIGHTS ===
+architecture:
+  components:
+    - name: "Название компонента"
+      path: "path/to/component/"
+      responsibility: "Описание ответственности"
+      dependencies:
+        - "other/component"
+  data_flow:
+    - from: "component_a"
+      to: "component_b"
+      description: "Описание потока данных"
+  layers:
+    - name: "handlers"
+      path: "internal/handlers/"
+      description: "HTTP handlers"
+    - name: "services"
+      path: "internal/services/"
+      description: "Business logic"
+
+# === DEPENDENCIES ===
+dependencies:
+  internal:
+    - package: "internal/service"
+      used_by:
+        - "internal/handler"
+      purpose: "Business logic"
+  external:
+    - package: "github.com/example/lib"
+      version: "v1.0.0"
+      purpose: "Описание зачем нужна"
+      usage_files:
+        - "path/to/usage.go"
+
+# === RECOMMENDATIONS ===
+recommendations:
+  - id: "REC-001"
+    priority: "high"  # high | medium | low
+    category: "architecture"  # architecture | refactoring | testing | documentation | performance
+    title: "Заголовок рекомендации"
+    description: |
+      Подробное описание рекомендации
+    rationale: "Почему это рекомендуется"
+    affected_files:
+      - "path/to/file.go"
+    effort: "medium"  # low | medium | high
+
+# === QUESTIONS / UNCERTAINTIES ===
+questions:
+  - id: "Q-001"
+    question: "Вопрос, требующий уточнения"
+    context: "Контекст вопроса"
+    possible_answers:
+      - "Вариант ответа 1"
+      - "Вариант ответа 2"
+
+# === SUMMARY ===
+summary:
+  files_analyzed_count: 0
+  findings_count: 0
+  patterns_count: 0
+  recommendations_count: 0
+  key_insight: "Главный вывод исследования"
+  confidence_score: 8  # 1-10
+  confidence_reason: "Почему такая оценка уверенности"
+  next_steps:
+    - "Следующий шаг 1"
+    - "Следующий шаг 2"
+

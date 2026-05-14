@@ -1,0 +1,1392 @@
+# Claude Code Agents Catalog
+# Централизованный каталог всех доступных агентов с триггерами для автоматического выбора
+
+metadata:
+  version: "1.1"
+  created_at: "2026-01-27"
+  updated_at: "2026-01-30"
+  description: |
+    Catalog of all available Claude Code agents with:
+    - Capabilities and tools
+    - Triggers for automatic selection
+    - When to use recommendations
+    - Mandatory/optional flags
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AGENT TYPES EXPLANATION
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# There are two types of agents in this catalog:
+#
+# 1. BUILT-IN AGENTS (native_subagent: true)
+#    - These are built into Claude Code and can be called directly
+#    - Example: Task(subagent_type="code-writer", prompt="...")
+#    - The subagent_type value is a native type recognized by Claude Code
+#
+# 2. VIRTUAL AGENTS (native_subagent: false)
+#    - These are custom agents defined only in this project
+#    - They use "general-purpose" as the actual subagent_type
+#    - The prompt must include instructions from the agent's .md file
+#    - Example: Task(subagent_type="general-purpose", prompt="<contents of .claude/agents/devops-engineer.md> + task")
+#    - instruction_file points to the agent definition with full instructions
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CODING AGENTS (для написания и изменения кода)
+# ═══════════════════════════════════════════════════════════════════════════
+
+coding_agents:
+  code_writer:
+    name: "code-writer"
+    subagent_type: "code-writer"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "coding"
+    purpose: "Написание нового кода (функции, модули, фичи)"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "NotebookEdit", "TodoWrite", "Skill", "SlashCommand", "mcp__ide__getDiagnostics"]
+    background: true
+
+    triggers:
+      keywords:
+        - "написать"
+        - "создать"
+        - "реализовать"
+        - "добавить функцию"
+        - "новый метод"
+        - "имплементировать"
+
+    when_to_use: "При создании нового кода (функций, модулей, features)"
+    standards:
+      - ".claude/guides/golang/coding_style.md"
+      - ".claude/guides/golang/effective_standards.md"
+      - ".claude/guides/golang/effective_concurrency.md"
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЙ ПРОМПТ-ШАБЛОН
+    # Оркестратор ДОЛЖЕН включить эти инструкции в КАЖДЫЙ вызов агента
+    # ═══════════════════════════════════════════════════════════════════
+    prompt_template: |
+      ПЕРЕД написанием кода ОБЯЗАТЕЛЬНО:
+      1. Прочитай .claude/guides/golang/rules_index.yaml — индекс правил (ES-*, EC-*, CS-*)
+      2. Если задача работает с БД (postgres, clickhouse, redis, repository, query, SQL):
+         → Прочитай .claude/guides/dba/rules_index.yaml
+         → Найди секцию по keywords задачи
+         → Загрузи файлы из files[] по priority
+         → Применяй key_rules при написании кода
+      3. Если задача связана с инфраструктурой (docker, kubernetes, deployment):
+         → Прочитай .claude/guides/devops/rules_index.yaml
+         → Найди секцию по keywords задачи
+         → Применяй key_rules
+
+  refactorer:
+    name: "refactorer"
+    subagent_type: "refactorer"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "coding"
+    purpose: "Механические преобразования: форматирование, rename, nolint, перенос файлов"
+    model: "haiku"  # Быстрая модель для простых задач
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "gofmt"
+        - "goimports"
+        - "rename"
+        - "переименовать"
+        - "move file"
+        - "переместить"
+        - "nolint"
+        - "update imports"
+        - "обновить импорты"
+        - "dead code"
+        - "мёртвый код"
+        - "magic number"
+        - "константа"
+
+    when_to_use: "Механические задачи БЕЗ анализа логики: форматирование, rename, nolint, перенос файлов"
+
+    does_not_handle:
+      - "extract function (требует анализа логики)"
+      - "изменение control flow"
+      - "исправление багов → debugger"
+      - "сложный рефакторинг → ручной review"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# REVIEW AGENTS (для проверки качества кода и тестов)
+# ═══════════════════════════════════════════════════════════════════════════
+
+review_agents:
+  code_reviewer:
+    name: "code-reviewer"
+    subagent_type: "code-reviewer"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "review"
+    purpose: "Проверка качества, безопасности и maintainability кода"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Grep", "Glob", "Bash", "Write"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "code review"
+        - "проверить код"
+        - "ревью кода"
+        - "проверка качества"
+
+    when_to_use: "ОБЯЗАТЕЛЬНО после написания значительного кода, перед PR"
+    mandatory_after: ["code-writer", "refactorer"]
+
+    standards:
+      - priority: 1
+        guide: ".claude/guides/golang/effective_standards.md"
+        prefix: "ES"
+      - priority: 2
+        guide: ".claude/guides/golang/effective_concurrency.md"
+        prefix: "EC"
+      - priority: 3
+        guide: ".claude/guides/golang/coding_style.md"
+        prefix: "CS"
+      - priority: 4
+        guide: ".claude/guides/dba/rules_index.yaml"
+        prefix: "PG/CH/RD/MY/MG/SQ/QD/DB"
+        condition: "Если код работает с БД"
+      - priority: 5
+        guide: ".claude/guides/devops/rules_index.yaml"
+        prefix: "DK/K8/DO"
+        condition: "Если код связан с инфраструктурой"
+
+    critical_rules:
+      - "EC-0063: НЕ смешивать atomic и mutex"
+      - "EC-0064: Максимум 1 mutex на метод"
+      - "EC-0062: Использовать Swap() для entry guards"
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЙ ПРОМПТ-ШАБЛОН
+    # Оркестратор ДОЛЖЕН включить эти инструкции в КАЖДЫЙ вызов агента
+    # ═══════════════════════════════════════════════════════════════════
+    prompt_template: |
+      ПЕРЕД ревью ОБЯЗАТЕЛЬНО:
+      1. Прочитай .claude/guides/golang/rules_index.yaml — индекс правил (ES-*, EC-*, CS-*)
+      2. Если код работает с БД (файлы в internal/repository/, SQL запросы, pgx, clickhouse-go):
+         → Прочитай .claude/guides/dba/rules_index.yaml
+         → Найди секцию по keywords (postgres → PG-*, clickhouse → CH-*)
+         → Верифицируй key_rules в ревью
+         → Добавь dba_rules в секцию rules_verified отчёта
+      3. Если код связан с инфраструктурой (Dockerfile, K8s manifests):
+         → Прочитай .claude/guides/devops/rules_index.yaml
+         → Верифицируй key_rules
+         → Добавь devops_rules в секцию rules_verified отчёта
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЕ ПРОВЕРКИ (КРИТИЧЕСКИ ВАЖНО!)
+    # ═══════════════════════════════════════════════════════════════════════
+    required_checks:
+      - id: "DOD-001"
+        description: "Проверка DOD чеклиста из TASK файла"
+        mandatory: true
+        actions:
+          - "Прочитать TASK файл (task_management/tasks/{TASK-ID}.md)"
+          - "Найти секцию DOD (Definition of Done)"
+          - "Проверить КАЖДЫЙ критерий из DOD"
+          - "Выполнить grep-проверки если указаны в DOD"
+          - "В CODE-REVIEW указать статус КАЖДОГО критерия DOD"
+
+      - id: "DOD-002"
+        description: "Grep-проверки из DOD"
+        mandatory: true
+        condition: "Если DOD содержит grep-проверки"
+        actions:
+          - "Выполнить ВСЕ grep команды указанные в DOD"
+          - "Записать результаты в CODE-REVIEW"
+          - "Если grep находит запрещённые паттерны → verdict: CHANGES_REQUESTED"
+
+      - id: "DOD-003"
+        description: "Проверка полноты выполнения"
+        mandatory: true
+        actions:
+          - "Проверить что ВСЕ фазы PRP выполнены"
+          - "Если какая-то фаза не выполнена → verdict: CHANGES_REQUESTED"
+          - "Partial execution = CHANGES_REQUESTED (не APPROVED)"
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # ЗАПРЕЩЁННЫЕ ДЕЙСТВИЯ
+    # ═══════════════════════════════════════════════════════════════════════
+    forbidden:
+      - "❌ ЗАПРЕЩЕНО редактировать .memory_bank/tasks_list.yaml напрямую"
+      - "❌ Для обновления статуса использовать ТОЛЬКО: python3 .claude/scripts/req_status.py refresh-lifecycle {TASK-ID}"
+      - "❌ ЗАПРЕЩЕНО самовольно исключать scope/фазы из PRP"
+      - "❌ ЗАПРЕЩЕНО решать 'out of scope' без согласования с пользователем"
+      - "❌ ЗАПРЕЩЕНО утверждать partial execution как APPROVED"
+      - "❌ ЗАПРЕЩЕНО игнорировать DOD чеклист из TASK файла"
+      - "❌ ЗАПРЕЩЕНО игнорировать grep-проверки из DOD"
+      - "❌ 'Backward compatibility' НЕ является причиной не удалять deprecated код"
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # VERDICT RULES
+    # ═══════════════════════════════════════════════════════════════════════
+    verdict_rules:
+      APPROVED:
+        conditions:
+          - "ВСЕ фазы PRP выполнены"
+          - "ВСЕ критерии DOD выполнены"
+          - "ВСЕ grep-проверки из DOD пройдены"
+          - "Нет critical issues"
+
+      APPROVED_WITH_COMMENTS:
+        conditions:
+          - "ВСЕ фазы PRP выполнены"
+          - "ВСЕ критерии DOD выполнены"
+          - "Есть warnings/suggestions но НЕ critical"
+
+      CHANGES_REQUESTED:
+        conditions:
+          - "Хотя бы одна фаза PRP НЕ выполнена"
+          - "Хотя бы один критерий DOD НЕ выполнен"
+          - "Grep-проверки нашли запрещённые паттерны"
+          - "Есть critical issues"
+          - "Deprecated код НЕ удалён хотя требовалось"
+
+    output:
+      intermediate: ".memory_bank/agent_task_results/{DATE}_code-review_{package}.yaml"
+      final: "task_management/reviews/{TASK-ID}-CODE-REVIEW.yaml"
+
+  test_reviewer:
+    name: "test-reviewer"
+    subagent_type: "test-reviewer"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "review"
+    purpose: "Проверка качества тестов и соответствия стандартам"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Grep", "Glob", "Bash", "Write"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "проверить тесты"
+        - "ревью тестов"
+        - "test review"
+        - "проверка покрытия"
+
+    when_to_use: "ОБЯЗАТЕЛЬНО после написания тестов"
+    mandatory_after: ["unit-test-writer", "gonkey-test-writer"]
+
+    standards:
+      - ".claude/guides/golang/tests_rules_index.yaml"  # Индекс UT-XXXX и IT-XXXX правил
+      - ".claude/guides/golang/unit_tests_standards.md"
+      - ".claude/guides/golang/integration_tests_standards.md"
+      - ".claude/guides/libs/testify.md"
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЙ ПРОМПТ-ШАБЛОН
+    # Оркестратор ДОЛЖЕН включить эти инструкции в КАЖДЫЙ вызов агента
+    # ═══════════════════════════════════════════════════════════════════
+    prompt_template: |
+      ПЕРЕД ревью тестов ОБЯЗАТЕЛЬНО прочитай:
+      1. .claude/guides/golang/tests_rules_index.yaml — индекс правил (UT-XXXX / IT-XXXX)
+      2. .claude/guides/golang/unit_tests_standards.md — стандарты unit тестов
+      3. .claude/guides/libs/testify.md — стандарты testify
+      4. Если тесты работают с БД (internal/repository/, SQL, pgx, clickhouse fixtures):
+         → Прочитай .claude/guides/dba/rules_index.yaml
+         → Найди секцию по keywords → проверь соответствие DBA правилам
+
+    output:
+      intermediate: ".memory_bank/agent_task_results/{DATE}_test-review_{package}.md"
+
+  security_auditor:
+    name: "security-auditor"
+    subagent_type: "security-auditor"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "review"
+    purpose: "Аудит безопасности по OWASP Top 10"
+    model: "sonnet"
+    tools: ["Read", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      keywords:
+        - "безопасность"
+        - "security"
+        - "OWASP"
+        - "уязвимость"
+        - "authentication"
+        - "аутентификация"
+        - "authorization"
+        - "авторизация"
+        - "password"
+        - "пароль"
+        - "credentials"
+        - "secret"
+        - "API key"
+        - "валидация"
+        - "user input"
+        - "XSS"
+        - "SQL injection"
+
+    when_to_use: "При работе с auth, credentials, user input, перед релизом"
+    output: ".memory_bank/agent_task_results/{DATE}_security-audit_{scope}.md"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TESTING AGENTS (для написания тестов)
+# ═══════════════════════════════════════════════════════════════════════════
+
+testing_agents:
+  unit_test_writer:
+    name: "unit-test-writer"
+    subagent_type: "unit-test-writer"
+    native_subagent: true  # Built-in Claude Code agent
+    instruction_file: ".claude/agents/unit-test-writer.md"  # Инструкции агента с правилами
+    category: "testing"
+    purpose: "ЭКСКЛЮЗИВНЫЙ владелец *_test.go: написание И исправление тестов"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        # Написание тестов
+        - "написать тесты"
+        - "unit тесты"
+        - "покрыть тестами"
+        - "тестовое покрытие"
+        - "coverage"
+        # Исправление тестов (НОВОЕ)
+        - "FAIL"
+        - "got X want Y"
+        - "assertion failed"
+        - "expected call"
+        - "mock not satisfied"
+        - "test compilation"
+        - "_test.go"
+        - "тест падает"
+        - "fix test"
+        - "исправить тест"
+
+    when_to_use: "ВСЕ задачи с *_test.go файлами: написание И исправление"
+    mandatory_after: ["code-writer"]
+
+    exclusive_owner_of:
+      - "*_test.go files"
+      - "test failures (got X want Y)"
+      - "mock issues (expected call, mock not satisfied)"
+      - "test compilation errors"
+
+    does_not_handle:
+      - "production code (*.go without _test) → debugger"
+      - "race conditions → debugger-complex"
+
+    standards:
+      - ".claude/guides/golang/tests_rules_index.yaml"  # Индекс UT-XXXX правил
+      - ".claude/guides/golang/unit_tests_standards.md"
+      - ".claude/guides/libs/testify.md"
+      - ".claude/guides/libs/mockery.md"
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЙ ПРОМПТ-ШАБЛОН
+    # Оркестратор ДОЛЖЕН включить эти инструкции в КАЖДЫЙ вызов агента
+    # ═══════════════════════════════════════════════════════════════════
+    prompt_template: |
+      ПЕРЕД написанием тестов ОБЯЗАТЕЛЬНО прочитай:
+      1. .claude/guides/golang/tests_rules_index.yaml — индекс правил (UT-XXXX)
+      2. .claude/guides/golang/unit_tests_standards.md — стандарты тестов
+      3. .claude/guides/libs/testify.md — библиотека assertions
+      4. .claude/guides/libs/mockery.md — генерация моков
+      5. Если тесты работают с БД (файлы в internal/repository/, SQL, pgx, clickhouse-go):
+         → Прочитай .claude/guides/dba/rules_index.yaml
+         → Найди секцию по keywords → загрузи файлы по priority
+         → Применяй key_rules при написании тестов (корректные моки pgxpool и т.д.)
+
+      АБСОЛЮТНЫЕ ПРАВИЛА (с ID из tests_rules_index.yaml):
+      - UT-0001/UT-0002: Table-driven tests ОБЯЗАТЕЛЬНЫ (один метод = одна функция Test<Type>_<Method>)
+      - UT-0020/UT-0021: Моки ТОЛЬКО через mockery (из mocks/), Expecter API (.EXPECT().Method())
+      - UT-0022: Все моки с .Once()/.Times(n) — обязательно
+      - UT-0023: Запрещено mock.Anything для бизнес-данных
+      - UT-0040/UT-0041: t.Parallel() + tc := tc
+      - Если нужного мока нет — добавь интерфейс в .mockery.yaml и запусти make mocks
+
+    output: ".memory_bank/agent_task_results/{DATE}_tests_{package}.md"
+
+  gonkey_test_writer:
+    name: "gonkey-test-writer"
+    subagent_type: "gonkey-test-writer"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "testing"
+    purpose: "Написание Gonkey интеграционных YAML-тестов для REST/JSON API"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "интеграционные тесты"
+        - "gonkey"
+        - "API тесты"
+        - "HTTP тесты"
+        - "тесты с БД"
+
+    when_to_use: "Для интеграционного тестирования HTTP API с БД и mocks"
+
+    standards:
+      - ".claude/guides/golang/tests_rules_index.yaml"  # Индекс IT-XXXX правил
+      - ".claude/guides/golang/integration_tests_standards.md"
+      - ".claude/guides/libs/gonkey.md"
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЙ ПРОМПТ-ШАБЛОН
+    # Оркестратор ДОЛЖЕН включить эти инструкции в КАЖДЫЙ вызов агента
+    # ═══════════════════════════════════════════════════════════════════
+    prompt_template: |
+      ПЕРЕД написанием интеграционных тестов ОБЯЗАТЕЛЬНО прочитай:
+      1. .claude/guides/golang/tests_rules_index.yaml — индекс правил (IT-XXXX)
+      2. .claude/guides/golang/integration_tests_standards.md — стандарты IT тестов
+      3. .claude/guides/libs/gonkey.md — паттерны gonkey framework
+      4. Gonkey тесты ВСЕГДА работают с БД — ОБЯЗАТЕЛЬНО:
+         → Прочитай .claude/guides/dba/rules_index.yaml
+         → Найди секцию по keywords (postgres, clickhouse, redis...)
+         → Загрузи файлы по priority → применяй key_rules для fixtures и dbQuery/dbResponse
+
+    output: "YAML тест-кейсы + fixtures + mocks + отчёт"
+
+  benchmark_runner:
+    name: "benchmark-runner"
+    subagent_type: "benchmark-runner"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "testing"
+    purpose: "Тестирование производительности"
+    model: "sonnet"
+    tools: ["Read", "Bash", "Grep", "Glob", "Write"]
+    background: true
+
+    triggers:
+      keywords:
+        - "benchmark"
+        - "бенчмарк"
+        - "производительность"
+        - "performance"
+        - "оптимизация"
+        - "узкие места"
+
+    when_to_use: "При оптимизации критичного кода, сравнении реализаций"
+    output: ".memory_bank/agent_task_results/{DATE}_benchmark_{scope}.md"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RESEARCH AGENTS (для исследования и анализа)
+# ═══════════════════════════════════════════════════════════════════════════
+
+research_agents:
+  code_researcher:
+    name: "code-researcher"
+    subagent_type: "code-researcher"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "research"
+    purpose: "Исследование кодовой базы, поиск паттернов, анализ архитектуры"
+    model: "sonnet"
+    tools: ["Read", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      # Поиск примеров
+      search_keywords:
+        - "найти похожий"
+        - "как это сделано"
+        - "посмотреть пример"
+        - "где используется"
+        - "найти все места"
+        - "аналогично"
+        - "по примеру"
+        - "как в"
+        - "кодовая база"
+        - "код примера"
+
+      # Изучение кода
+      exploration_keywords:
+        - "какой паттерн"
+        - "существующая реализация"
+        - "как реализовано"
+        - "аналогичный функционал"
+        - "похожая логика"
+
+      # Архитектура
+      architecture_keywords:
+        - "архитектура"
+        - "структура проекта"
+        - "зависимости"
+        - "взаимодействие между"
+        - "как связаны"
+
+    when_to_use: "ВСЕГДА при планировании новой фичи - для поиска существующих паттернов"
+    mandatory: true
+    mandatory_for: ["planning"]
+
+    output: ".memory_bank/agent_task_results/{DATE}_code-research_{feature}.md"
+
+  web_searcher:
+    name: "web-searcher"
+    subagent_type: "web-searcher"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "research"
+    purpose: "Поиск документации и best practices в интернете"
+    model: "opus"
+    tools: ["WebSearch", "Bash", "Read", "Write"]
+    background: true
+
+    triggers:
+      # Интеграция
+      integration_keywords:
+        - "интегрировать"
+        - "интеграция"
+        - "подключить"
+        - "добавить поддержку"
+        - "использовать"
+        - "настроить"
+
+      # Изучение
+      learning_keywords:
+        - "как работает"
+        - "как использовать"
+        - "пример использования"
+        - "как правильно"
+        - "способы"
+        - "варианты реализации"
+
+      # Документация
+      documentation_keywords:
+        - "документация"
+        - "docs"
+        - "documentation"
+        - "гайд"
+        - "guide"
+        - "tutorial"
+        - "readme"
+
+      # Research
+      research_keywords:
+        - "best practices"
+        - "best practice"
+        - "рекомендации"
+        - "стандарты"
+        - "как решить"
+        - "как сделать"
+
+      # Web/HTTP
+      web_keywords:
+        - "http"
+        - "https"
+        - "REST"
+        - "API"
+        - "webhook"
+        - "websocket"
+
+      # External libraries
+      external_library_patterns:
+        - "github.com/"
+        - "go.uber.org/"
+        - "google.golang.org/"
+        - "gopkg.in/"
+
+    when_to_use: "При работе с новыми библиотеками, внешними API или нестандартными паттернами"
+    mandatory: false
+
+    # ═══════════════════════════════════════════════════════════════════
+    # ОБЯЗАТЕЛЬНЫЙ ПРОМПТ-ШАБЛОН
+    # Оркестратор ДОЛЖЕН включить эти инструкции в КАЖДЫЙ вызов агента
+    # ═══════════════════════════════════════════════════════════════════
+    prompt_template: |
+      **CRITICAL INSTRUCTIONS — READ BEFORE DOING ANYTHING:**
+
+      1. You MUST NOT use WebFetch tool. It is FORBIDDEN.
+      2. To download web pages, use ONLY Bash with curl:
+         ```bash
+         curl --max-time 30 -sL -H "User-Agent: Mozilla/5.0" "<URL>" | python3 .claude/scripts/html2text.py
+         ```
+      3. WebSearch summaries are your PRIMARY data source (90% of research).
+         Only download pages when summaries lack specific code examples or configuration.
+      4. Maximum 3 curl downloads per session.
+      5. If curl fails (timeout/DNS/empty) — skip URL, move on.
+
+    output: ".memory_bank/agent_task_results/{DATE}_web-research_{topic}.md"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PLANNING AGENTS (для планирования и проектирования)
+# ═══════════════════════════════════════════════════════════════════════════
+
+planning_agents:
+  task_planner:
+    name: "task-planner"
+    subagent_type: "task-planner"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "planning"
+    purpose: "Декомпозиция сложных задач на подзадачи с зависимостями"
+    model: "opus"
+    tools: ["Read", "Grep", "Glob", "Bash", "Write"]
+    background: true
+
+    triggers:
+      # Сложность
+      complexity_keywords:
+        - "сложная задача"
+        - "большая задача"
+        - "разбить на этапы"
+        - "декомпозиция"
+        - "подзадачи"
+        - "зависимости между"
+        - "последовательность"
+        - "порядок выполнения"
+
+      # Множественность
+      multiplicity_indicators:
+        - "несколько компонентов"
+        - "несколько сервисов"
+        - "несколько таблиц"
+        - "много файлов"
+        - "изменения в"
+        - "затрагивает"
+        - "влияет на"
+
+    when_to_use: "Для сложных задач (>3 файлов, >2 пакетов)"
+    mandatory: false
+
+    output: ".memory_bank/agent_task_results/{DATE}_plan_{feature}.md"
+
+  api_designer:
+    name: "api-designer"
+    subagent_type: "api-designer"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "planning"
+    purpose: "Проектирование API endpoints (gRPC, REST, JSON-RPC)"
+    model: "opus"
+    tools: ["Read", "Write", "Grep", "Glob"]
+    background: true
+
+    triggers:
+      # Endpoints
+      endpoint_keywords:
+        - "endpoint"
+        - "handler"
+        - "route"
+        - "метод API"
+        - "API метод"
+        - "добавить endpoint"
+        - "создать handler"
+
+      # Протоколы
+      protocol_keywords:
+        - "gRPC"
+        - "REST"
+        - "JSON-RPC"
+        - "HTTP"
+        - "RPC"
+
+      # Контракты
+      contract_keywords:
+        - "контракт"
+        - "proto"
+        - "protobuf"
+        - "спецификация API"
+        - "OpenAPI"
+        - "swagger"
+
+      # File patterns
+      file_patterns:
+        - "internal/grpc/proto/"
+        - "internal/web/"
+        - "internal/handlers/"
+        - ".proto"
+
+    when_to_use: "При создании новых API endpoints или изменении контрактов"
+    mandatory: false
+
+    output: ".memory_bank/agent_task_results/{DATE}_api-design_{feature}.md"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEBUGGING AGENTS (для отладки и исправления ошибок)
+# ═══════════════════════════════════════════════════════════════════════════
+
+debugging_agents:
+  # Типичные ошибки в PRODUCTION CODE (НЕ тесты)
+  debugger:
+    name: "debugger"
+    subagent_type: "debugger"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "debugging"
+    purpose: "Ошибки в PRODUCTION CODE (*.go): компиляция, runtime, linter, DI"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Grep", "Glob", "Bash", "Write"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        # Compilation (в *.go, НЕ *_test.go)
+        - "cannot find"
+        - "undefined"
+        - "type mismatch"
+        - "syntax app_error"
+        - "import cycle"
+        # Linter (требует логики)
+        - "errcheck"
+        - "staticcheck"
+        - "ineffassign"
+        # Runtime
+        - "nil pointer"
+        - "index out of range"
+        - "panic"
+        # DI
+        - "missing dependency"
+        - "invoke failed"
+        - "circular dependency"
+
+    when_to_use: "Ошибки в production code (*.go БЕЗ _test.go)"
+
+    does_not_handle:
+      - "*_test.go errors → unit-test-writer"
+      - "FAIL, got X want Y → unit-test-writer"
+      - "mock not satisfied → unit-test-writer"
+      - "DATA RACE → debugger-complex"
+      - "deadlock → debugger-complex"
+      - "flaky tests → debugger-complex"
+
+    file_filter: "*.go (excluding *_test.go)"
+
+    standards:
+      lazy_loading: true
+      index: ".claude/guides/rules_index.yaml"
+
+    output: ".memory_bank/agent_task_results/{DATE}_debug_{issue}.md"
+
+  # Сложные ошибки: race, deadlock, concurrency, flaky, multi-file
+  debugger-complex:
+    name: "debugger-complex"
+    subagent_type: "debugger-complex"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "debugging"
+    purpose: "Сложные ошибки: race, deadlock, goroutine leak, flaky tests, multi-file logic"
+    model: "opus"  # Глубокий reasoning для сложных случаев
+    tools: ["Read", "Edit", "Grep", "Glob", "Bash", "Write"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "DATA RACE"
+        - "race detected"
+        - "concurrent read/write"
+        - "deadlock"
+        - "all goroutines are asleep"
+        - "goroutine leak"
+        - "leaked goroutine"
+        - "never terminates"
+        - "flaky"
+        - "intermittent"
+        - "sometimes fails"
+        - "send on closed channel"
+        - "blocked on chan"
+        - "FSM"
+        - "invalid transition"
+
+    when_to_use: "Сложные ошибки требующие stress testing, wait-for graph, call graph analysis"
+
+    exclusive_to_this_agent:
+      - "Race conditions (multi-goroutine happens-before)"
+      - "Deadlocks (wait-for graph)"
+      - "Goroutine leaks (lifecycle tracing)"
+      - "Flaky tests (stress testing)"
+      - "Channel issues (ownership patterns)"
+      - "Multi-file logic (3+ files in trace)"
+
+    standards:
+      always_load:
+        - ".claude/guides/golang/effective_concurrency.md"
+        - ".claude/guides/libs/concurrency_patterns.md"
+
+    output: ".memory_bank/agent_task_results/{DATE}_debug_{issue}.md"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INFRASTRUCTURE AGENTS (для DevOps и инфраструктуры)
+# ═══════════════════════════════════════════════════════════════════════════
+
+infrastructure_agents:
+  devops_engineer:
+    name: "devops-engineer"
+    subagent_type: "general-purpose"  # Virtual agent - uses general-purpose
+    native_subagent: false
+    instruction_file: ".claude/agents/devops-engineer.md"
+    category: "infrastructure"
+    purpose: "DevOps и инфраструктурные задачи"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "TodoWrite", "Skill", "SlashCommand"]
+    background: true
+
+    # HOW TO CALL:
+    # Task(subagent_type="general-purpose",
+    #      prompt="<read .claude/agents/devops-engineer.md>\n\nTask: <your task>")
+
+    triggers:
+      # Контейнеризация
+      containerization_keywords:
+        - "Docker"
+        - "docker-compose"
+        - "Dockerfile"
+        - "контейнер"
+        - "образ"
+        - "image"
+
+      # Оркестрация
+      orchestration_keywords:
+        - "Kubernetes"
+        - "k8s"
+        - "deployment"
+        - "pod"
+        - "service mesh"
+        - "helm"
+
+      # CI/CD
+      cicd_keywords:
+        - "CI/CD"
+        - "pipeline"
+        - "GitHub Actions"
+        - "deploy"
+        - "деплой"
+        - "релиз"
+        - "release"
+
+      # Мониторинг
+      monitoring_keywords:
+        - "Prometheus"
+        - "Grafana"
+        - "метрики"
+        - "metrics"
+        - "алерты"
+        - "alerts"
+        - "логирование"
+        - "logging"
+
+      # File patterns
+      file_patterns:
+        - "docker-compose"
+        - "Dockerfile"
+        - ".github/workflows/"
+        - "deployments/"
+        - "k8s/"
+        - "kubernetes/"
+
+    when_to_use: "Для задач связанных с инфраструктурой, деплоем и мониторингом"
+    mandatory: false
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DATABASE AGENTS (DBA - специалисты по базам данных)
+# ═══════════════════════════════════════════════════════════════════════════
+
+database_agents:
+  repository_mysql:
+    name: "repository-mysql"
+    subagent_type: "repository-mysql"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "MySQL"
+    purpose: "Написание Go repository кода с MySQL"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      # Database operations
+      database_keywords:
+        - "MySQL"
+        - "база данных"
+        - "БД"
+        - "database"
+        - "сохранить в"
+        - "записать в базу"
+        - "прочитать из базы"
+        - "получить из БД"
+
+      # Tables
+      table_keywords:
+        - "таблица"
+        - "table"
+        - "миграция"
+        - "migration"
+        - "схема"
+        - "schema"
+
+      # Queries
+      query_keywords:
+        - "запрос"
+        - "query"
+        - "SELECT"
+        - "INSERT"
+        - "UPDATE"
+        - "DELETE"
+        - "выборка"
+
+      # ORM
+      repository_keywords:
+        - "GORM"
+        - "repository"
+        - "репозиторий"
+        - "dao"
+
+      # File patterns
+      file_patterns:
+        - "database/mysql_migrations/"
+        - "internal/repository/"
+
+    when_to_use: "При работе с MySQL (основная БД проекта)"
+    mandatory_for: ["database", "repository", "persistence", "mysql"]
+
+    guides: ".claude/guides/dba/mysql/"
+
+  repository_mongodb:
+    name: "repository-mongodb"
+    subagent_type: "repository-mongodb"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "MongoDB"
+    purpose: "Написание Go repository кода с MongoDB"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      database_keywords:
+        - "MongoDB"
+        - "Mongo"
+        - "документ"
+        - "document"
+        - "коллекция"
+        - "collection"
+
+      data_type_keywords:
+        - "historical data"
+        - "исторические данные"
+        - "time-series"
+        - "временные ряды"
+        - "логи"
+        - "события"
+
+      mongodb_specific:
+        - "aggregation"
+        - "pipeline"
+        - "bson"
+
+      file_patterns:
+        - "internal/repository/mongodb/"
+
+    when_to_use: "Для работы с MongoDB (historical/time-series data в проекте)"
+    mandatory_for: ["historical_data", "time_series", "mongodb"]
+
+    guides: ".claude/guides/dba/mongodb/"
+
+  repository_postgres:
+    name: "repository-postgres"
+    subagent_type: "repository-postgres"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "PostgreSQL"
+    purpose: "Написание Go repository кода с PostgreSQL"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      database_keywords:
+        - "PostgreSQL"
+        - "Postgres"
+        - "postgres"
+        - "pgx"
+        - "pgxpool"
+
+      postgres_specific:
+        - "JSONB"
+        - "full-text search"
+        - "partitioning"
+        - "transaction isolation"
+
+    when_to_use: "Если планируется использование PostgreSQL"
+    mandatory_for: ["postgres", "postgresql"]
+
+    guides: ".claude/guides/dba/postgres/"
+
+  repository_clickhouse:
+    name: "repository-clickhouse"
+    subagent_type: "repository-clickhouse"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "ClickHouse"
+    purpose: "Написание Go repository кода с ClickHouse"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      database_keywords:
+        - "ClickHouse"
+        - "Clickhouse"
+        - "clickhouse"
+
+      use_case_keywords:
+        - "OLAP"
+        - "аналитика"
+        - "analytics"
+        - "колоночная"
+        - "columnar"
+        - "большие объёмы"
+        - "агрегация данных"
+
+      clickhouse_specific:
+        - "MergeTree"
+        - "Materialized View"
+        - "ReplicatedMergeTree"
+
+    when_to_use: "Для задач с аналитикой и большими объемами данных"
+    mandatory_for: ["analytics", "olap", "clickhouse"]
+
+    guides: ".claude/guides/dba/clickhouse/"
+
+  repository_redis:
+    name: "repository-redis"
+    subagent_type: "repository-redis"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "Redis"
+    purpose: "Написание Go repository кода с Redis"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      database_keywords:
+        - "Redis"
+        - "redis"
+
+      use_case_keywords:
+        - "кэш"
+        - "cache"
+        - "кэширование"
+        - "caching"
+        - "pub/sub"
+        - "streams"
+        - "очередь"
+        - "queue"
+
+      redis_specific:
+        - "distributed lock"
+        - "rate limiting"
+        - "sessions"
+        - "TTL"
+
+    when_to_use: "Для кэширования, pub/sub и real-time features"
+    mandatory_for: ["cache", "redis", "pubsub"]
+
+    guides: ".claude/guides/dba/redis/"
+
+  repository_sqlite:
+    name: "repository-sqlite"
+    subagent_type: "repository-sqlite"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "SQLite"
+    purpose: "Написание Go repository кода с SQLite"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      database_keywords:
+        - "SQLite"
+        - "sqlite"
+
+      use_case_keywords:
+        - "embedded"
+        - "локальная БД"
+        - "local database"
+        - "file database"
+
+      sqlite_specific:
+        - "WAL"
+        - "FTS5"
+        - "full-text search"
+
+    when_to_use: "Для embedded database и локального хранилища"
+    mandatory_for: ["sqlite", "embedded_db"]
+
+    guides: ".claude/guides/dba/sqlite/"
+
+  repository_qdrant:
+    name: "repository-qdrant"
+    subagent_type: "repository-qdrant"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "database"
+    database: "Qdrant"
+    purpose: "Написание Go repository кода с Qdrant"
+    model: "sonnet"
+    tools: ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+    background: true
+
+    triggers:
+      database_keywords:
+        - "Qdrant"
+        - "qdrant"
+
+      use_case_keywords:
+        - "векторный поиск"
+        - "vector search"
+        - "embeddings"
+        - "semantic search"
+        - "similarity"
+        - "похожие"
+        - "рекомендации"
+        - "recommendations"
+
+      ai_keywords:
+        - "AI"
+        - "ML"
+        - "machine learning"
+        - "искусственный интеллект"
+
+    when_to_use: "Для vector search, рекомендаций и AI/ML features"
+    mandatory_for: ["vector_search", "qdrant", "embeddings"]
+
+    guides: ".claude/guides/dba/qdrant/"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# UTILITY AGENTS (вспомогательные агенты)
+# ═══════════════════════════════════════════════════════════════════════════
+
+utility_agents:
+  bash_command_runner:
+    name: "bash-command-runner"
+    subagent_type: "bash-command-runner"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "utility"
+    purpose: "Выполнение команд Claude CLI в терминале"
+    model: "haiku"
+    tools: ["Bash"]
+    background: false  # Короткие команды - НЕ background
+
+    when_to_use: "Только в команде /run-tasks для запуска claude /{command}"
+    note: "ТОЛЬКО bash команды, нет других инструментов"
+
+  report_aggregator:
+    name: "report-aggregator"
+    subagent_type: "report-aggregator"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "utility"
+    purpose: "Агрегация YAML отчётов от суб-агентов"
+    model: "sonnet"
+    tools: ["Read", "Write", "Glob", "Bash"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "агрегировать отчёты"
+        - "объединить отчёты"
+        - "финальный отчёт"
+
+    when_to_use: "После завершения множественных code-review/test-review"
+
+    supported_report_types:
+      - "code-review"
+      - "test-review"
+      - "code-research"
+      - "web-research"
+
+    output: "task_management/reviews/{TASK_ID}-AGGREGATED-REPORT.yaml"
+
+  doc_generator:
+    name: "doc-generator"
+    subagent_type: "doc-generator"
+    native_subagent: true  # Built-in Claude Code agent
+    category: "utility"
+    purpose: "Генерация и обновление документации"
+    model: "sonnet"
+    tools: ["Read", "Write", "Grep", "Glob", "Bash"]
+    background: true
+    mode: "acceptEdits"
+
+    triggers:
+      keywords:
+        - "документация"
+        - "documentation"
+        - "README"
+        - "godoc"
+        - "комментарии"
+
+    when_to_use: "При создании публичного API, обновлении README, godoc"
+
+    types: ["API docs", "godoc comments", "package docs", "README"]
+
+    output: ".memory_bank/agent_task_results/{DATE}_docs_{scope}.md"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GIT AGENTS (для работы с git)
+# ═══════════════════════════════════════════════════════════════════════════
+
+git_agents:
+  git_commit_manager:
+    name: "git-commit-manager"
+    subagent_type: "general-purpose"  # Virtual agent - uses general-purpose
+    native_subagent: false
+    instruction_file: ".claude/agents/git-commit-manager.md"
+    category: "git"
+    purpose: "Создание и пуш git коммитов с правильным форматированием"
+    model: "sonnet"
+    tools: ["Read", "Bash", "Grep", "Glob"]
+    background: false
+
+    # HOW TO CALL:
+    # Task(subagent_type="general-purpose",
+    #      prompt="<read .claude/agents/git-commit-manager.md>\n\nTask: <your task>")
+
+    triggers:
+      keywords:
+        - "коммит"
+        - "commit"
+        - "закоммитить"
+        - "сохранить изменения"
+
+    when_to_use: "После завершения реализации задачи, фикса бага"
+
+    critical_rules:
+      - "НЕ коммитить в main/master - только feature/bugfix ветки"
+      - "НЕ добавлять Claude/Anthropic атрибуцию - 100% авторство пользователя"
+
+    commit_format: "REQ-XXX-TASK-YYY: Brief description"
+
+  git_pr_manager:
+    name: "git-pr-manager"
+    subagent_type: "general-purpose"  # Virtual agent - uses general-purpose
+    native_subagent: false
+    instruction_file: ".claude/agents/git-pr-manager.md"
+    category: "git"
+    purpose: "Создание pull requests на основе выполненных задач"
+    model: "sonnet"
+    tools: ["Read", "Bash", "Grep", "Glob", "TodoWrite"]
+    background: false
+
+    # HOW TO CALL:
+    # Task(subagent_type="general-purpose",
+    #      prompt="<read .claude/agents/git-pr-manager.md>\n\nTask: <your task>")
+
+    triggers:
+      keywords:
+        - "pull request"
+        - "PR"
+        - "создать PR"
+
+    when_to_use: "После коммита изменений для code review"
+
+    critical_rules:
+      - "НЕ создавать PR из main/master - только из feature/bugfix веток"
+      - "НЕ добавлять Claude/Anthropic атрибуцию"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AGENT SELECTION ALGORITHM
+# ═══════════════════════════════════════════════════════════════════════════
+
+selection_algorithm:
+  description: "Алгоритм автоматического выбора агентов на основе анализа задачи"
+
+  steps:
+    - step: 1
+      action: "Extract keywords from task description"
+      note: "Приводить к нижнему регистру для сравнения"
+
+    - step: 2
+      action: "Extract file patterns from task files"
+      note: "Использовать glob patterns для matching"
+
+    - step: 3
+      action: "Check external libraries"
+      note: "Regex patterns для github.com/, go.uber.org/ и т.д."
+
+    - step: 4
+      action: "Match against agent triggers"
+      note: "Для каждого агента проверить keywords, file_patterns, external_library_patterns"
+
+    - step: 5
+      action: "Add mandatory agents"
+      note: "code-researcher ВСЕГДА для планирования"
+
+    - step: 6
+      action: "Return sorted list of selected agents"
+      note: "Mandatory агенты первыми"
+
+  example:
+    task_description: "Интегрировать Kafka producer для отправки событий в БД MySQL"
+
+    extracted_keywords:
+      - "интегрировать"
+      - "Kafka"
+      - "producer"
+      - "БД"
+      - "MySQL"
+
+    matched_agents:
+      - agent: "code-researcher"
+        reason: "mandatory"
+      - agent: "web-searcher"
+        reason: "keyword: 'интегрировать'"
+      - agent: "repository-mysql"
+        reason: "keywords: 'БД', 'MySQL'"
+
+    not_matched:
+      - agent: "api-designer"
+        reason: "no API/gRPC keywords"
+      - agent: "devops-engineer"
+        reason: "no Docker/k8s keywords"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# METADATA
+# ═══════════════════════════════════════════════════════════════════════════
+
+statistics:
+  total_agents: 27
+
+  by_category:
+    coding: 2
+    review: 3
+    testing: 3
+    research: 2
+    planning: 2
+    debugging: 2
+    infrastructure: 1
+    database: 7
+    utility: 4
+    git: 2
+
+  by_subagent_type:
+    native: 24       # Built-in Claude Code agents (can be called directly)
+    virtual: 3       # Custom agents using general-purpose with instruction files
+
+  virtual_agents:
+    - name: "devops-engineer"
+      instruction_file: ".claude/agents/devops-engineer.md"
+      actual_subagent_type: "general-purpose"
+    - name: "git-commit-manager"
+      instruction_file: ".claude/agents/git-commit-manager.md"
+      actual_subagent_type: "general-purpose"
+    - name: "git-pr-manager"
+      instruction_file: ".claude/agents/git-pr-manager.md"
+      actual_subagent_type: "general-purpose"
+
+  by_background_mode:
+    background: 23
+    synchronous: 4
+
+  mandatory_agents:
+    planning:
+      - "code-researcher"
+
+generation:
+  command: "/refresh_memory_bank"
+  last_updated: "2026-01-30"
+  next_update: "When adding new agents or changing triggers"

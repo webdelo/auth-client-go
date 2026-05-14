@@ -1,0 +1,221 @@
+# Code Review Report Template (YAML)
+# Этот шаблон используется агентом code-reviewer для структурированного вывода
+# Агент-агрегатор объединяет несколько таких отчётов в итоговый
+#
+# ⚠️ MANDATORY: Секция `issues` ОБЯЗАТЕЛЬНА для распознавания скриптом req_status.py
+# Даже если нет замечаний, секция должна присутствовать с пустыми массивами:
+#   issues:
+#     critical: []
+#     warnings: []
+#     suggestions: []
+
+# === METADATA ===
+metadata:
+  date: "YYYY-MM-DD"
+  reviewer: "code-reviewer"
+  package: "lib/package_name"
+  files_reviewed: 0
+
+# === STATIC ANALYSIS ===
+static_analysis:
+  build:
+    status: "pass"  # pass | fail
+    errors: []
+  fmt:
+    status: "pass"
+    files_need_formatting: []
+  vet:
+    status: "pass"
+    errors: []
+  lint:
+    status: "pass"
+    issues: []
+  tests:
+    status: "pass"
+    failed: []
+    coverage: "0%"
+
+# === ISSUES ===
+# Каждый issue имеет уникальный id в формате {PACKAGE}-{TYPE}-{NUMBER}
+# TYPE: C (critical), W (warning), S (suggestion)
+#
+# КАТЕГОРИИ (category):
+#   STYLE         - форматирование, именование, пустые строки
+#   LOGIC         - логика кода, условия, обработка ошибок
+#   CONCURRENCY   - горутины, каналы, race conditions
+#   PERFORMANCE   - оптимизация, аллокации
+#   TESTS         - тесты, покрытие
+#   COMPILATION   - ошибки компиляции
+#   RUNTIME       - runtime ошибки, nil pointer, panic
+#   SECURITY      - уязвимости безопасности
+issues:
+  critical:
+    - id: "PKG-C001"
+      category: "LOGIC"  # ОБЯЗАТЕЛЬНОЕ ПОЛЕ
+      title: "Краткое описание проблемы"
+      file: "path/to/file.go"
+      line: 123
+      standard: "effective_standards.md Section X"
+      description: |
+        Подробное описание проблемы.
+        Почему это критично.
+      current_code: |
+        // Текущий код
+        func example() {
+        }
+      recommended_fix: |
+        // Рекомендуемое исправление
+        func example(ctx context.Context) {
+        }
+      reason: "Причина, почему это нужно исправить"
+
+  warnings:
+    - id: "PKG-W001"
+      category: "STYLE"  # ОБЯЗАТЕЛЬНОЕ ПОЛЕ
+      title: "Краткое описание"
+      file: "path/to/file.go"
+      line: 45
+      standard: "coding_style.md Section Y"
+      description: |
+        Описание проблемы.
+      current_code: |
+        // Текущий код
+      recommended_fix: |
+        // Исправление
+      reason: "Причина"
+
+  suggestions:
+    - id: "PKG-S001"
+      category: "PERFORMANCE"  # ОБЯЗАТЕЛЬНОЕ ПОЛЕ
+      title: "Краткое описание"
+      file: "path/to/file.go"
+      line: 78
+      description: |
+        Рекомендация по улучшению.
+      recommended_fix: |
+        // Улучшенный вариант
+
+# === SUMMARY ===
+summary:
+  critical_count: 0
+  warning_count: 0
+  suggestion_count: 0
+
+# === POSITIVE OBSERVATIONS ===
+# Что сделано хорошо в коде
+positive:
+  - "Отличное использование Functional Options Pattern"
+  - "Правильная обработка ошибок с context"
+
+# === RULES VERIFIED ===
+# ОБЯЗАТЕЛЬНАЯ СЕКЦИЯ - подтверждение проверки всех правил
+# Отчёт без этой секции считается НЕДЕЙСТВИТЕЛЬНЫМ
+rules_verified:
+  # Источник правил
+  rules_index: ".claude/guides/golang/rules_index.yaml"
+
+  # Priority 1: effective_standards.md (ES-*)
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0051"  # Interface at consumer
+      - "ES-0060"  # Handle errors explicitly
+      - "ES-0061"  # Wrap errors with context
+      - "ES-0063"  # No panic
+      # ... добавить все применённые правила
+    critical_rules_verified:
+      ES-0051: true  # Interface at consumer
+      ES-0060: true  # Handle errors explicitly
+      ES-0063: true  # No panic
+    issues_found_by_rule:
+      ES-0051: 0
+      ES-0060: 1
+      # ... количество issues по каждому правилу
+
+  # Priority 2: effective_concurrency.md (EC-*)
+  effective_concurrency:
+    checked: true  # false если нет concurrency кода
+    concurrency_detected: true
+    trigger_keywords_found:
+      - "sync.Mutex"
+      - "atomic.Bool"
+      - "go func"
+    total_rules: 35
+    rules_applied:
+      - "EC-0062"  # Swap for entry guards
+      - "EC-0063"  # Don't mix atomic and mutex
+      - "EC-0064"  # Max 1 mutex per method
+      # ... добавить все применённые правила
+    critical_rules_verified:
+      EC-0062: true  # Swap for entry guards
+      EC-0063: true  # Don't mix atomic and mutex
+      EC-0064: true  # Max 1 mutex per method
+      EC-0081: true  # Wait for goroutines
+      EC-0091: true  # Capture loop variables
+    issues_found_by_rule:
+      EC-0063: 1
+      # ... количество issues по каждому правилу
+
+  # Priority 3: coding_style.md (CS-*)
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0010"  # Empty line after blocks
+      - "CS-0050"  # Entity per package
+      # ... добавить все применённые правила
+    issues_found_by_rule:
+      CS-0010: 5
+      # ... количество issues по каждому правилу
+
+  # Validation
+  validation:
+    all_critical_rules_checked: true
+    unchecked_rules: []
+    skip_reason: null
+
+# === DOD CHECKLIST ===
+# ОБЯЗАТЕЛЬНАЯ СЕКЦИЯ - чеклист для проверки полноты выполнения задачи
+# Формируется из секции DOD в TASK файле
+dod_checklist:
+  task_file: "task_management/tasks/{TASK-ID}.md:1"
+  criteria:
+    - id: "DOD-001"
+      description: "Build успешен"
+      check_command: "make build"
+      status: "pending"  # pending | passed | failed
+      mandatory: true
+
+    - id: "DOD-002"
+      description: "Все тесты проходят"
+      check_command: "make test"
+      status: "pending"
+      mandatory: true
+
+    - id: "DOD-003"
+      description: "Линтер проходит"
+      check_command: "make lint"
+      status: "pending"
+      mandatory: true
+
+    # Добавить критерии из TASK DOD секции:
+    # - id: "DOD-004"
+    #   description: "Deprecated код удалён"
+    #   check_command: "Grep pattern='LoadConfig\\(' path='internal/fx'"
+    #   expected: "0 matches"
+    #   status: "pending"
+    #   mandatory: true
+
+  total_criteria: 3
+  mandatory_criteria: 3
+  note: |
+    ВСЕ критерии DOD ОБЯЗАТЕЛЬНЫ к выполнению.
+    При исправлении замечаний (/execute-bug-fix) проверить КАЖДЫЙ критерий.
+    Code-reviewer проверяет КАЧЕСТВО, DOD validation проверяет ПОЛНОТУ.
+
+# === VERDICT ===
+# APPROVED | APPROVED_WITH_COMMENTS | CHANGES_REQUESTED
+verdict: "CHANGES_REQUESTED"
+verdict_reason: "Есть критические замечания, требующие исправления"
+

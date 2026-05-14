@@ -1,0 +1,81 @@
+# Tasks List Template
+#
+# Purpose:
+#   Track project tasks with their status, PRPs, and blockers.
+#   Used by AI agents to manage and prioritize work.
+#
+# Status Reference:
+#   Feature tasks (TASK-XXX):
+#     pending PRP -> PRP generated -> in progress -> pending review -> reviewed -> completed
+#   Architecture (ADR-XXX):
+#     pending analysis -> analysis complete -> ADR drafted -> pending review -> reviewed -> approved
+#   Research (RESEARCH-XXX):
+#     pending research -> in progress -> research complete -> documented -> reviewed
+#   Bug fixes (BUGFIX-XXX):
+#     pending analysis -> analysis complete -> in progress -> pending review -> reviewed -> completed
+
+---
+# Metadata
+template_name: "Tasks List"
+template_version: "1.0"
+updated_at: ""  # ISO 8601 datetime
+
+# Active Tasks - Currently in progress
+active_tasks:
+  - task_id: ""  # e.g., TASK-001
+    branch: ""  # e.g., feature/TASK-001-description
+    description: ""
+    prp_file: ""  # Path to PRP file, empty if not generated
+    status: "in progress"
+    blockers: []  # List of blocking issues
+    assignee: ""  # Optional
+
+# Pending Tasks - Ready to start but not begun
+pending_tasks:
+  - task_id: ""
+    branch: ""
+    description: ""
+    prp_file: ""
+    status: "pending PRP"
+    blockers: []
+    priority: ""  # high | medium | low
+    depends_on: []  # List of task_ids this depends on
+
+# Completed Tasks
+completed_tasks:
+  - task_id: ""
+    branch: ""
+    description: ""
+    status: "completed"
+    completed_at: ""  # ISO 8601 datetime
+    pr_link: ""  # Optional: link to merged PR
+
+# Status Definitions (for reference)
+status_definitions:
+  feature:
+    - "pending PRP"
+    - "PRP generated"
+    - "in progress"
+    - "pending review"
+    - "reviewed"
+    - "completed"
+  architecture:
+    - "pending analysis"
+    - "analysis complete"
+    - "ADR drafted"
+    - "pending review"
+    - "reviewed"
+    - "approved"
+  research:
+    - "pending research"
+    - "in progress"
+    - "research complete"
+    - "documented"
+    - "reviewed"
+  bugfix:
+    - "pending analysis"
+    - "analysis complete"
+    - "in progress"
+    - "pending review"
+    - "reviewed"
+    - "completed"

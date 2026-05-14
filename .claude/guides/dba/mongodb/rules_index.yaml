@@ -1,0 +1,74 @@
+# MongoDB DBA Rules Index
+# Детальный индекс правил MongoDB для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "MG"
+  total_rules: 88
+  rule_id_range: "MG-001..MG-411"
+  last_updated: "2026-03-10"
+
+keywords:
+  - "mongodb"
+  - "mongo"
+  - "bson"
+  - "aggregation pipeline"
+  - "document"
+  - "collection"
+  - "mongo-go-driver"
+  - "FindOne"
+  - "InsertMany"
+  - "UpdateOne"
+  - "$match"
+  - "$group"
+  - "$project"
+  - "$lookup"
+
+skill: ".claude/skills/mongodb-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "mongo-go-driver, BSON marshaling, client setup"
+    priority: 1
+    rule_id_range: "MG-001..MG-017"
+    rules_count: 17
+    keywords: ["mongo-go-driver", "bson", "client", "collection", "FindOne", "InsertMany"]
+  - path: "query_patterns.md"
+    description: "Find, aggregation pipeline, $match/$group/$project"
+    priority: 2
+    rule_id_range: "MG-100..MG-123"
+    rules_count: 24
+    keywords: ["aggregation", "$match", "$group", "$project", "$lookup", "pipeline"]
+  - path: "optimization.md"
+    description: "Indexes, query profiler, schema design"
+    priority: 2
+    rule_id_range: "MG-200..MG-222"
+    rules_count: 23
+    keywords: ["index", "profiler", "optimization", "schema", "compound index"]
+  - path: "replication.md"
+    description: "Replica sets, write concern, read preference"
+    priority: 3
+    rule_id_range: "MG-300..MG-318"
+    rules_count: 19
+    keywords: ["replica", "write concern", "read preference", "failover"]
+  - path: "aggregation.md"
+    description: "Aggregation framework, pipeline stages, window functions"
+    priority: 2
+    rule_id_range: "MG-400..MG-411"
+    rules_count: 12
+    keywords: ["aggregation", "$facet", "$bucket", "window", "$merge"]
+
+key_rules:
+  - id: "MG-001"
+    rule: "Use struct tags for BSON mapping"
+    example: "`bson:\"field_name,omitempty\"`"
+    critical: true
+  - id: "MG-002"
+    rule: "Create indexes for query patterns"
+    critical: true
+  - id: "MG-003"
+    rule: "Use aggregation pipeline for complex queries"
+  - id: "MG-004"
+    rule: "Avoid unbounded arrays in documents"
+    critical: true
+  - id: "MG-005"
+    rule: "Use projection to limit returned fields"

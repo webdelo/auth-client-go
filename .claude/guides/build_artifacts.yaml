@@ -1,0 +1,155 @@
+# Build Artifacts Management
+# Правила размещения временных файлов и артефактов сборки
+
+version: "1.0"
+category: infrastructure
+priority: high
+
+rules:
+  - id: BUILD-0001
+    title: "Test Binary Location"
+    severity: app_error
+    description: |
+      Test binaries MUST be created in .temp/ directory, never in root or package directories.
+
+    rationale: |
+      - Keeps repository clean
+      - Prevents accidental commits
+      - Centralizes test artifacts separately from build artifacts
+      - Matches .gitignore rules
+
+    correct_usage:
+      - "make test-compile PKG=path/to/package  # PREFERRED - Makefile handles paths correctly"
+      - "go test -c -o .temp/producer.test ./lib/core/producer  # If make not available"
+      - "go test -c -o .temp/$(basename $pkg).test $pkg  # Batch compilation"
+
+    incorrect_usage:
+      - "go test -c ./lib/core/producer  # Creates producer.test in current dir"
+      - "go test -c -o producer.test  # Missing .temp/ prefix"
+      - "cd lib/core/producer && go test -c  # Creates in package dir"
+
+    enforcement:
+      - "Always use -o .temp/NAME.test flag with go test -c"
+      - "Never run go test -c without explicit output path"
+      - "Use make test-compile PKG=path for compilation"
+
+  - id: BUILD-0002
+    title: "Report File Locations"
+    severity: app_error
+    description: |
+      All reports and analysis files must be placed in designated directories.
+
+    directory_structure:
+      agent_reports: ".memory_bank/agent_task_results/"
+      task_results: "task_management/results/"
+      test_artifacts: ".temp/"
+      benchmarks: "benchmarks/"
+      build_artifacts: ".build/"
+
+    file_types:
+      agent_task_results:
+        - "CODE-REVIEW-*.yaml"
+        - "BUG-REPORT-*.yaml"
+        - "TEST-REVIEW-*.yaml"
+        - "REFACTORING-*.yaml"
+
+      task_results:
+        - "TASK-*-RESULT.yaml"
+        - "TEST_*.md"
+        - "WORK_SUMMARY.md"
+
+      never_in_root:
+        - "*.test"
+        - "*.out"
+        - "*.prof"
+        - "*_REPORT.md"
+        - "*_ANALYSIS.md"
+        - "*_SUMMARY.md"
+
+  - id: BUILD-0003
+    title: "Temporary File Cleanup"
+    severity: warning
+    description: |
+      Temporary files created during development must be cleaned up after use.
+
+    cleanup_commands:
+      - "make test-clean  # Removes .temp/, stray *.test files"
+      - "make build-clean  # Removes .build/"
+      - "rm -f *.test  # Remove stray test binaries"
+      - "rm -f *.out *.prof  # Remove profiles"
+
+    prevention:
+      - "Use designated directories from the start"
+      - "Add cleanup step to agent workflows"
+      - "Check git status before task completion"
+
+examples:
+  - title: "Compiling test binary correctly"
+    before: |
+      # ❌ WRONG - creates producer.test in current directory
+      go test -c ./lib/core/producer
+
+    after: |
+      # ✅ CORRECT - use make target
+      make test-compile PKG=lib/core/producer
+      # Or manually: go test -c -o .temp/producer.test ./lib/core/producer
+
+  - title: "Saving agent reports"
+    before: |
+      # ❌ WRONG - creates report in root
+      Write("CODE-REVIEW-producer.yaml", content)
+
+    after: |
+      # ✅ CORRECT - creates in agent_task_results
+      Write(".memory_bank/agent_task_results/CODE-REVIEW-producer.yaml", content)
+
+agent_instructions:
+  code-writer:
+    - "Prefer 'make test-compile PKG=path' over direct go test -c commands"
+    - "If using go test -c directly, MUST use -o .temp/name.test"
+
+  code-reviewer:
+    - "Save reports to .memory_bank/agent_task_results/"
+    - "Format: CODE-REVIEW-{package}-{timestamp}.yaml"
+
+  test-reviewer:
+    - "Save reports to .memory_bank/agent_task_results/"
+    - "Format: TEST-REVIEW-{package}-{timestamp}.yaml"
+
+  unit-test-writer:
+    - "Prefer 'make test-compile PKG=path' when test binaries needed"
+    - "Never use go test -c without explicit -o .temp/ path"
+    - "Use 'make test-clean' to cleanup after testing"
+
+verification:
+  pre_commit_checks:
+    - "git status | grep -E '\\.(test|out|prof)$'  # Should be empty"
+    - "find . -maxdepth 1 -name '*.test' -o -name '*_REPORT.md'  # Should be empty"
+    - "ls .memory_bank/agent_task_results/*.yaml  # Should exist"
+
+when_to_apply:
+  description: |
+    These rules apply when Claude Code directly executes commands, NOT when using Makefile targets.
+
+  use_makefile_when_available: |
+    PREFERRED: Use 'make test-compile PKG=path' (Makefile handles paths correctly)
+    AVOID: Direct 'go test -c' commands (easy to put binaries in wrong place)
+
+  direct_command_rules:
+    - "If you must use 'go test -c' directly, follow BUILD-0001"
+    - "Always prefer 'make test-compile PKG=path' over manual go test -c"
+    - "Use 'make test-clean' to cleanup test artifacts"
+
+references:
+  - file: "makefile"
+    line: "160"
+    note: "TEMP_DIR := .temp definition"
+
+  - file: "makefile"
+    line: "177-186"
+    note: "test-compile target implementation"
+
+  - file: ".gitignore"
+    line: "18-19"
+    note: "Test artifacts ignore patterns (.temp/, *.test)"
+

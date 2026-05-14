@@ -1,0 +1,51 @@
+# Debug Report Template
+# Отчет о результатах исправления багов из Code Review или Bug Report
+
+metadata:
+  date: "YYYY-MM-DD"
+  task_id: "REQ-XXX-TASK-YYY"
+  source_report: "path/to/source/report.yaml"
+  source_type: "CODE_REVIEW"  # или BUG_REPORT
+  executor: "Claude Code"
+
+pre_validation:
+  required: true
+  fixes:
+    compilation_errors: 0
+    test_failures: 0
+    lint_errors: 0
+    race_conditions: 0
+
+fixes:
+  # Пример записи исправления:
+  # - id: "CORE-W001"
+  #   title: "Brief issue description"
+  #   category: "STYLE|LOGIC|PERFORMANCE|SECURITY|TESTING"
+  #   priority: "CRITICAL|HIGH|MEDIUM|LOW|WARNING|SUGGESTION"
+  #   status: "FIXED|SKIPPED|FAILED"
+  #   file: "path/to/file.go"
+  #   line: 123
+  #   fix_description: "What was changed to fix this issue"
+  #   test_added: true|false
+  #   test_file: "path/to/test.go"  # если test_added: true
+  #   skip_reason: "Reason why skipped"  # если status: SKIPPED
+
+summary:
+  total_issues: 0
+  fixed: 0
+  skipped: 0
+  failed: 0
+  tests_added: 0
+
+final_validation:
+  build: "PASS|FAIL"
+  tests: "PASS|FAIL"
+  lint: "PASS|FAIL"
+  race: "PASS|FAIL"
+
+verdict: "ALL_FIXED|PARTIAL|FAILED"
+verdict_reason: "Detailed explanation of the final verdict"
+
+notes: |
+  Optional additional notes about the fixing process,
+  challenges encountered, or decisions made.

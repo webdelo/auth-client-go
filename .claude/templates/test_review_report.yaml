@@ -1,0 +1,151 @@
+# Test Review Report Template (YAML)
+# Используется агентом test-reviewer для структурированного вывода
+# Может быть агрегирован report-aggregator
+
+# === METADATA ===
+metadata:
+  date: "YYYY-MM-DD"
+  reviewer: "test-reviewer"
+  package: "path/to/package"
+  files_reviewed: 0
+  total_tests: 0
+  coverage_percent: 0.0
+
+# === TEST RESULTS ===
+test_results:
+  status: "pass"  # pass | fail
+  passed: 0
+  failed: 0
+  skipped: 0
+  duration_seconds: 0.0
+  failed_tests:
+    - name: "TestExample_Method"
+      file: "example_test.go"
+      line: 123
+      error: "assertion failed: expected X, got Y"
+
+# === STANDARDS COMPLIANCE ===
+standards_compliance:
+  naming_convention:
+    test_type_method_format:
+      status: "pass"  # pass | fail
+      violations: []
+    happy_path_first:
+      status: "pass"
+      violations: []
+
+  table_driven_tests:
+    pattern_used:
+      status: "pass"
+      violations: []
+    parallel_execution:
+      status: "pass"
+      violations:
+        - file: "example_test.go"
+          line: 45
+          issue: "Missing t.Parallel() in subtest"
+
+  assertions:
+    require_vs_assert:
+      status: "pass"
+      violations: []
+    no_logic_in_tests:
+      status: "pass"
+      violations: []
+
+  mocks:
+    call_count_specified:
+      status: "pass"
+      violations: []
+    no_mock_anything_business:
+      status: "pass"
+      violations: []
+    new_mocks_per_subtest:
+      status: "pass"
+      violations: []
+    assert_expectations:
+      status: "pass"
+      violations: []
+
+# === ISSUES ===
+issues:
+  critical:
+    - id: "TEST-C001"
+      title: "Missing t.Parallel()"
+      file: "example_test.go"
+      line: 45
+      standard: "unit_tests_standards.md Section: Parallel Execution"
+      description: |
+        Test and subtests should run in parallel for faster execution.
+      current_code: |
+        func TestExample_Method(t *testing.T) {
+            // missing t.Parallel()
+        }
+      recommended_fix: |
+        func TestExample_Method(t *testing.T) {
+            t.Parallel()
+            // ...
+        }
+      reason: "Enables parallel test execution and detects race conditions"
+
+  warnings:
+    - id: "TEST-W001"
+      title: "Using mock.Anything for business data"
+      file: "service_test.go"
+      line: 78
+      standard: "unit_tests_standards.md Section: Mock Assertions"
+      description: |
+        mock.Anything should only be used for context and logger,
+        not for business-critical data verification.
+      current_code: |
+        mockRepo.On("Save", mock.Anything, mock.Anything).Return(nil)
+      recommended_fix: |
+        mockRepo.On("Save", mock.Anything, expectedEntity).Return(nil)
+      reason: "Business data should be explicitly verified"
+
+  suggestions:
+    - id: "TEST-S001"
+      title: "Consider using go-cmp for struct comparison"
+      file: "handler_test.go"
+      line: 156
+      description: |
+        go-cmp provides better diff output for complex struct comparisons.
+      recommended_fix: |
+        import "github.com/google/go-cmp/cmp"
+        if diff := cmp.Diff(want, got); diff != "" {
+            t.Errorf("mismatch (-want +got):\n%s", diff)
+        }
+
+# === COVERAGE ANALYSIS ===
+coverage:
+  overall_percent: 0.0
+  by_function:
+    - function: "Service.Create"
+      file: "service.go"
+      coverage_percent: 100.0
+    - function: "Service.Update"
+      file: "service.go"
+      coverage_percent: 75.5
+  uncovered_lines:
+    - file: "service.go"
+      lines: [45, 46, 78, 79]
+      reason: "Error handling branch"
+
+# === SUMMARY ===
+summary:
+  critical_count: 0
+  warning_count: 0
+  suggestion_count: 0
+  standards_violations: 0
+  coverage_status: "pass"  # pass (>=80%) | warning (60-80%) | fail (<60%)
+
+# === POSITIVE OBSERVATIONS ===
+positive:
+  - "Good use of table-driven tests"
+  - "Comprehensive app_error case coverage"
+  - "Clear test naming"
+
+# === VERDICT ===
+verdict: "APPROVED"  # APPROVED | APPROVED_WITH_COMMENTS | CHANGES_REQUESTED
+verdict_reason: "All critical standards met, minor improvements suggested"
+

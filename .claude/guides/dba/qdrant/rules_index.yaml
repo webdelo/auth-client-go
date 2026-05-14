@@ -1,0 +1,62 @@
+# Qdrant DBA Rules Index
+# Детальный индекс правил Qdrant для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "QD"
+  total_rules: 107
+  rule_id_range: "QD-001..QD-315"
+  last_updated: "2026-03-10"
+
+keywords:
+  - "qdrant"
+  - "vector"
+  - "embedding"
+  - "similarity"
+  - "semantic search"
+  - "HNSW"
+  - "cosine"
+  - "nearest neighbor"
+  - "qdrant-go"
+
+skill: ".claude/skills/qdrant-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "qdrant-go client, gRPC"
+    priority: 1
+    rule_id_range: "QD-001..QD-030"
+    rules_count: 30
+    keywords: ["qdrant-go", "gRPC", "client", "upsert", "search"]
+  - path: "query_patterns.md"
+    description: "Search, filtering, recommendations"
+    priority: 2
+    rule_id_range: "QD-100..QD-140"
+    rules_count: 41
+    keywords: ["search", "filter", "recommend", "scroll", "payload"]
+  - path: "optimization.md"
+    description: "HNSW tuning, quantization"
+    priority: 2
+    rule_id_range: "QD-200..QD-219"
+    rules_count: 20
+    keywords: ["HNSW", "quantization", "optimization", "ef", "m"]
+  - path: "indexes.md"
+    description: "Payload indexes, filtering optimization"
+    priority: 3
+    rule_id_range: "QD-300..QD-315"
+    rules_count: 16
+    keywords: ["payload index", "filter", "keyword index", "integer index"]
+
+key_rules:
+  - id: "QD-001"
+    rule: "Use gRPC client for better performance"
+    critical: true
+  - id: "QD-002"
+    rule: "Create payload indexes for filtered searches"
+    critical: true
+  - id: "QD-003"
+    rule: "Use quantization for large collections"
+  - id: "QD-004"
+    rule: "Batch upserts for bulk operations"
+    critical: true
+  - id: "QD-005"
+    rule: "Set appropriate HNSW parameters (m, ef)"

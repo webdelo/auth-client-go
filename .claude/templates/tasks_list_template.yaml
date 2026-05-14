@@ -1,0 +1,73 @@
+# Tasks List Template
+# Этот файл содержит список задач проекта в YAML формате
+# Используется для task management и tracking прогресса
+
+# Ожидающие задачи (готовы к выполнению, но не начаты)
+pending_tasks: []
+# Пример:
+# - id: "REQ-001-TASK-005"
+#   jira_id: "FB-05"                                   # Optional: Jira ticket ID (inherited from REQ)
+#   title: "Options Pattern"
+#   branch: "FB-05"                                    # Uses jira_id if present, else feature/REQ-XXX-TASK-YYY
+#   task_file: "tasks/REQ-001-TASK-005.md"           # Путь к файлу задачи
+#   prp_file: "problem_resolving_plans/REQ-001-TASK-005-PRP.md"  # Путь к PRP
+#   status: "prp_ready"                              # prp_ready | pending | blocked
+#   blockers:                                        # Зависимости (ID задач)
+#     - "REQ-001-TASK-004"
+#   priority: "medium"                               # high | medium | low
+#   estimated_complexity: "medium"                   # low | medium | high | critical
+
+# Активные задачи (в работе)
+active_tasks: []
+# Пример:
+# - id: "REQ-001-TASK-002"
+#   jira_id: "FB-02"                                   # Optional: Jira ticket ID (inherited from REQ)
+#   title: "Абстракция транспорта"
+#   branch: "FB-02"                                    # Uses jira_id if present
+#   task_file: "tasks/REQ-001-TASK-002.md"
+#   prp_file: "problem_resolving_plans/REQ-001-TASK-002-PRP.md"
+#   status: "in_progress"                            # in_progress | pending_review | testing
+#   started_at: "2026-01-05"
+#   assignee: ""                                     # Опционально
+#   blockers: []
+
+# Завершённые задачи
+completed_tasks: []
+# Пример:
+# - id: "REQ-001-TASK-001"
+#   jira_id: "FB-01"                                   # Optional: Jira ticket ID (inherited from REQ)
+#   title: "Реструктуризация проекта"
+#   branch: "FB-01"                                    # Uses jira_id if present
+#   task_file: "tasks/REQ-001-TASK-001.md"
+#   result_file: "problem_resolving_results/REQ-001-TASK-001-result-report.md"
+#   status: "completed"                              # completed | merged
+#   completed_at: "2026-01-05"
+#   pr_url: ""                                       # URL pull request (если есть)
+
+# Заблокированные задачи (требуют внешнего действия)
+blocked_tasks: []
+# Пример:
+# - id: "REQ-001-TASK-010"
+#   title: "Тестирование и релиз"
+#   reason: "Ожидает завершения REQ-001-TASK-009"
+#   blocked_by: ["REQ-001-TASK-009"]
+#   blocked_since: "2026-01-05"
+
+# Метаданные
+metadata:
+  generated_at: ""            # Дата генерации (ISO 8601)
+  last_updated: ""            # Дата последнего обновления
+  total_pending: 0
+  total_active: 0
+  total_completed: 0
+  total_blocked: 0
+
+# Статусы задач (справочник)
+# prp_ready     - PRP готов, задача готова к выполнению
+# pending       - Ожидает начала работы
+# blocked       - Заблокирована зависимостями
+# in_progress   - В процессе выполнения
+# pending_review - Ожидает code review
+# testing       - На тестировании
+# completed     - Завершена
+# merged        - PR смержен

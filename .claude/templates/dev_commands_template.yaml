@@ -1,0 +1,143 @@
+# Development Commands Template
+# Этот файл содержит команды разработчика, извлечённые из Makefile
+# При обновлении memory bank заполняется автоматически
+#
+# ВАЖНО: Claude Code должен использовать эти команды вместо дефолтных реализаций,
+# когда это возможно. Это гарантирует консистентность с практиками проекта.
+
+# Команды сборки
+build: []
+# Пример:
+# - command: "make build"
+#   description: "Build the main application"
+#   category: build
+# - command: "make build-docker"
+#   description: "Build Docker image"
+#   category: build
+
+# Команды тестирования
+test: []
+# Пример:
+# - command: "make test"
+#   description: "Run all tests"
+#   category: test
+#   preferred: true           # Предпочтительная команда для данной категории
+# - command: "make test-unit"
+#   description: "Run unit tests only"
+#   category: test
+# - command: "make test-integration"
+#   description: "Run integration tests"
+#   category: test
+# - command: "make test-coverage"
+#   description: "Run tests with coverage report"
+#   category: test
+
+# Команды линтинга и форматирования
+lint: []
+# Пример:
+# - command: "make lint"
+#   description: "Run linters"
+#   category: lint
+#   preferred: true
+# - command: "make fmt"
+#   description: "Format code"
+#   category: lint
+
+# Команды кодогенерации
+generate: []
+# Пример:
+# - command: "make generate"
+#   description: "Run all code generators"
+#   category: generate
+#   preferred: true
+# - command: "make generate-mocks"
+#   description: "Generate mock files"
+#   category: generate
+# - command: "make generate-proto"
+#   description: "Generate protobuf code"
+#   category: generate
+
+# Команды работы с Docker
+docker: []
+# Пример:
+# - command: "make docker-up"
+#   description: "Start Docker containers"
+#   category: docker
+# - command: "make docker-down"
+#   description: "Stop Docker containers"
+#   category: docker
+# - command: "make docker-clean"
+#   description: "Clean Docker resources"
+#   category: docker
+
+# Команды миграций БД
+database: []
+# Пример:
+# - command: "make migrate"
+#   description: "Run database migrations"
+#   category: database
+# - command: "make migrate-down"
+#   description: "Rollback migrations"
+#   category: database
+
+# Scratch CLI commands (populated if scratch.yaml exists in project)
+scratch: []
+# Пример:
+# - command: "scratch generate"
+#   description: "Regenerate code from scratch.yaml"
+#   category: scratch
+#   preferred: true
+# - command: "scratch generate --dry-run"
+#   description: "Preview what scratch generate would do"
+#   category: scratch
+# - command: "scratch generate --verbose"
+#   description: "Generate with detailed output for debugging"
+#   category: scratch
+# - command: "scratch generate --force"
+#   description: "Force regeneration ignoring checksums"
+#   category: scratch
+# - command: "scratch generate --skip-docker"
+#   description: "Generate without Docker files"
+#   category: scratch
+# - command: "scratch update"
+#   description: "Update scratch binary to latest version"
+#   category: scratch
+# - command: "scratch update --check"
+#   description: "Check for scratch updates without installing"
+#   category: scratch
+# - command: "scratch update-mem-bank"
+#   description: "Update Claude agent infrastructure from template repo"
+#   category: scratch
+# - command: "scratch update-tools"
+#   description: "Update project tooling configuration"
+#   category: scratch
+# - command: "scratch version"
+#   description: "Show scratch CLI version"
+#   category: scratch
+
+# Команды очистки
+clean: []
+# Пример:
+# - command: "make clean"
+#   description: "Clean build artifacts"
+#   category: clean
+
+# Другие команды
+other: []
+# Пример:
+# - command: "make run"
+#   description: "Run the application locally"
+#   category: other
+# - command: "make help"
+#   description: "Show available commands"
+#   category: other
+
+# Сырые команды из Makefile (для справки)
+# Заполняется автоматически всеми найденными .PHONY targets
+raw_makefile_targets: []
+
+# Метаданные
+metadata:
+  generated_at: ""            # Дата генерации (ISO 8601)
+  makefile_path: "Makefile"   # Путь к анализируемому Makefile
+  total_commands: 0           # Общее количество команд

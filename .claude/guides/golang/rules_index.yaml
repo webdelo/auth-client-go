@@ -1,0 +1,744 @@
+# Go Code Review Rules Index
+# Этот файл содержит полный индекс всех правил для верификации code review.
+# Code-reviewer ОБЯЗАН проверить каждое применимое правило.
+
+metadata:
+  version: "1.0"
+  last_updated: "2026-01-09"
+  description: "Полный индекс правил для Go code review"
+
+# Порядок приоритетов при проверке
+priority_order:
+  - guide: "effective_standards.md"
+    prefix: "ES"
+    priority: 1
+    severity: "critical"
+    description: "Базовые Go best practices - проверяется ВСЕГДА"
+
+  - guide: "effective_concurrency.md"
+    prefix: "EC"
+    priority: 2
+    severity: "critical"
+    description: "Concurrency rules - проверяется при наличии goroutines/mutex/atomic/channels"
+    trigger_keywords:
+      - "go func"
+      - "sync.Mutex"
+      - "sync.RWMutex"
+      - "sync.WaitGroup"
+      - "atomic."
+      - "chan "
+      - "<-"
+      - "select {"
+
+  - guide: "coding_style.md"
+    prefix: "CS"
+    priority: 3
+    severity: "warning"
+    description: "Стиль кода - обязателен только для задач, связанных с кодом"
+
+# ═══════════════════════════════════════════════════════════════════════
+# EFFECTIVE STANDARDS (ES-*) - Priority 1
+# ═══════════════════════════════════════════════════════════════════════
+effective_standards:
+  # Section 1: Code Formatting
+  formatting:
+    - id: "ES-0001"
+      title: "Use gofmt for automatic formatting"
+      check: "gofmt -l выводит пустой результат"
+
+    - id: "ES-0002"
+      title: "Use tabs for indentation"
+      check: "Нет пробелов в начале строк вместо табов"
+
+    - id: "ES-0003"
+      title: "Brace placement on same line"
+      check: "Открывающая скобка на той же строке что и if/for/func"
+
+  # Section 2: Naming Conventions
+  naming:
+    - id: "ES-0010"
+      title: "Package names - lowercase, short, no underscores"
+      check: "Имена пакетов lowercase без underscores"
+
+    - id: "ES-0011"
+      title: "Exported vs Unexported identifiers"
+      check: "Правильное использование заглавных букв"
+
+    - id: "ES-0012"
+      title: "Getter naming - omit Get prefix"
+      check: "Геттеры без префикса Get"
+
+    - id: "ES-0013"
+      title: "Setter naming - use Set prefix"
+      check: "Сеттеры с префиксом Set"
+
+    - id: "ES-0014"
+      title: "One-method interfaces - use -er suffix"
+      check: "Интерфейсы с одним методом имеют суффикс -er"
+
+    - id: "ES-0015"
+      title: "Use MixedCaps for multi-word identifiers"
+      check: "Нет snake_case в именах переменных и функций"
+
+    - id: "ES-0016"
+      title: "Function naming - use MixedCaps"
+      check: "Функции используют MixedCaps"
+
+    - id: "ES-0017"
+      title: "Boolean naming - use is/has/can/should"
+      check: "Boolean переменные имеют префикс is/has/can/should"
+
+    - id: "ES-0018"
+      title: "Avoid generic function names"
+      check: "Нет функций с именами process/handle/do/perform"
+
+  # Section 3: Control Structures
+  control:
+    - id: "ES-0020"
+      title: "Initialization in conditions"
+      check: "Инициализация переменных в if где возможно"
+
+    - id: "ES-0021"
+      title: "Return errors early (guard clauses)"
+      check: "Ранний возврат ошибок, нет глубокой вложенности"
+
+    - id: "ES-0022"
+      title: "Minimize scope of variables"
+      check: "Переменные объявлены в минимальном scope"
+
+  # Section 4: Data Structures
+  data:
+    - id: "ES-0030"
+      title: "Prefer slices over arrays"
+      check: "Использование slice вместо array"
+
+    - id: "ES-0031"
+      title: "Design zero values to be immediately usable"
+      check: "Zero value структур готов к использованию"
+
+    - id: "ES-0032"
+      title: "Use composite literals with field names"
+      check: "Инициализация структур с именами полей"
+
+    - id: "ES-0033"
+      title: "Pre-allocate slices when size is known"
+      check: "make([]T, 0, capacity) при известном размере"
+
+    - id: "ES-0034"
+      title: "Pre-allocate maps when size is known"
+      check: "make(map[K]V, size) при известном размере"
+
+    - id: "ES-0035"
+      title: "Defensive copying for slices/maps at boundaries"
+      check: "Копирование slice/map при приёме и возврате"
+
+  # Section 5: Function Design
+  functions:
+    - id: "ES-0040"
+      title: "Return value and app_error"
+      check: "Функции возвращают (value, app_error)"
+
+    - id: "ES-0041"
+      title: "Named return parameters for documentation"
+      check: "Именованные return параметры для сложных функций"
+
+    - id: "ES-0042"
+      title: "Use defer for guaranteed resource cleanup"
+      check: "defer Close() для ресурсов"
+
+    - id: "ES-0043"
+      title: "Avoid defer inside loops"
+      check: "Нет defer внутри циклов"
+
+    - id: "ES-0044"
+      title: "Functions returning >3 values need refactoring"
+      check: "Функции возвращают <= 3 значений"
+
+  # Section 6: Interface Design
+  interfaces:
+    - id: "ES-0050"
+      title: "Keep interfaces small and focused"
+      check: "Интерфейсы минимальны"
+
+    - id: "ES-0051"
+      title: "Define interfaces at consumer, not producer"
+      check: "Интерфейсы определены в пакете-consumer"
+      critical: true
+
+    - id: "ES-0052"
+      title: "Use type assertions with comma-ok"
+      check: "value, ok := x.(Type) вместо value := x.(Type)"
+
+    - id: "ES-0053"
+      title: "Verify interface implementation at compile time"
+      check: "var _ Interface = (*Impl)(nil)"
+
+    - id: "ES-0054"
+      title: "Don't use pointers to interfaces"
+      check: "Нет *io.Reader, только io.Reader"
+
+    - id: "ES-0055"
+      title: "No generalized interfaces in provider packages"
+      check: "Нет обобщённых интерфейсов в provider packages"
+      critical: true
+      description: |
+        ЗАПРЕЩЕНО определять "обобщённые" интерфейсы в пакетах-провайдерах.
+        Интерфейсы определяются ТОЛЬКО в пакете-consumer, который их использует.
+        Каждый consumer определяет минимальный интерфейс только с нужными методами.
+
+    - id: "ES-0056"
+      title: "Prefer unexported interfaces"
+      check: "Интерфейсы в consumer packages unexported (если не часть публичного API)"
+      critical: true
+      description: |
+        Exported interface — это публичный контракт, нарушающий ES-0051.
+        Consumer определяет интерфейс для своих нужд — он должен быть unexported.
+        Exported интерфейс допустим только для публичного API библиотеки/SDK.
+
+    - id: "ES-0057"
+      title: "Interface placement - before constructor or interfaces.go"
+      check: "Интерфейс объявлен непосредственно перед конструктором ИЛИ в interfaces.go"
+      description: |
+        Два допустимых места для интерфейса в пакете:
+        1. Непосредственно перед конструктором, который принимает его как зависимость (предпочтительно для 1-2 интерфейсов)
+        2. В отдельном файле interfaces.go того же пакета (для 3+ интерфейсов)
+        Запрещено: в середине файла, в файлах с произвольными именами (deps.go, types.go).
+
+  # Section 7: Error Handling
+  errors:
+    - id: "ES-0060"
+      title: "Handle errors explicitly"
+      check: "Все ошибки обрабатываются, нет _ = err, нет _ = func(), нет _ = method()"
+      critical: true
+      examples_bad:
+        - "_ = err"
+        - "_ = doSomething()"
+        - "_ = obj.Method()"
+        - "_ = queue.Enqueue(...)"
+
+    - id: "ES-0061"
+      title: "Wrap errors with context"
+      check: "fmt.Errorf('context: %w', err)"
+
+    - id: "ES-0062"
+      title: "Use sentinel errors for detection"
+      check: "var ErrNotFound = errors.New(...)"
+
+    - id: "ES-0063"
+      title: "No panic in production code"
+      check: "Нет panic() в production коде"
+      critical: true
+
+    - id: "ES-0064"
+      title: "Use recover only for server crash prevention"
+      check: "recover() только в HTTP handlers"
+
+    - id: "ES-0065"
+      title: "Return empty result + nil for not found"
+      check: "Возврат nil, nil для not found"
+
+  # Section 8: Methods and Receivers
+  receivers:
+    - id: "ES-0070"
+      title: "Consistent receiver types for all methods"
+      check: "Все методы типа используют один тип receiver"
+
+    - id: "ES-0071"
+      title: "Pointer receiver for modifications"
+      check: "Методы, модифицирующие receiver, используют *T"
+
+    - id: "ES-0072"
+      title: "Value receiver for read-only"
+      check: "Методы только для чтения используют T"
+
+    - id: "ES-0073"
+      title: "Receiver type choice guidelines"
+      check: "Правильный выбор receiver по размеру структуры"
+
+  # Section 9: Documentation
+  documentation:
+    - id: "ES-0080"
+      title: "Doc comments precede declaration"
+      check: "Godoc комментарии перед объявлением"
+
+    - id: "ES-0081"
+      title: "Start doc comments with declaration name"
+      check: "Комментарий начинается с имени объявления"
+
+  # Section 10: Enums
+  enums:
+    - id: "ES-0090"
+      title: "Start enums with 1, not 0"
+      check: "iota + 1 для enum"
+
+  # Section 12: Performance
+  performance:
+    - id: "ES-0110"
+      title: "Use strconv instead of fmt for conversions"
+      check: "strconv вместо fmt.Sprintf для чисел"
+
+    - id: "ES-0111"
+      title: "Avoid repeated string <-> []byte conversion"
+      check: "Нет повторных конвертаций string <-> []byte"
+
+    - id: "ES-0112"
+      title: "Use decimal for financial calculations"
+      check: "decimal для денежных операций"
+
+  # Section 13: Functional Options
+  options:
+    - id: "ES-0120"
+      title: "Use functional options for many optional parameters"
+      check: "Functional options pattern для >2 optional параметров"
+
+  # Section 14: Import Organization
+  imports:
+    - id: "ES-0130"
+      title: "Import order - standard, external, internal"
+      check: "Правильный порядок импортов"
+
+    - id: "ES-0131"
+      title: "Use import aliases only when necessary"
+      check: "Нет лишних alias для импортов"
+
+  # Section 15: Constructors
+  constructors:
+    - id: "ES-0140"
+      title: "Constructor name is New"
+      check: "Конструктор называется New(), не NewType()"
+
+    - id: "ES-0141"
+      title: "Use Dependencies struct for 3+ dependencies"
+      check: "Dependencies struct для 3+ зависимостей"
+
+    - id: "ES-0142"
+      title: "Validate dependencies in constructor"
+      check: "Валидация зависимостей в конструкторе"
+
+# ═══════════════════════════════════════════════════════════════════════
+# EFFECTIVE CONCURRENCY (EC-*) - Priority 2
+# Проверяется ТОЛЬКО если в коде есть concurrency примитивы
+# ═══════════════════════════════════════════════════════════════════════
+effective_concurrency:
+  # Section 1: Core Principles
+  core:
+    - id: "EC-0001"
+      title: "Share memory by communicating"
+      check: "Передача данных через channels вместо shared memory"
+
+    - id: "EC-0002"
+      title: "Prefer channels for coordination, mutex for state"
+      check: "Channels для координации, mutex для защиты state"
+
+  # Section 2: Goroutine Lifecycle
+  goroutines:
+    - id: "EC-0010"
+      title: "Every goroutine must have a clear lifecycle"
+      check: "Каждая горутина имеет механизм завершения"
+      critical: true
+
+    - id: "EC-0011"
+      title: "Always cancel contexts to signal shutdown"
+      check: "defer cancel() для созданных контекстов"
+
+    - id: "EC-0012"
+      title: "Avoid goroutine leaks"
+      check: "Нет бесконечных циклов без выхода"
+      critical: true
+
+    - id: "EC-0013"
+      title: "Check ctx.Done() in long-running operations"
+      check: "select case <-ctx.Done() в длительных операциях"
+
+  # Section 3: Channel Usage
+  channels:
+    - id: "EC-0020"
+      title: "Unbuffered (0) or size 1 channels by default"
+      check: "Обоснование для buffered channels > 1"
+
+    - id: "EC-0021"
+      title: "Close channels on sender side only"
+      check: "Каналы закрываются только отправителем"
+      critical: true
+
+    - id: "EC-0022"
+      title: "Respect channel semantics"
+      check: "Проверка ok при получении из канала"
+
+    - id: "EC-0023"
+      title: "Use buffered channels as semaphores"
+      check: "Buffered channel для ограничения параллелизма"
+
+  # Section 4: Mutex and Synchronization
+  mutex:
+    - id: "EC-0030"
+      title: "Zero-value mutex is ready to use"
+      check: "Нет new(sync.Mutex), только var mu sync.Mutex"
+
+    - id: "EC-0031"
+      title: "Embedding mutex in unexported structs"
+      check: "Правильное встраивание mutex в структуры"
+
+    - id: "EC-0032"
+      title: "Maximum 3 mutexes per struct"
+      check: "Не более 3 mutex в одной структуре"
+
+    - id: "EC-0033"
+      title: "Always use defer with mutex unlock"
+      check: "defer mu.Unlock() после Lock()"
+      critical: true
+
+    - id: "EC-0034"
+      title: "Use RWMutex for read-heavy workloads"
+      check: "RWMutex для read-heavy доступа"
+
+  # Section 5: WaitGroup
+  waitgroup:
+    - id: "EC-0040"
+      title: "Add before starting goroutine"
+      check: "wg.Add(1) ДО go func()"
+      critical: true
+
+    - id: "EC-0041"
+      title: "Use errgroup for app_error handling"
+      check: "errgroup для параллельных операций с ошибками"
+
+  # Section 6: Context Propagation
+  context:
+    - id: "EC-0050"
+      title: "Pass context as first parameter"
+      check: "ctx context.Context первый параметр"
+
+    - id: "EC-0051"
+      title: "Never store context in structs"
+      check: "context.Context НЕ хранится в структурах"
+      critical: true
+
+    - id: "EC-0052"
+      title: "Use context.Background() or TODO() as root"
+      check: "Нет nil context"
+
+    - id: "EC-0053"
+      title: "Set reasonable timeouts"
+      check: "context.WithTimeout для внешних вызовов"
+
+    - id: "EC-0054"
+      title: "Handle context errors appropriately"
+      check: "Проверка context.Canceled vs DeadlineExceeded"
+
+    - id: "EC-0055"
+      title: "Always call cancel function"
+      check: "defer cancel() для WithCancel/WithTimeout"
+
+    - id: "EC-0056"
+      title: "Use custom types for context keys"
+      check: "type ctxKey struct{} для context.WithValue"
+
+  # Section 7: Atomic Operations
+  atomic:
+    - id: "EC-0060"
+      title: "Use atomic for simple counters and flags"
+      check: "atomic.Bool/Int64 для простых счётчиков"
+
+    - id: "EC-0061"
+      title: "Prefer atomic over mutex for single values"
+      check: "atomic для одиночных значений вместо mutex"
+
+    - id: "EC-0062"
+      title: "Use Swap for entry guards, not Store"
+      check: "started.Swap(true) вместо Load()+Store()"
+      critical: true
+
+    - id: "EC-0063"
+      title: "Don't mix atomic and mutex for same protection"
+      check: "НЕ смешивать atomic и mutex для одного флага"
+      critical: true
+
+    - id: "EC-0064"
+      title: "Maximum 1 mutex per method"
+      check: "Один метод захватывает максимум 1 mutex"
+      critical: true
+
+  # Section 8: Worker Patterns
+  workers:
+    - id: "EC-0070"
+      title: "Use fixed number of workers"
+      check: "Фиксированное количество worker goroutines"
+
+    - id: "EC-0071"
+      title: "Limit concurrency with semaphores"
+      check: "Semaphore для ограничения параллелизма"
+
+  # Section 9: Graceful Shutdown
+  shutdown:
+    - id: "EC-0080"
+      title: "Signal shutdown via context cancellation"
+      check: "cancel() для сигнализации shutdown"
+
+    - id: "EC-0081"
+      title: "Wait for all goroutines to complete"
+      check: "wg.Wait() с timeout для graceful shutdown"
+      critical: true
+
+    - id: "EC-0082"
+      title: "Handle OS signals for graceful shutdown"
+      check: "signal.Notify для SIGINT/SIGTERM"
+
+  # Section 10: Race Condition Prevention
+  race:
+    - id: "EC-0090"
+      title: "Use -race flag in tests"
+      check: "go test -race в CI"
+
+    - id: "EC-0091"
+      title: "Capture loop variables in goroutines"
+      check: "i := i перед go func()"
+      critical: true
+
+    - id: "EC-0092"
+      title: "Never share state without synchronization"
+      check: "Все shared state защищены mutex/atomic/channel"
+      critical: true
+
+  # Section 11: Testing Concurrent Code
+  testing:
+    - id: "EC-0100"
+      title: "Use t.Parallel() for independent tests"
+      check: "t.Parallel() для независимых тестов"
+
+    - id: "EC-0101"
+      title: "Don't use t.Parallel() with shared state"
+      check: "Нет t.Parallel() при shared global state"
+
+    - id: "EC-0102"
+      title: "Use synctest for time-dependent code"
+      check: "synctest.Run для time-dependent тестов"
+
+# ═══════════════════════════════════════════════════════════════════════
+# CODING STYLE (CS-*) - Priority 3
+# Применяется для code-related задач (coding/review/bug-fix).
+# ═══════════════════════════════════════════════════════════════════════
+coding_style:
+  # Section 1: General Formatting
+  formatting:
+    - id: "CS-0001"
+      title: "Line length limit - 120 characters"
+      check: "Строки <= 120 символов"
+
+    - id: "CS-0002"
+      title: "Explicit returns only"
+      check: "Нет naked returns"
+
+    - id: "CS-0003"
+      title: "No magic numbers"
+      check: "Константы вместо magic numbers"
+
+    - id: "CS-0004"
+      title: "No global state unless absolutely necessary"
+      check: "Минимум глобальных переменных"
+
+  # Section 2: Block Spacing
+  spacing:
+    - id: "CS-0010"
+      title: "Empty line after if/switch/select blocks"
+      check: "Пустая строка после if/switch/select/for блоков"
+
+  # Section 3: Code Quality
+  quality:
+    - id: "CS-0020"
+      title: "Code should read top-to-bottom like a story"
+      check: "Код читается сверху вниз логично"
+
+    - id: "CS-0021"
+      title: "Use clear, meaningful names"
+      check: "Понятные имена переменных и функций"
+
+    - id: "CS-0022"
+      title: "Extract meaningful actions into functions"
+      check: "Выделение логики в отдельные функции"
+
+    - id: "CS-0023"
+      title: "Keep cyclomatic complexity low"
+      check: "Низкая cyclomatic complexity, guard clauses"
+
+    - id: "CS-0024"
+      title: "Avoid over-engineering"
+      check: "Нет лишних абстракций и интерфейсов"
+
+  # Section 4: Linting
+  linting:
+    - id: "CS-0030"
+      title: "Never modify linter configuration"
+      check: "Нет изменений в .golangci.yaml"
+
+    - id: "CS-0031"
+      title: "//nolint directives require justification"
+      check: "//nolint только с комментарием причины"
+
+  # Section 5: Anonymous Functions
+  anonymous:
+    - id: "CS-0040"
+      title: "Anonymous functions in function calls - max 5 lines"
+      check: "Анонимные функции <= 5 строк"
+
+  # Section 6: Package Structure
+  structure:
+    - id: "CS-0050"
+      title: "Each entity in separate package"
+      check: "Каждая сущность в отдельном пакете"
+
+    - id: "CS-0051"
+      title: "File structure within package"
+      check: "Публичные методы в отдельных файлах"
+
+    - id: "CS-0052"
+      title: "Element order in main file"
+      check: "Порядок: interfaces → types → struct → constructor"
+
+    - id: "CS-0053"
+      title: "Forbidden file patterns"
+      check: "Нет God-files 500+ строк"
+
+  # Section 7: Documentation
+  documentation:
+    - id: "CS-0060"
+      title: "Godoc comments for public methods"
+      check: "Godoc для публичных методов"
+
+    - id: "CS-0061"
+      title: "Use gofmt and golangci-lint"
+      check: "gofmt + golangci-lint пройдены"
+
+  # Section 8: Naming
+  naming:
+    - id: "CS-0070"
+      title: "English-only naming"
+      check: "Все имена на английском"
+
+    - id: "CS-0071"
+      title: "Variable names - meaningful"
+      check: "Осмысленные имена переменных"
+
+    - id: "CS-0072"
+      title: "Use idiomatic casing"
+      check: "lowerCamelCase/UpperCamelCase"
+
+  # Section 9: Types and Limits
+  types:
+    - id: "CS-0080"
+      title: "Distinct types for meaningful values"
+      check: "Типизированные ID вместо int"
+
+    - id: "CS-0081"
+      title: "Functions returning >3 values need refactoring"
+      check: "Функции возвращают <= 3 значений"
+
+    - id: "CS-0082"
+      title: "Function length rules"
+      check: "Функции < 80 строк"
+
+  # Section 10: Nil Safety
+  nil_safety:
+    - id: "CS-0090"
+      title: "Always check pointers for nil"
+      check: "Проверка nil для указателей"
+
+  # Section 11: Configuration
+  configuration:
+    - id: "CS-0100"
+      title: "No envDefault in production configs"
+      check: "Нет envDefault в production конфигах"
+
+  # Section 12: Data Structures
+  data_structures:
+    - id: "CS-0113"
+      title: "DTO vs Domain Model — field visibility"
+      check: "Struct is either pure DTO (all exported) or domain model (unexported mutable fields)"
+      critical: true
+      description: |
+        A struct is EITHER a pure DTO (all fields exported, no getters/setters) OR a domain model with behavior
+        (all mutable fields unexported, accessed via getters/setters). Mixing both styles in one struct is forbidden.
+        Ref: Clean Code Chapter 6 — Objects and Data Structures.
+
+    - id: "CS-0119"
+      title: "One primary exported struct per file in entity/vo/dto"
+      check: "Каждый .go файл в entity/vo/dto содержит не более одного exported struct"
+      critical: true
+      description: |
+        Filename = snake_case имени primary struct. Допускаются приватные helper structs, константы
+        и интерфейсы в том же файле. Несколько exported struct в одном файле запрещено.
+
+    - id: "CS-0120"
+      title: "Struct field visibility must be uniform"
+      check: "Все поля struct либо exported, либо unexported — смешивание запрещено"
+      critical: true
+      description: |
+        Entity/VO: все поля unexported + getter методы. DTO: все поля exported.
+        Смешивание exported и unexported полей в одном struct запрещено.
+
+    - id: "CS-0121"
+      title: "Single constructor per entity struct"
+      check: "Один конструктор на struct: New() (единственный в пакете) или New<Name>() (несколько struct)"
+      critical: false
+      description: |
+        Единственный struct в пакете → New(). Несколько struct → New<StructName>().
+        Запрещены множественные конструкторы (NewFromDB, NewDefault). Для вариативности — CS-0122.
+
+    - id: "CS-0122"
+      title: "Options pattern for multiple initialization variants"
+      check: "Вариативная инициализация через functional options, а не множественные конструкторы"
+      critical: false
+      description: |
+        Когда конструктор требует опциональных параметров — использовать functional options pattern.
+        Запрещены: NewWithTimeout(), NewWithRetries() — вместо них With<Option>() + New().
+
+  # Section 13: Comment Hygiene
+  comments:
+    - id: "CS-0111"
+      title: "Minimal inline comments - code must be self-explanatory"
+      check: "Нет комментариев, пересказывающих код"
+
+    - id: "CS-0112"
+      title: "No decorative comment separators"
+      check: "Нет баннеров-разделителей из повторяющихся символов (──, ===, ---)"
+      critical: false
+      description: |
+        ЗАПРЕЩЕНО использовать декоративные разделители между блоками кода.
+        Необходимость в разделителях — сигнал структурной проблемы: файл слишком большой,
+        логика смешана в одном месте, или методы нужно вынести в отдельные файлы (CS-0051).
+        Решение: разбить на отдельные файлы или выделить в именованные функции.
+
+    - id: "CS-0110"
+      title: "No internal standard references in code comments"
+      check: "Нет ссылок на правила/стандарты в комментариях кода"
+
+# ═══════════════════════════════════════════════════════════════════════
+# VERIFICATION CHECKLIST
+# ═══════════════════════════════════════════════════════════════════════
+verification_template:
+  description: |
+    Каждый code-reviewer отчёт ДОЛЖЕН содержать секцию rules_verified
+    с перечислением всех проверенных правил.
+
+  format: |
+    rules_verified:
+      effective_standards:
+        checked: true
+        rules_count: 45
+        rules_applied: ["ES-0051", "ES-0060", "ES-0063", ...]
+        rules_skipped: []
+        skip_reason: null
+
+      effective_concurrency:
+        checked: true  # false если нет concurrency кода
+        rules_count: 35
+        rules_applied: ["EC-0062", "EC-0063", "EC-0064", ...]
+        rules_skipped: ["EC-0100", "EC-0101", "EC-0102"]
+        skip_reason: "No test files reviewed"
+
+      coding_style:
+        checked: true
+        rules_count: 30
+        rules_applied: ["CS-0010", "CS-0050", ...]
+        rules_skipped: []
+        skip_reason: null

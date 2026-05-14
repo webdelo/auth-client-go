@@ -1,0 +1,767 @@
+# Unified Rules Index
+# Мета-индекс всех правил проекта для ленивой загрузки.
+# Оркестратор загружает только этот файл и читает конкретные guides по триггерам.
+
+metadata:
+  version: "3.1"
+  last_updated: "2026-03-17"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ЗАГРУЗКА ПРАВИЛ — 2-ШАГОВАЯ ПРОЦЕДУРА
+# ═══════════════════════════════════════════════════════════════════════════════
+# Каждый workflow содержит load_rules блок с двумя шагами:
+#
+# ШАГ 1: mandatory_guides — обязательные файлы для данного workflow
+#   Читать ЦЕЛИКОМ (Read каждый файл). Маппинг см. в command_mandatory_guides ниже.
+#
+# ШАГ 2: trigger_based_extras — дополнительные файлы по keywords задачи
+#   Проанализировать keywords задачи и загрузить ЦЕЛЫЕ файлы:
+#   - concurrency (goroutine/mutex/atomic/chan) → .claude/guides/golang/effective_concurrency.md
+#   - postgres/clickhouse/redis/repository → .claude/guides/dba/rules_index.yaml → файлы из совпавшей секции
+#   - docker/k8s/deploy → .claude/guides/devops/rules_index.yaml → файлы из совпавшей секции
+#   Нельзя удалять mandatory_guides — только добавлять.
+#
+# ПРИМЕР:
+#   Workflow: /execute-prp
+#   → mandatory: effective_standards.md, coding_style.md (читать целиком)
+#   → задача упоминает "clickhouse", "OHLCV"
+#   → загрузить: .claude/guides/dba/rules_index.yaml → секция clickhouse → файлы целиком
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ORCHESTRATOR VS AGENTS - Гибридный подход
+# ═══════════════════════════════════════════════════════════════════════════════
+execution_strategy:
+  agents_for:
+    - "Изолированные автономные задачи (code-review, unit-tests, benchmarks)"
+    - "Специализированная экспертиза (DBA, security)"
+    - "Параллельные независимые задачи"
+    - "Долгие операции (> 5 шагов)"
+  orchestrator_for:
+    - "Итеративные задачи с диалогом"
+    - "Простые задачи (< 3 шагов)"
+    - "Задачи требующие общего контекста"
+    - "Координация и планирование"
+  agent_rules:
+    - rule: "Агент = автономная задача без уточнений"
+    - rule: "Промпт содержит ВСЁ необходимое"
+    - rule: "Параллелить независимые задачи"
+    - rule: "Не использовать агентов для < 3 шагов"
+    - rule: "Передавать конкретные файлы, не 'весь код'"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GOLANG STANDARDS
+# ═══════════════════════════════════════════════════════════════════════════════
+golang:
+  # Базовые стандарты - ВСЕГДА проверять при работе с Go кодом
+  effective_standards:
+    path: ".claude/guides/golang/effective_standards.md"
+    prefix: "ES"
+    priority: 1
+    severity: critical
+    triggers:
+      - "написать код"
+      - "функция"
+      - "метод"
+      - "структура"
+      - "go файл"
+      - ".go"
+      - "usecase"
+      - "use case"
+      - "entity"
+      - "entities"
+      - "handler"
+      - "dto"
+      - "interface"
+      - "package"
+      - "repository"
+      - "models"
+      - "builders"
+      - "row struct"
+      - "mapper"
+    critical_rules:
+      - id: "ES-0051"
+        title: "Define interfaces at consumer, not producer"
+      - id: "ES-0055"
+        title: "No generalized interfaces in provider packages"
+      - id: "ES-0060"
+        title: "Handle errors explicitly"
+      - id: "ES-0063"
+        title: "No panic in production code"
+      - id: "ES-0143"
+        title: "Use noop defaults for optional deps instead of nil-checks"
+      - id: "ES-0045"
+        title: "No optional parameters via zero values — use separate methods"
+      - id: "ES-0160"
+        title: "Domain entity не повторяет структуру таблицы БД — использует value objects"
+      - id: "ES-0161"
+        title: "Database row struct хранится в пакете models/ внутри репозитория"
+      - id: "ES-0162"
+        title: "Маппинг entity ↔ row реализуется как builder в пакете builders/"
+      - id: "ES-0170"
+        title: "Prefer value parameters over pointers"
+      - id: "ES-0171"
+        title: "nolint annotations are FORBIDDEN"
+      - id: "ES-0172"
+        title: "Full object names in log messages"
+      - id: "ES-0173"
+        title: "Variable naming — no unclear abbreviations"
+
+  # Concurrency - загружать при наличии примитивов
+  effective_concurrency:
+    path: ".claude/guides/golang/effective_concurrency.md"
+    prefix: "EC"
+    priority: 2
+    severity: critical
+    triggers:
+      - "goroutine"
+      - "go func"
+      - "sync.Mutex"
+      - "sync.RWMutex"
+      - "sync.WaitGroup"
+      - "atomic."
+      - "chan "
+      - "<-"
+      - "select {"
+      - "concurrency"
+      - "параллел"
+    critical_rules:
+      - id: "EC-0010"
+        title: "Every goroutine must have a clear lifecycle"
+      - id: "EC-0012"
+        title: "Avoid goroutine leaks"
+      - id: "EC-0021"
+        title: "Close channels on sender side only"
+      - id: "EC-0033"
+        title: "Always use defer with mutex unlock"
+      - id: "EC-0040"
+        title: "Add before starting goroutine"
+      - id: "EC-0051"
+        title: "Never store context in structs"
+      - id: "EC-0062"
+        title: "Use Swap for entry guards"
+      - id: "EC-0063"
+        title: "Don't mix atomic and mutex"
+      - id: "EC-0064"
+        title: "Maximum 1 mutex per method"
+      - id: "EC-0091"
+        title: "Capture loop variables"
+
+  # Стиль кода
+  coding_style:
+    path: ".claude/guides/golang/coding_style.md"
+    prefix: "CS"
+    priority: 3
+    severity: warning
+    condition: |
+      ОБЯЗАТЕЛЕН для /execute-prp и /review-code (всегда загружать).
+      Для остальных команд (/execute-bug-fix, /generate-prp, /review-code-it, /execute-it-bug-fix)
+      загружать ТОЛЬКО если задача ЯВНО связана со стилем/форматированием/именованием.
+    task_kinds:
+      - "coding"
+      - "review"
+    triggers:
+      - "стиль"
+      - "форматирование"
+      - "naming"
+      - "именование"
+    key_rules:
+      - id: "CS-0010"
+        title: "Empty line after if/switch/select blocks"
+      - id: "CS-0050"
+        title: "Each entity in separate package"
+      - id: "CS-0110"
+        title: "No internal standard references in code comments"
+      - id: "CS-0113"
+        title: "Entity = identity + lifecycle + closed mutable state"
+      - id: "CS-0114"
+        title: "No error storage in struct fields for deferred retrieval"
+      - id: "CS-0115"
+        title: "Value Object = value semantics + immutability"
+      - id: "CS-0116"
+        title: "DTO = transport structure + open fields + no domain invariants"
+      - id: "CS-0117"
+        title: "Exported Entity/VO/DTO structs must live in entity/vo/dto packages"
+      - id: "CS-0118"
+        title: "Layer-local structs outside entity/vo/dto must be unexported"
+
+  # Uber style guide
+  uber_style:
+    path: ".claude/guides/golang/uber_style_guide.md"
+    priority: 4
+    severity: suggestion
+    triggers:
+      - "uber"
+      - "best practice"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TESTING STANDARDS
+# ═══════════════════════════════════════════════════════════════════════════════
+testing:
+  index: ".claude/guides/golang/tests_rules_index.yaml"
+
+  unit_tests:
+    path: ".claude/guides/golang/unit_tests_standards.md"
+    prefix: "UT"
+    condition: |
+      Загружать если задача работает с _test.go файлами или mock-ами.
+      НЕ загружать для /review-code-it и /execute-it-bug-fix —
+      для них нужен integration_tests, а не unit_tests.
+    triggers:
+      - "тест"
+      - "test"
+      - "_test.go"
+      - "mock"
+      - "coverage"
+      - "table-driven"
+      - "testify"
+      - "mockery"
+      - "repository test"
+      - "repo test"
+    critical_rules:
+      - id: "UT-0001"
+        title: "Table-driven tests mandatory"
+      - id: "UT-0002"
+        title: "One method = one test function"
+      - id: "UT-0010"
+        title: "Function naming Test<Type>_<Method>"
+      - id: "UT-0020"
+        title: "Mocks ONLY via mockery"
+      - id: "UT-0021"
+        title: "Use Expecter API (.EXPECT()), not .On()"
+      - id: "UT-0022"
+        title: "All mocks with .Once()/.Times(n)"
+      - id: "UT-0023"
+        title: "mock.Anything ЗАПРЕЩЁН ПОЛНОСТЬЮ — используй точные значения"
+      - id: "UT-0028"
+        title: "No helper functions for test data, mocks, or assertions"
+      - id: "UT-0029"
+        title: "No package-level shared variables for test data"
+      - id: "UT-0030"
+        title: "require for critical, assert for additional"
+      - id: "UT-0032"
+        title: "No logic in tests — use closures in want"
+      - id: "UT-0040"
+        title: "t.Parallel() with tc := tc capture"
+      - id: "UT-0110"
+        title: "Repository unit tests ОБЯЗАТЕЛЬНЫ"
+      - id: "UT-0112"
+        title: "Обязательные кейсы: happy_path, edge cases, PG-ошибки, инфраструктурные ошибки"
+
+  integration_tests:
+    path: ".claude/guides/golang/integration_tests_standards.md"
+    prefix: "IT"
+    triggers:
+      - "интеграцион"
+      - "integration"
+      - "gonkey"
+      - "e2e"
+      - "yaml test"
+      - "fixture"
+      - "grpc test"
+      - "gRPC test"
+      - "happy path"
+      - "error case"
+      - "review-code-it"
+      - "execute-it-bug-fix"
+      - "it_review"
+      - "it_bug_fix"
+      - "IT-"
+    critical_rules:
+      - id: "IT-0001"
+        title: "Test file location: tests/*_test.go"
+      - id: "IT-0002"
+        title: "YAML naming: +happy.yaml / -app_error.yaml"
+      - id: "IT-0003"
+        title: "Always start with empty_db fixture"
+      - id: "IT-0004"
+        title: "Always specify calls: N for mocks"
+      - id: "IT-0006"
+        title: "$matchRegexp() for dynamic fields"
+      - id: "IT-0007"
+        title: "BDD naming: КОГДА / ТОГДА"
+      - id: "IT-0009"
+        title: "No business logic in tests"
+      - id: "IT-0010"
+        title: "No parallel execution"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIBS — External library guides (cheatsheet: .claude/guides/libs_cheatsheet.md)
+# ═══════════════════════════════════════════════════════════════════════════════
+libs:
+  # Auto-discovered from YAML frontmatter in each .md file.
+  # Each file contains: prefix, name, packages, triggers, description.
+  # To add a new lib: create .claude/guides/libs/<name>.md with frontmatter.
+  # Cheatsheet: .claude/guides/libs_cheatsheet.md (regenerate via extract_rules.py libs-cheatsheet)
+  directory: ".claude/guides/libs/"
+  cheatsheet: ".claude/guides/libs_cheatsheet.md"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PATTERNS — Internal project patterns
+# ═══════════════════════════════════════════════════════════════════════════════
+patterns:
+  # Auto-discovered from YAML frontmatter in each .md file.
+  # Each file contains: prefix, name, packages, triggers, description.
+  # To add a new pattern: create .claude/guides/golang/patterns/<name>.md with frontmatter.
+  # Cheatsheet: .claude/guides/golang/patterns_cheatsheet.md (regenerate via extract_rules.py patterns-cheatsheet)
+  directory: ".claude/guides/golang/patterns/"
+  cheatsheet: ".claude/guides/golang/patterns_cheatsheet.md"
+
+  tasks_list:
+    path: ".claude/patterns/tasks_list_writing.md"
+    triggers:
+      - "tasks_list"
+      - "task file"
+      - "TASK-"
+
+  agent_monitoring:
+    path: ".claude/patterns/agent_monitoring.md"
+    triggers:
+      - "hung agent"
+      - "stuck agent"
+      - "agent monitoring"
+      - "no progress"
+      - "token growth"
+      - "agent timeout"
+      - "мониторинг агента"
+
+  code_review_orchestration:
+    path: ".claude/patterns/code_review_orchestration.md"
+    triggers:
+      - "code review orchestration"
+      - "parallel reviewers"
+      - "batch review"
+      - "review aggregation"
+      - "multi-package review"
+      - "оркестрация ревью"
+
+  proactive_agent_monitoring:
+    path: ".claude/patterns/proactive_agent_monitoring.md"
+    triggers:
+      - "proactive monitoring"
+      - "adaptive polling"
+      - "agent failure recovery"
+      - "sequential agent"
+      - "parallel agent orchestration"
+      - "проактивный мониторинг"
+
+  factory_method:
+    path: ".claude/guides/golang/patterns/factory_method.md"
+    triggers:
+      - "factory"
+      - "factory method"
+      - "abstract factory"
+      - "create object"
+      - "object creation"
+      - "создание объектов"
+      - "фабрика"
+      - "фабричный метод"
+      - "dispatch by type"
+      - "registry pattern"
+      - "NewXxx по ключу"
+
+  value_objects:
+    path: ".claude/guides/libs/value_objects.md"
+    triggers:
+      - "value object"
+      - "financial-values"
+      - "AssetQuantity"
+      - "Percent"
+      - "Quantity"
+      - "финансовые расчеты"
+      - "расчет цены"
+      - "математика цен"
+      - "Coins"
+      - "Units"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DBA GUIDES - Database specialists
+# ═══════════════════════════════════════════════════════════════════════════════
+dba:
+  index: ".claude/guides/dba/rules_index.yaml"
+  keywords:
+    # Технологии
+    - "postgres"
+    - "postgresql"
+    - "pgx"
+    - "redis"
+    - "clickhouse"
+    - "mysql"
+    - "mongodb"
+    - "sqlite"
+    - "qdrant"
+    # Паттерны кода
+    - "repository"
+    - "repo"
+    - "database"
+    - "sql"
+    - "query"
+    - "запрос"
+    - "schema"
+    - "migration"
+    - "миграция"
+    # SQL конструкции
+    - "CREATE TABLE"
+    - "ALTER TABLE"
+    - "FOREIGN KEY"
+    - "SELECT"
+    - "INSERT"
+    - "UPDATE"
+    - "DELETE"
+    - "JOIN"
+    - "INDEX"
+    # Операции
+    - "transaction"
+    - "транзакция"
+    - "таблица"
+    - "connection pool"
+    - "batch"
+    # Доменные (этот проект)
+    - "OHLCV"
+    - "candle"
+    - "kline"
+    - "time-series"
+    - "volume profile"
+    - "market data"
+    - "csv"
+    - "raw_trades"
+    - "aggregation"
+    - "агрегация"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DEVOPS GUIDES
+# ═══════════════════════════════════════════════════════════════════════════════
+devops:
+  index: ".claude/guides/devops/rules_index.yaml"
+  keywords:
+    # Технологии
+    - "docker"
+    - "Dockerfile"
+    - "docker-compose"
+    - "kubernetes"
+    - "k8s"
+    - "helm"
+    - "kafka"
+    # Паттерны
+    - "container"
+    - "контейнер"
+    - "deployment"
+    - "деплой"
+    - "CI/CD"
+    - "pipeline"
+    - "infrastructure"
+    - "инфраструктур"
+    # Операции
+    - "deploy"
+    - "rollout"
+    - "scaling"
+    - "масштабирование"
+    - "monitoring"
+    - "мониторинг"
+    - "backup"
+    - "бэкап"
+    # Сетевые сервисы и мониторинг
+    - "http"
+    - "grpc"
+    - "metrics"
+    - "prometheus"
+    - "health check"
+    - "healthcheck"
+    - "port"
+    - "порт"
+    # Ресурсы K8s
+    - "pod"
+    - "service"
+    - "ingress"
+    - "ConfigMap"
+    - "Secret"
+    - "HPA"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCRATCH CLI - Code generation from scratch.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+scratch:
+  scratch_usage:
+    path: ".claude/guides/libs/scratch_usage.md"
+    priority: 2
+    severity: warning
+    triggers:
+      # Изменение спецификации / схемы
+      - "обновить спецификацию"
+      - "update spec"
+      - "openapi"
+      - "swagger"
+      - "спецификация"
+      - "перегенерировать"
+      - "regenerate"
+      - "codegen"
+      # Подключение/отключение инфраструктуры
+      - "подключить базу"
+      - "добавить postgres"
+      - "добавить redis"
+      - "добавить clickhouse"
+      - "добавить kafka"
+      - "добавить aerospike"
+      - "добавить valkey"
+      - "добавить grpc"
+      - "отключить postgres"
+      - "отключить redis"
+      - "отключить clickhouse"
+      - "отключить kafka"
+      - "подключить storage"
+      - "новая база данных"
+      - "new database"
+      - "add storage"
+      - "remove storage"
+      - "enable grpc"
+      - "disable grpc"
+      # Прямые упоминания scratch
+      - "scratch"
+      - "scratch.yaml"
+      - "scratch generate"
+    critical_rules:
+      - id: "SCR-0001"
+        title: "After scratch.yaml change — ALWAYS run scratch generate"
+      - id: "SCR-0002"
+        title: "NEVER manually edit files in generated/scratch/"
+      - id: "SCR-0003"
+        title: "If scratch.yaml exists — read it to understand infrastructure"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUILD ARTIFACTS - File placement rules
+# ═══════════════════════════════════════════════════════════════════════════════
+build_artifacts:
+  guide: ".claude/guides/build_artifacts.yaml"
+  prefix: "BUILD"
+
+  triggers:
+    - "go test -c"
+    - "test binary"
+    - "*.test"
+    - "report"
+    - "coverage"
+    - "benchmark"
+    - ".build"
+
+  critical_rules:
+    - rule: "BUILD-0001: Test binaries MUST be in .build/ directory"
+      enforcement: "Use go test -c -o .build/name.test"
+
+    - rule: "BUILD-0002: Reports to designated directories"
+      agent_reports: ".memory_bank/agent_task_results/"
+      task_results: "task_management/results/"
+      guide: ".claude/guides/project/file_organization.md"
+
+    - rule: "BUILD-0003: Cleanup temporary files after use"
+      command: "make clean"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROJECT POLICIES - Core project-wide rules
+# ═══════════════════════════════════════════════════════════════════════════════
+project_policies:
+  file_organization:
+    path: ".claude/guides/project/file_organization.md"
+    triggers:
+      - "report"
+      - "отчет"
+      - "file placement"
+      - "куда сохранить"
+
+  clickable_references:
+    path: ".claude/guides/project/clickable_references.md"
+    triggers:
+      - "file reference"
+      - "ссылка на файл"
+      - "clickable"
+
+  task_management:
+    path: ".claude/guides/project/task_management_guide.md"
+    triggers:
+      - "task status"
+      - "статус задачи"
+      - "lifecycle"
+      - "refresh-lifecycle"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECURITY
+# ═══════════════════════════════════════════════════════════════════════════════
+security:
+  ai_behavior:
+    path: ".claude/guides/ai_behavior_security.yaml"
+    always_loaded: true
+    critical_rules:
+      - id: "SEC-0001"
+        title: "Never output secrets to console"
+      - id: "SEC-0002"
+        title: "Never read sensitive files"
+      - id: "SEC-0007"
+        title: "Never commit secrets to git"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEMPLATES - Document templates
+# ═══════════════════════════════════════════════════════════════════════════════
+templates:
+  base_path: ".claude/templates/"
+  files:
+    - name: "coding_prp_template.md"
+      triggers: ["PRP", "план реализации", "coding PRP"]
+      description: "Markdown шаблон для copy-paste"
+    - name: "devops_prp_template.md"
+      triggers: ["DevOps PRP", "инфраструктурный план"]
+      description: "Markdown шаблон для DevOps задач"
+    - name: "coding_prp.yaml"
+      triggers: ["PRP schema", "валидация PRP"]
+      description: "YAML schema для валидации (опционально)"
+    - name: "code_review_report.yaml"
+      triggers: ["code review report", "CR report"]
+    - name: "test_review_report.yaml"
+      triggers: ["test review", "TR report"]
+    - name: "bug_report.yaml"
+      triggers: ["bug report", "баг репорт"]
+    - name: "adr_templates.md"
+      triggers: ["ADR", "architecture decision"]
+    - name: "req_template.md"
+      triggers: ["REQ", "требование"]
+    - name: "coding_task_template.md"
+      triggers: ["TASK", "задача"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AGENTS - When to use which agent
+# ═══════════════════════════════════════════════════════════════════════════════
+agents:
+  reference: ".claude/AGENTS.yaml"
+
+  by_task:
+    code_writing:
+      agent: "code-writer"
+      triggers: ["написать код", "реализовать", "implement"]
+
+    code_review:
+      agent: "code-reviewer"
+      triggers: ["review", "ревью", "проверить"]
+      use_after: ["code-writer", "refactorer"]
+
+    unit_tests:
+      agent: "unit-test-writer"
+      triggers: ["unit test", "тест"]
+      use_after: ["code-writer"]
+
+    integration_tests:
+      agent: "gonkey-test-writer"
+      triggers: ["gonkey", "integration test", "yaml test"]
+
+    test_review:
+      agent: "test-reviewer"
+      triggers: ["review test", "проверить тесты"]
+      use_after: ["unit-test-writer", "gonkey-test-writer"]
+
+    debugging_simple:
+      agent: "debugger"
+      model: "sonnet"
+      description: "Simple errors: compilation, linter, basic runtime"
+      triggers:
+        - "cannot find"
+        - "undefined"
+        - "syntax app_error"
+        - "import cycle"
+        - "golangci-lint"
+        - "revive"
+        - "staticcheck"
+        - "nil pointer"
+        - "index out of range"
+        - "FAIL"
+        - "got .* want"
+        - "assertion failed"
+
+    debugging_complex:
+      agent: "debugger-complex"
+      model: "opus"
+      description: "Complex errors: race, deadlock, concurrency, flaky tests"
+      triggers:
+        - "DATA RACE"
+        - "race detected"
+        - "concurrent"
+        - "deadlock"
+        - "all goroutines are asleep"
+        - "goroutine leak"
+        - "flaky"
+        - "intermittent"
+        - "sometimes fails"
+        - "blocked"
+        - "timeout"
+        - "context deadline exceeded"
+
+    research:
+      agent: "code-researcher"
+      triggers: ["найти", "search", "где используется"]
+
+    web_search:
+      agent: "web-searcher"
+      triggers: ["документация", "docs", "как работает"]
+      model: "opus"
+
+    refactoring:
+      agent: "refactorer"
+      triggers: ["рефакторинг", "refactor", "улучшить структуру"]
+
+    security:
+      agent: "security-auditor"
+      triggers: ["security", "безопасность", "auth", "credentials"]
+
+    benchmarks:
+      agent: "benchmark-runner"
+      triggers: ["benchmark", "performance", "производительность"]
+
+    documentation:
+      agent: "doc-generator"
+      triggers: ["документация", "README", "godoc"]
+
+  dba_agents:
+    - agent: "repository-postgres"
+      triggers: ["postgres", "pgx", "sql query"]
+    - agent: "repository-clickhouse"
+      triggers: ["clickhouse", "OLAP"]
+    - agent: "repository-redis"
+      triggers: ["redis", "cache", "streams"]
+    - agent: "repository-mysql"
+      triggers: ["mysql", "mariadb"]
+    - agent: "repository-mongodb"
+      triggers: ["mongodb", "document"]
+    - agent: "repository-sqlite"
+      triggers: ["sqlite", "embedded"]
+    - agent: "repository-qdrant"
+      triggers: ["qdrant", "vector"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMMON COMMANDS
+# ═══════════════════════════════════════════════════════════════════════════════
+common_commands:
+  path: ".memory_bank/dev_commands.yaml"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATISTICS (auto-updated by refresh_memory_bank)
+# ═══════════════════════════════════════════════════════════════════════════════
+statistics:
+  last_scan: "2026-04-06"
+  total_claude_files: 216
+  breakdown:
+    guides_golang: 9
+    guides_libs: 8
+    guides_dba: 45
+    guides_devops: 9
+    guides_project: 4
+    guides_security: 1
+    guides_top_level: 5
+    templates: 26
+    commands: 41
+    scripts: 19
+    agents: 28
+    skills: 9
+    patterns: 4
+    mcp: 6
+    other: 2  # AGENTS.yaml, settings.json
+  dead_references:
+    - path: ".claude/guides/golang/uber_style_guide.md"
+      referenced_in: "golang.uber_style"
+      status: "file missing"

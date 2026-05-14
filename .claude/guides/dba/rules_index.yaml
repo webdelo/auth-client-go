@@ -1,0 +1,231 @@
+# DBA Rules Index
+# Мета-индекс правил для работы с базами данных.
+# Каждый пакет БД имеет свой rules_index.yaml с детальным описанием файлов.
+
+metadata:
+  version: "4.0"
+  last_updated: "2026-03-10"
+  description: "Keyword-based index of database rules and patterns"
+  total_rules: 801
+  rule_prefixes:
+    - "PG-XXX: PostgreSQL (168 rules)"
+    - "CH-XXX: ClickHouse (125 rules)"
+    - "RD-XXX: Redis (102 rules)"
+    - "MY-XXX: MySQL (123 rules)"
+    - "MG-XXX: MongoDB (88 rules)"
+    - "SQ-XXX: SQLite (86 rules)"
+    - "QD-XXX: Qdrant (107 rules)"
+    - "DB-XXX: Common DB rules (8 rules)"
+    - "DB-SCHEMA-XXX: Schema design (1 rule)"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USAGE — ПОРЯДОК ПОИСКА ПРАВИЛ
+# ═══════════════════════════════════════════════════════════════════════════════
+usage: |
+  1. Извлеки ключевые слова из задачи (TASK/PRP файл, описание, код)
+  2. Сопоставь keywords каждой секции ниже с ключевыми словами задачи
+  3. При совпадении ≥1 keyword → загрузи sub-index по index_path
+  4. В sub-index найди files[] с подходящими keywords → загрузи по priority
+  5. ВСЕГДА загружай common rules (apply ко всем БД)
+  6. Если задача упоминает несколько БД — загрузи секции для каждой
+
+  Примеры:
+    Задача "написать репозиторий для сохранения сигналов в PostgreSQL"
+    → keywords match: postgres, pgx, repository, sql, INSERT, RETURNING
+    → загрузить: postgres/rules_index.yaml → go_integration.md (pri 1), query_patterns.md (pri 2)
+
+    Задача "оптимизировать запросы к ClickHouse для OHLCV данных"
+    → keywords match: clickhouse, OHLCV, optimization, query, time-series
+    → загрузить: clickhouse/rules_index.yaml → query_patterns.md, optimization.md
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POSTGRESQL
+# ═══════════════════════════════════════════════════════════════════════════════
+postgres:
+  index_path: "postgres/rules_index.yaml"
+  total_rules: 168
+  rule_id_range: "PG-001..PG-612"
+  skill: ".claude/skills/postgres-dba.md"
+  keywords:
+    - "postgres"
+    - "postgresql"
+    - "pgx"
+    - "pgxpool"
+    - "lib/pq"
+    - "QueryRow"
+    - "pgx.ErrNoRows"
+    - "RETURNING"
+    - "ON CONFLICT"
+    - "UPSERT"
+    - "CTE"
+    - "jsonb"
+    - "vacuum"
+    - "EXPLAIN"
+    - "pg_stat"
+    - "materialized view"
+    - "partitioning"
+    - "replication"
+    - "migration"
+    - "миграция"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REDIS
+# ═══════════════════════════════════════════════════════════════════════════════
+redis:
+  index_path: "redis/rules_index.yaml"
+  total_rules: 102
+  rule_id_range: "RD-001..RD-420"
+  skill: ".claude/skills/redis-dba.md"
+  keywords:
+    - "redis"
+    - "go-redis"
+    - "redigo"
+    - "HSET"
+    - "ZADD"
+    - "XADD"
+    - "streams"
+    - "pub/sub"
+    - "pipeline"
+    - "Lua script"
+    - "cache"
+    - "кэш"
+    - "TTL"
+    - "rate limit"
+    - "distributed lock"
+    - "sentinel"
+    - "cluster"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLICKHOUSE
+# ═══════════════════════════════════════════════════════════════════════════════
+clickhouse:
+  index_path: "clickhouse/rules_index.yaml"
+  total_rules: 125
+  rule_id_range: "CH-001..CH-625"
+  skill: ".claude/skills/clickhouse-dba.md"
+  keywords:
+    - "clickhouse"
+    - "clickhouse-go"
+    - "ClickHouse"
+    - "MergeTree"
+    - "ReplacingMergeTree"
+    - "AggregatingMergeTree"
+    - "PREWHERE"
+    - "FINAL"
+    - "PARTITION BY"
+    - "batch insert"
+    - "materialized view"
+    - "distributed"
+    - "OHLCV"
+    - "candle"
+    - "kline"
+    - "time-series"
+    - "OLAP"
+    - "volume profile"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MYSQL
+# ═══════════════════════════════════════════════════════════════════════════════
+mysql:
+  index_path: "mysql/rules_index.yaml"
+  total_rules: 123
+  rule_id_range: "MY-001..MY-423"
+  skill: ".claude/skills/mysql-dba.md"
+  keywords:
+    - "mysql"
+    - "mariadb"
+    - "innodb"
+    - "go-sql-driver"
+    - "parseTime"
+    - "MyISAM"
+    - "ON DUPLICATE KEY"
+    - "AUTO_INCREMENT"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MONGODB
+# ═══════════════════════════════════════════════════════════════════════════════
+mongodb:
+  index_path: "mongodb/rules_index.yaml"
+  total_rules: 88
+  rule_id_range: "MG-001..MG-411"
+  skill: ".claude/skills/mongodb-dba.md"
+  keywords:
+    - "mongodb"
+    - "mongo"
+    - "bson"
+    - "aggregation pipeline"
+    - "document"
+    - "collection"
+    - "mongo-go-driver"
+    - "$match"
+    - "$group"
+    - "$lookup"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SQLITE
+# ═══════════════════════════════════════════════════════════════════════════════
+sqlite:
+  index_path: "sqlite/rules_index.yaml"
+  total_rules: 86
+  rule_id_range: "SQ-001..SQ-218"
+  skill: ".claude/skills/sqlite-dba.md"
+  keywords:
+    - "sqlite"
+    - "embedded"
+    - "WAL"
+    - "FTS5"
+    - "modernc.org/sqlite"
+    - "PRAGMA"
+    - "single-file"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# QDRANT
+# ═══════════════════════════════════════════════════════════════════════════════
+qdrant:
+  index_path: "qdrant/rules_index.yaml"
+  total_rules: 107
+  rule_id_range: "QD-001..QD-315"
+  skill: ".claude/skills/qdrant-dba.md"
+  keywords:
+    - "qdrant"
+    - "vector"
+    - "embedding"
+    - "similarity"
+    - "semantic search"
+    - "HNSW"
+    - "cosine"
+    - "qdrant-go"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMMON RULES (apply to all databases)
+# ═══════════════════════════════════════════════════════════════════════════════
+common:
+  files:
+    - path: "sql_schema_design.md"
+      description: "SQL schema design rules: no CASCADE, application-side management"
+      priority: 1
+
+  rules:
+    - id: "DB-001"
+      rule: "Always use context with timeout"
+      example: "ctx, cancel := context.WithTimeout(ctx, 5*time.Second)"
+      critical: true
+    - id: "DB-002"
+      rule: "Close connections/cursors with defer"
+      critical: true
+    - id: "DB-003"
+      rule: "Use connection pooling"
+      critical: true
+    - id: "DB-004"
+      rule: "Handle errors explicitly, wrap with context"
+      critical: true
+    - id: "DB-005"
+      rule: "Use transactions for multi-statement operations"
+    - id: "DB-006"
+      rule: "Log slow queries"
+    - id: "DB-007"
+      rule: "Use prepared statements for repeated queries"
+    - id: "DB-SCHEMA-001"
+      rule: "No CASCADE in foreign keys — all relationship management on application side"
+      details: "See sql_schema_design.md for patterns and examples"
+      critical: true

@@ -1,0 +1,126 @@
+# ClickHouse DBA Rules Index
+# Детальный индекс правил ClickHouse для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "CH"
+  total_rules: 125
+  rule_id_range: "CH-001..CH-625"
+  last_updated: "2026-03-10"
+
+keywords:
+  # Технология
+  - "clickhouse"
+  - "clickhouse-go"
+  - "ClickHouse"
+  # Движки таблиц
+  - "MergeTree"
+  - "ReplacingMergeTree"
+  - "AggregatingMergeTree"
+  - "SummingMergeTree"
+  - "CollapsingMergeTree"
+  # SQL конструкции
+  - "PREWHERE"
+  - "FINAL"
+  - "ORDER BY ()"
+  - "PARTITION BY"
+  - "toStartOfMinute"
+  - "toStartOfHour"
+  - "toStartOfDay"
+  - "arrayJoin"
+  - "groupArray"
+  - "argMax"
+  - "argMin"
+  - "quantile"
+  - "window function"
+  # Паттерны
+  - "batch insert"
+  - "bulk insert"
+  - "materialized view"
+  - "distributed"
+  - "aggregation"
+  # Доменные (этот проект)
+  - "OHLCV"
+  - "candle"
+  - "kline"
+  - "trade"
+  - "time-series"
+  - "time series"
+  - "таймсерия"
+  - "свеча"
+  - "тайм-фрейм"
+  - "timeframe"
+  - "market data"
+  - "рыночные данные"
+  - "OLAP"
+  - "analytics"
+  - "аналитика"
+  - "volume profile"
+
+skill: ".claude/skills/clickhouse-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "clickhouse-go driver, batch inserts, connection management"
+    priority: 1
+    rule_id_range: "CH-001..CH-019"
+    rules_count: 19
+    keywords: ["clickhouse-go", "batch", "driver", "connection", "Exec", "PrepareBatch"]
+  - path: "query_patterns.md"
+    description: "Aggregations, window functions, time-series queries, PREWHERE"
+    priority: 2
+    rule_id_range: "CH-100..CH-124"
+    rules_count: 25
+    keywords: ["SELECT", "aggregation", "window", "PREWHERE", "FINAL", "time-series", "OHLCV", "candle", "groupArray"]
+  - path: "table_engines.md"
+    description: "MergeTree family, ReplacingMergeTree, engine selection"
+    priority: 2
+    rule_id_range: "CH-200..CH-217"
+    rules_count: 18
+    keywords: ["MergeTree", "ReplacingMergeTree", "AggregatingMergeTree", "engine", "ORDER BY", "PARTITION BY"]
+  - path: "optimization.md"
+    description: "Partitioning, indexes, query optimization, EXPLAIN"
+    priority: 2
+    rule_id_range: "CH-300..CH-326"
+    rules_count: 27
+    keywords: ["optimization", "partition", "index", "performance", "slow", "EXPLAIN"]
+  - path: "materialized_views.md"
+    description: "Incremental aggregations, real-time summaries"
+    priority: 3
+    rule_id_range: "CH-400..CH-423"
+    rules_count: 24
+    keywords: ["materialized view", "incremental", "aggregation", "real-time"]
+  - path: "aggregation_tables.md"
+    description: "AggregatingMergeTree patterns, pre-aggregation"
+    priority: 3
+    rule_id_range: "CH-500..CH-521"
+    rules_count: 22
+    keywords: ["AggregatingMergeTree", "SummingMergeTree", "pre-aggregation", "rollup"]
+  - path: "distributed_tables.md"
+    description: "Distributed queries, sharding, replication"
+    priority: 3
+    rule_id_range: "CH-600..CH-625"
+    rules_count: 26
+    keywords: ["distributed", "shard", "replica", "cluster"]
+
+key_rules:
+  - id: "CH-001"
+    rule: "Use batch inserts, never single-row INSERT"
+    critical: true
+  - id: "CH-002"
+    rule: "Choose correct MergeTree engine for use case"
+    critical: true
+  - id: "CH-003"
+    rule: "Partition by date/month for time-series"
+  - id: "CH-004"
+    rule: "Use PREWHERE for filtering before reading"
+  - id: "CH-005"
+    rule: "Avoid JOINs, denormalize data"
+  - id: "CH-006"
+    rule: "Use AggregatingMergeTree for real-time aggregates"
+  - id: "CH-007"
+    rule: "Set max_execution_time for queries"
+    critical: true
+  - id: "CH-008"
+    rule: "NEVER use SELECT ... FINAL — use argMax(col, version_col) + GROUP BY instead"
+    example: "SELECT id, argMax(state, updated_at) AS state FROM t GROUP BY id"
+    critical: true

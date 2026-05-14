@@ -1,0 +1,288 @@
+# DevOps Problem-Resolving Plan Template v1 - Infrastructure Implementation Plan
+#
+# Purpose:
+#   Template optimized for DevOps agents to implement infrastructure solutions
+#   with sufficient context for containerization, orchestration, CI/CD, and deployment.
+#
+# Core Principles:
+#   1. Security First - All configurations must follow security best practices
+#   2. Production Ready - Configurations must be production-grade from start
+#   3. Observable - Logging, metrics, and monitoring must be included
+#   4. Scalable - Resource management and autoscaling considerations
+#   5. Documented - Clear deployment and rollback procedures
+
+---
+# Metadata
+template_name: "Problem-Resolving Plan (DevOps)"
+template_version: "1.0"
+template_type: "devops_prp"
+
+# Plan Identification
+plan_id: ""  # Format: REQ-XXX-TASK-YYY-PRP or TASK-XXX-PRP
+parent_request: ""  # Link to parent REQ-XXX
+parent_task: ""  # Link to parent TASK-XXX (if applicable)
+created_at: ""  # ISO 8601 datetime
+updated_at: ""  # ISO 8601 datetime
+
+# Goal Section
+goal:
+  summary: ""  # What infrastructure/deployment solution needs to be implemented
+  why:
+    - ""  # Business/technical value of this DevOps change
+    - ""  # Impact on scalability, reliability, or security
+    - ""  # Problems this infrastructure change solves
+  what: ""  # Infrastructure components to be created/modified
+  success_criteria:
+    - criterion: ""  # Specific measurable infrastructure outcomes
+      completed: false
+    - criterion: ""  # Performance/reliability metrics to achieve
+      completed: false
+
+# Context Section
+context:
+  # Documentation & References
+  documentation:
+    - type: url  # url | file | doc
+      path: ""  # URL or file path
+      why: ""  # Specific patterns/configs needed
+
+  # Current infrastructure overview
+  current_infrastructure: |
+    # Current deployment setup overview
+    # Existing Docker images, K8s clusters, CI/CD pipelines
+
+  # Target infrastructure
+  target_infrastructure: |
+    # Expected infrastructure after implementation
+    # New/modified Docker images, K8s resources, pipelines
+
+  # Environment specifications
+  environments:
+    development:
+      cluster: ""
+      namespace: ""
+      resources: "minimal"
+    staging:
+      cluster: ""
+      namespace: ""
+      resources: "production-like"
+    production:
+      cluster: ""
+      namespace: ""
+      resources: ""
+      ha_requirements: ""
+
+  # Known gotchas & tool quirks
+  gotchas:
+    docker:
+      - "Always use specific image tags, never :latest in production"
+      - "Non-root user required (security policy)"
+      - "Image size limit: 500MB"
+      - "Must pass Trivy security scan (no HIGH/CRITICAL)"
+    kubernetes:
+      - "Resource limits mandatory for all containers"
+      - "Health checks required (liveness + readiness)"
+      - "Network policies enabled (default deny)"
+      - "Pod Security Standards: restricted profile"
+    cicd:
+      - "All secrets from external secret store"
+      - "Deployment requires approval for production"
+      - "Rollback must be automated"
+
+# Implementation Blueprint
+implementation:
+  # Container Configuration
+  container:
+    dockerfile:
+      enabled: false
+      path: "Dockerfile"
+      base_image: ""
+      build_stages: []
+      content: |
+        # Dockerfile content or reference
+
+    docker_compose:
+      enabled: false
+      path: "docker-compose.yaml"
+      services: []
+      content: |
+        # Docker Compose content or reference
+
+  # Kubernetes Resources
+  kubernetes:
+    enabled: false
+    manifests_dir: "k8s/"
+    resources:
+      - type: Deployment
+        name: ""
+        file: ""
+        replicas: 3
+        image: ""
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      - type: Service
+        name: ""
+        file: ""
+        type: ClusterIP
+        ports: []
+      - type: Ingress
+        name: ""
+        file: ""
+        host: ""
+        tls_enabled: true
+      - type: ConfigMap
+        name: ""
+        file: ""
+      - type: HorizontalPodAutoscaler
+        name: ""
+        file: ""
+        min_replicas: 3
+        max_replicas: 10
+        target_cpu_utilization: 70
+
+  # CI/CD Pipeline
+  cicd:
+    enabled: false
+    platform: ""  # github_actions | gitlab_ci | jenkins | argocd
+    file: ""  # e.g., .github/workflows/deploy.yml
+    stages:
+      - name: build
+        steps: []
+      - name: test
+        steps: []
+      - name: security_scan
+        steps: []
+      - name: deploy
+        steps: []
+    content: |
+      # CI/CD pipeline content or reference
+
+  # Monitoring Setup
+  monitoring:
+    metrics_endpoint: "/metrics"
+    prometheus:
+      enabled: false
+      service_monitor: ""
+    grafana:
+      enabled: false
+      dashboard_file: ""
+    alerts:
+      - name: ""
+        condition: ""
+        severity: ""
+
+  # List of tasks
+  tasks:
+    - task_id: 1
+      name: "Create Dockerfile"
+      actions:
+        - "CREATE Dockerfile in project root"
+        - "FOLLOW multi-stage build pattern"
+        - "IMPLEMENT security hardening (non-root user)"
+        - "ADD health check"
+        - "VERIFY image builds successfully"
+        - "RUN security scan (trivy/grype)"
+      completed: false
+    - task_id: 2
+      name: "Create Kubernetes Manifests"
+      actions:
+        - "CREATE k8s/ directory"
+        - "CREATE deployment.yaml with proper resource limits"
+        - "CREATE service.yaml"
+        - "CREATE ingress.yaml (if needed)"
+        - "CREATE configmap.yaml for configuration"
+        - "ENSURE secrets reference (don't hardcode)"
+      completed: false
+
+# Security Checklist
+security_checklist:
+  - item: "Container runs as non-root user"
+    completed: false
+  - item: "No secrets hardcoded in configs"
+    completed: false
+  - item: "Image scanned for vulnerabilities"
+    completed: false
+  - item: "Network policies defined"
+    completed: false
+  - item: "RBAC configured (least privilege)"
+    completed: false
+  - item: "TLS configured for ingress"
+    completed: false
+  - item: "Pod Security Standards applied"
+    completed: false
+
+# Testing & Validation
+validation:
+  local:
+    - test: "Docker image builds successfully"
+      command: "docker build -t app:test ."
+      completed: false
+    - test: "Container starts and passes health checks"
+      command: "docker run --rm app:test"
+      completed: false
+  development:
+    - test: "Deploy to dev cluster"
+      command: "kubectl apply -f k8s/ -n dev"
+      completed: false
+    - test: "Verify pods running"
+      command: "kubectl get pods -n dev"
+      completed: false
+  staging:
+    - test: "Deploy with production-like config"
+      completed: false
+    - test: "Load testing"
+      completed: false
+    - test: "Rollback testing"
+      completed: false
+
+# Deployment Procedure
+deployment:
+  steps:
+    - step: "Build and push image"
+      commands:
+        - "docker build -t registry/app:v1.0.0 ."
+        - "docker push registry/app:v1.0.0"
+    - step: "Update K8s manifests with new image tag"
+      commands:
+        - "kubectl apply -f k8s/"
+    - step: "Monitor rollout"
+      commands:
+        - "kubectl rollout status deployment/app-name -n production"
+    - step: "Verify deployment"
+      commands:
+        - "kubectl get pods -n production"
+        - "kubectl logs -f deployment/app-name -n production"
+
+# Rollback Procedure
+rollback:
+  quick_rollback:
+    command: "kubectl rollout undo deployment/app-name -n production"
+  specific_revision:
+    list_history: "kubectl rollout history deployment/app-name -n production"
+    rollback_command: "kubectl rollout undo deployment/app-name -n production --to-revision=N"
+  verify_command: "kubectl rollout status deployment/app-name -n production"
+
+# Key Metrics & Alerts
+monitoring_config:
+  metrics:
+    - "pod_cpu_usage"
+    - "pod_memory_usage"
+    - "http_request_duration"
+    - "http_requests_total"
+    - "error_rate"
+  alerts:
+    - name: "High app_error rate"
+      threshold: "> 5%"
+    - name: "Pod restarts"
+      threshold: "> 3 in 10min"
+    - name: "High memory usage"
+      threshold: "> 90%"
+    - name: "Deployment failed"
+      threshold: "any"
+    - name: "Health check failures"
+      threshold: "any"

@@ -1,0 +1,173 @@
+# Bug Report Template (YAML)
+# Этот шаблон используется для структурированного отчёта о багах
+# после интеграционного тестирования
+
+# === METADATA ===
+metadata:
+  date: "YYYY-MM-DD"
+  reporter: "it-test-agent"
+  task_ref: "TASK-XXX"
+  prp_ref: "TASK-XXX-PRP.md"  # если есть
+
+# === TESTING CONTEXT ===
+context:
+  project:
+    path: "/path/to/project"
+    version: "commit-hash or v1.0.0"
+  environment:
+    os: "Linux/macOS/Windows"
+    go_version: "go1.21.x"
+    docker_version: "24.x.x"
+    dependencies:
+      - "postgres:15"
+      - "redis:7"
+      - "kafka:3.x"
+  startup_commands: |
+    docker-compose up -d
+    go build ./...
+    ./service
+
+# === BUGS ===
+# Каждый баг имеет уникальный id в формате BUG-{NUMBER}
+#
+# КАТЕГОРИИ (category) - ОБЯЗАТЕЛЬНОЕ ПОЛЕ:
+#   CRITICAL_CRASH    - критические падения сервиса, panic, segfault
+#   FUNCTIONALITY     - основной функционал не работает как ожидается
+#   VALIDATION        - проблемы с валидацией входных данных
+#   ERROR_HANDLING    - неправильная обработка ошибок, некорректные коды ответов
+#   PERFORMANCE       - проблемы производительности, медленные запросы
+#   DATA_INTEGRITY    - проблемы с целостностью данных, некорректные сохранения
+#   INTEGRATION       - проблемы интеграции с внешними сервисами/БД
+#   EDGE_CASES        - граничные случаи, неожиданное поведение на edge cases
+#   SECURITY          - уязвимости безопасности
+#   API_CONTRACT      - нарушение API контракта, неправильный формат ответа
+#
+bugs:
+  - id: "BUG-001"
+    title: "Краткое название бага"
+    category: "FUNCTIONALITY"  # ОБЯЗАТЕЛЬНОЕ ПОЛЕ (см. список выше)
+    priority: "CRITICAL"  # CRITICAL | HIGH | MEDIUM | LOW
+    status: "open"  # open | fixed | wont_fix
+    description: |
+      Подробное описание проблемы.
+      Как это влияет на работу системы.
+    reproduction_steps:
+      - "Запустить сервис"
+      - "Выполнить запрос: curl -X POST http://localhost:8080/api/..."
+      - "Наблюдать ошибку"
+    expected_result: |
+      Описание ожидаемого поведения согласно требованиям.
+    actual_result: |
+      Описание фактического поведения.
+    evidence:
+      logs: |
+        [вставить логи сервиса]
+      response: |
+        {"error": "..."}
+      stack_trace: |
+        [вставить stack trace если есть]
+    probable_cause: |
+      Гипотеза о причине бага (опционально).
+    related_files:
+      - file: "path/to/file.go"
+        line: 123
+        description: "описание связи"
+
+  - id: "BUG-002"
+    title: "Второй баг"
+    category: "ERROR_HANDLING"  # ОБЯЗАТЕЛЬНОЕ ПОЛЕ
+    priority: "HIGH"
+    status: "open"
+    description: |
+      ...
+    reproduction_steps:
+      - "Шаг 1"
+      - "Шаг 2"
+    expected_result: |
+      ...
+    actual_result: |
+      ...
+    evidence:
+      logs: ""
+      response: ""
+      stack_trace: ""
+    probable_cause: ""
+    related_files: []
+
+# === SUMMARY ===
+summary:
+  total_bugs: 0
+  by_priority:
+    critical: 0
+    high: 0
+    medium: 0
+    low: 0
+  by_status:
+    open: 0
+    fixed: 0
+    wont_fix: 0
+
+# === WORKING CORRECTLY ===
+# Функционал, который работает корректно
+working:
+  - "Health check endpoint отвечает"
+  - "Аутентификация работает"
+  - "Базовый CRUD операции работают"
+
+# === TESTING STATUS ===
+testing_status:
+  environment_started: false
+  service_builds: false
+  service_starts: false
+  health_check_passes: false
+  main_functionality_tested: false
+  edge_cases_tested: false
+  report_complete: false
+
+# === RECOMMENDATIONS ===
+recommendations:
+  fix_order:
+    - "Сначала исправить BUG-001 (блокирует другие)"
+    - "Затем BUG-002"
+  dependencies:
+    - "BUG-002 зависит от BUG-001"
+  additional_notes: |
+    Дополнительные наблюдения, которые могут быть полезны.
+
+# === DOD CHECKLIST ===
+# ОБЯЗАТЕЛЬНАЯ СЕКЦИЯ - чеклист для проверки полноты выполнения задачи
+# Формируется из секции DOD в TASK файле
+dod_checklist:
+  task_file: "task_management/tasks/{TASK-ID}.md:1"
+  criteria:
+    - id: "DOD-001"
+      description: "Build успешен"
+      check_command: "make build"
+      status: "pending"  # pending | passed | failed
+      mandatory: true
+
+    - id: "DOD-002"
+      description: "Все тесты проходят"
+      check_command: "make test"
+      status: "pending"
+      mandatory: true
+
+    - id: "DOD-003"
+      description: "Сервис запускается"
+      check_command: "it-test-agent: health check"
+      status: "pending"
+      mandatory: true
+
+    # Добавить критерии из TASK DOD секции
+
+  total_criteria: 3
+  mandatory_criteria: 3
+  note: |
+    ВСЕ критерии DOD ОБЯЗАТЕЛЬНЫ к выполнению.
+    При исправлении багов (/execute-it-bug-fix) проверить КАЖДЫЙ критерий на работающем сервисе.
+
+# === VERDICT ===
+# ALL_PASSED | BUGS_FOUND | BLOCKED
+verdict: "BUGS_FOUND"
+verdict_reason: "Найдено N критических и M высокоприоритетных багов"
+

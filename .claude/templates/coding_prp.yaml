@@ -1,0 +1,157 @@
+# Problem-Resolving Plan Template v1 - Context-Rich with Validation Loops (Go Edition)
+#
+# Purpose:
+#   Template optimized for AI agents to implement Go features with sufficient context
+#   and self-validation capabilities to achieve working code through iterative refinement.
+#
+# Core Principles:
+#   1. Context is King - Include ALL necessary documentation, examples, and caveats
+#   2. Validation Loops - Provide executable tests/builds the AI can run and fix
+#   3. Information Dense - Use keywords and patterns from the Go codebase
+#   4. Progressive Success - Start simple, validate, then enhance
+#   5. Go Idiomatic - Follow Go conventions and best practices
+
+---
+# Metadata
+template_name: "Problem-Resolving Plan (Coding)"
+template_version: "1.0"
+template_type: "coding_prp"
+
+# Plan Identification
+plan_id: ""  # Format: REQ-XXX-TASK-YYY-PRP or TASK-XXX-PRP
+parent_request: ""  # Link to parent REQ-XXX
+parent_task: ""  # Link to parent TASK-XXX (if applicable)
+created_at: ""  # ISO 8601 datetime
+updated_at: ""  # ISO 8601 datetime
+
+# Goal Section
+goal:
+  summary: ""  # What needs to be built - be specific about the end state
+  why:
+    - ""  # Business value and user impact
+    - ""  # Integration with existing features
+    - ""  # Problems this solves and for whom
+  what: ""  # User-visible behavior and technical requirements
+  success_criteria:
+    - criterion: ""
+      completed: false
+    - criterion: ""
+      completed: false
+
+# Coding Standards (ОБЯЗАТЕЛЬНАЯ СЕКЦИЯ)
+# ⚠️ Код ДОЛЖЕН соответствовать всем правилам из указанных гайдов
+coding_standards:
+  rules_index: ".claude/guides/golang/rules_index.yaml"  # Полный индекс правил
+  mandatory_guides:
+    - path: ".claude/guides/golang/effective_standards.md"
+      priority: 1  # 🔴 ВЫСШИЙ - проверяется ВСЕГДА
+      prefix: "ES"
+      critical_rules:
+        - "ES-0051"  # Интерфейсы в consumer, не producer
+        - "ES-0055"  # НЕТ обобщённых интерфейсов в provider packages
+        - "ES-0060"  # Обработка ошибок обязательна
+    - path: ".claude/guides/golang/effective_concurrency.md"
+      priority: 2  # 🟠 ВЫСОКИЙ - при concurrency коде
+      prefix: "EC"
+      applies_when: "goroutines, channels, mutex, atomic, WaitGroup"
+      critical_rules:
+        - "EC-0062"  # Swap для entry guards
+        - "EC-0063"  # НЕ смешивать atomic и mutex
+        - "EC-0064"  # Максимум 1 mutex на метод
+        - "EC-0081"  # Wait for goroutines при shutdown
+        - "EC-0091"  # Capture loop variables в goroutines
+    - path: ".claude/guides/golang/coding_style.md"
+      priority: 3  # 🟡 СРЕДНИЙ - стиль кода
+      prefix: "CS"
+      critical_rules:
+        - "CS-0010"  # Block spacing
+  concurrency_patterns:
+    path: ".claude/guides/libs/concurrency_patterns.md"
+    patterns_to_use: []  # Заполнить если задача включает concurrency
+    # Примеры: "Worker Pool", "Semaphore", "errgroup", "Fan-Out/Fan-In"
+
+# Context Section
+context:
+  # Documentation & References - list all context needed to implement
+  documentation:
+    - type: url  # url | file | doc | docfile
+      path: ""  # URL or file path
+      why: ""  # Specific functions/methods you'll need
+      section: ""  # Optional: specific section
+      critical: ""  # Optional: key insight that prevents common errors
+
+  # Current codebase structure (output of tree -I 'vendor|*.log|tmp')
+  current_structure: |
+    # Project structure overview
+
+  # Desired codebase structure with files to be added
+  desired_structure: |
+    # Expected structure after implementation
+
+  # Known gotchas of codebase & Go library quirks
+  gotchas:
+    - category: ""  # e.g., "database", "context", "concurrency"
+      description: ""
+      example: ""  # Optional code example
+
+# Implementation Blueprint
+implementation:
+  # Data models and structures
+  data_models:
+    - name: ""
+      type: struct  # struct | interface | type | const
+      description: ""
+      code: |
+        // Example:
+        // type ExampleModel struct {
+        //     ID        int       `json:"id" db:"id"`
+        //     Name      string    `json:"name" db:"name" validate:"required"`
+        //     CreatedAt time.Time `json:"created_at" db:"created_at"`
+        // }
+
+  # List of tasks to complete the PRP
+  tasks:
+    - task_id: 1
+      action: ""  # MODIFY | CREATE | DELETE | CONFIGURE
+      file: ""
+      description: ""
+      details:
+        - ""
+      pseudocode: |
+        // Task pseudocode with CRITICAL details
+        // Don't write entire code, just key patterns
+
+  # Integration points
+  integration:
+    database:
+      migration_up: ""  # Path: migrations/000X_add_feature.up.sql
+      migration_down: ""  # Path: migrations/000X_add_feature.down.sql
+    config:
+      file: ""  # Path: config/config.go or internal/config/
+      pattern: ""  # e.g., 'FeatureTimeout time.Duration `envconfig:"FEATURE_TIMEOUT"`'
+    routes:
+      file: ""  # Path: internal/routes/routes.go
+      pattern: ""  # e.g., 'r.POST("/feature", handlers.NewFeatureHandler)'
+    dependencies:
+      go_mod: []  # New packages to add to go.mod
+      di_wire: ""  # Path: internal/di/wire.go for dependency injection
+
+# Testing Section
+testing:
+  # Unit test cases
+  unit_tests:
+    - entity: ""  # Entity being tested
+      test_cases:
+        - description: ""
+          completed: false
+        - description: ""
+          completed: false
+
+  # Integration test cases
+  integration_tests:
+    - entity: ""  # Entity being tested
+      test_cases:
+        - description: ""
+          completed: false
+        - description: ""
+          completed: false

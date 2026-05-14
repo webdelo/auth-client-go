@@ -1,0 +1,56 @@
+# SQLite DBA Rules Index
+# Детальный индекс правил SQLite для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "SQ"
+  total_rules: 86
+  rule_id_range: "SQ-001..SQ-218"
+  last_updated: "2026-03-10"
+
+keywords:
+  - "sqlite"
+  - "embedded"
+  - "WAL"
+  - "FTS5"
+  - "modernc.org/sqlite"
+  - "PRAGMA"
+  - "single-file"
+
+skill: ".claude/skills/sqlite-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "modernc.org/sqlite, CGO-free driver"
+    priority: 1
+    rule_id_range: "SQ-001..SQ-025"
+    rules_count: 25
+    keywords: ["modernc", "driver", "CGO-free", "database/sql"]
+  - path: "query_patterns.md"
+    description: "Standard SQL patterns for SQLite"
+    priority: 2
+    rule_id_range: "SQ-100..SQ-141"
+    rules_count: 42
+    keywords: ["SELECT", "INSERT", "query"]
+  - path: "optimization.md"
+    description: "PRAGMA settings, WAL mode, tuning"
+    priority: 2
+    rule_id_range: "SQ-200..SQ-218"
+    rules_count: 19
+    keywords: ["PRAGMA", "WAL", "journal_mode", "synchronous", "optimization"]
+
+key_rules:
+  - id: "SQ-001"
+    rule: "Enable WAL mode for concurrency"
+    example: "PRAGMA journal_mode=WAL"
+    critical: true
+  - id: "SQ-002"
+    rule: "Use PRAGMA synchronous=NORMAL for performance"
+  - id: "SQ-003"
+    rule: "Enable foreign keys explicitly"
+    example: "PRAGMA foreign_keys=ON"
+    critical: true
+  - id: "SQ-004"
+    rule: "Use FTS5 for full-text search"
+  - id: "SQ-005"
+    rule: "Single writer, multiple readers"
+    critical: true

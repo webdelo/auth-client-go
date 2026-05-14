@@ -1,0 +1,122 @@
+# PostgreSQL DBA Rules Index
+# Детальный индекс правил PostgreSQL для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "PG"
+  total_rules: 168
+  rule_id_range: "PG-001..PG-612"
+  last_updated: "2026-03-10"
+
+keywords:
+  # Технология
+  - "postgres"
+  - "postgresql"
+  - "pgx"
+  - "pgxpool"
+  - "lib/pq"
+  # Паттерны кода
+  - "QueryRow"
+  - "pgx.ErrNoRows"
+  - "RETURNING"
+  - "ANY($1"
+  - "unnest("
+  - "COPY FROM"
+  - "BeginTx"
+  - "pgconn"
+  # SQL конструкции
+  - "CREATE TABLE"
+  - "ALTER TABLE"
+  - "FOREIGN KEY"
+  - "PRIMARY KEY"
+  - "ON CONFLICT"
+  - "UPSERT"
+  - "CTE"
+  - "WITH RECURSIVE"
+  - "LATERAL"
+  - "json_build_object"
+  - "jsonb"
+  # Операции
+  - "vacuum"
+  - "autovacuum"
+  - "EXPLAIN"
+  - "ANALYZE"
+  - "pg_stat"
+  - "materialized view"
+  - "partitioning"
+  - "replication"
+  # Доменные
+  - "миграция"
+  - "migration"
+  - "schema"
+  - "index"
+  - "индекс"
+
+skill: ".claude/skills/postgres-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "pgx driver, connection pooling, transactions, batch operations"
+    priority: 1
+    rule_id_range: "PG-001..PG-027"
+    rules_count: 27
+    keywords: ["pgx", "pgxpool", "BeginTx", "transaction", "connection pool", "batch", "COPY"]
+  - path: "query_patterns.md"
+    description: "CRUD, bulk operations, CTEs, UPSERT, JSON functions"
+    priority: 2
+    rule_id_range: "PG-100..PG-133"
+    rules_count: 34
+    keywords: ["SELECT", "INSERT", "UPDATE", "DELETE", "CTE", "UPSERT", "ON CONFLICT", "json_build_object", "RETURNING", "ANY("]
+  - path: "optimization.md"
+    description: "Indexes, EXPLAIN, query tuning, pg_stat"
+    priority: 2
+    rule_id_range: "PG-200..PG-229"
+    rules_count: 30
+    keywords: ["EXPLAIN", "index", "optimization", "slow query", "pg_stat", "performance"]
+  - path: "vacuum_autovacuum.md"
+    description: "VACUUM, autovacuum settings, dead tuples"
+    priority: 3
+    rule_id_range: "PG-300..PG-321"
+    rules_count: 22
+    keywords: ["vacuum", "autovacuum", "dead tuple", "bloat"]
+  - path: "replication_partitioning.md"
+    description: "Replication, partitioning strategies"
+    priority: 3
+    rule_id_range: "PG-400..PG-423"
+    rules_count: 24
+    keywords: ["replication", "partitioning", "partition", "replica"]
+  - path: "materialized_views.md"
+    description: "Materialized views, refresh strategies"
+    priority: 3
+    rule_id_range: "PG-500..PG-518"
+    rules_count: 19
+    keywords: ["materialized view", "REFRESH", "incremental"]
+  - path: "storage_engines.md"
+    description: "TOAST, tablespaces, storage parameters"
+    priority: 3
+    rule_id_range: "PG-600..PG-612"
+    rules_count: 12
+    keywords: ["TOAST", "tablespace", "storage", "fillfactor"]
+
+key_rules:
+  - id: "PG-001"
+    rule: "Use pgxpool for connection pooling"
+    example: "pgxpool.New(ctx, connString)"
+    critical: true
+  - id: "PG-002"
+    rule: "Use ANY($1::type[]) instead of IN for arrays"
+    example: "WHERE id = ANY($1::uuid[])"
+  - id: "PG-003"
+    rule: "Always use RETURNING for INSERT/UPDATE"
+    example: "INSERT ... RETURNING id, created_at"
+  - id: "PG-004"
+    rule: "Use QueryRow for single row, Query for multiple"
+  - id: "PG-005"
+    rule: "Batch operations with COPY or unnest()"
+  - id: "PG-006"
+    rule: "Use prepared statements for repeated queries"
+  - id: "PG-007"
+    rule: "Handle pgx.ErrNoRows explicitly"
+    critical: true
+  - id: "PG-008"
+    rule: "Use context with timeout for all queries"
+    critical: true

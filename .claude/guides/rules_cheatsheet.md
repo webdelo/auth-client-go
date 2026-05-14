@@ -1,0 +1,188 @@
+# Rules Cheatsheet
+
+## Golang Standards (ES, 66 rules)
+- ES-0001: Use gofmt for automatic formatting
+- ES-0002: Use tabs for indentation
+- ES-0003: Brace placement on same line
+- ES-0010: Package names - lowercase, short, no underscores
+- ES-0011: Exported vs Unexported identifiers
+- ES-0012: Getter naming - omit "Get" prefix
+- ES-0013: Setter naming - use "Set" prefix
+- ES-0014: One-method interfaces - use method name + "-er" suffix
+- ES-0015: Use MixedCaps for multi-word identifiers
+- ES-0016: Function naming - use MixedCaps
+- ES-0017: Boolean naming - use is/has/can/should prefixes
+- ES-0018: Avoid generic function names
+- ES-0020: Initialization in conditions
+- ES-0021: Return errors early (guard clauses)
+- ES-0022: Minimize scope of variables
+- ES-0030: Prefer slices over arrays
+- ES-0031: Design zero values to be immediately usable
+- ES-0032: Use composite literals with field names
+- ES-0033: Pre-allocate slices when size is known
+- ES-0034: Pre-allocate maps when size is known
+- ES-0035: Defensive copying for slices/maps at boundaries
+- ES-0040: Return value and error
+- ES-0041: Named return parameters for documentation
+- ES-0042: Use defer for guaranteed resource cleanup
+- ES-0043: Avoid defer inside loops
+- ES-0044: Functions returning more than 3 values need refactoring
+- ES-0045: No optional parameters via zero values — use separate methods
+- ES-0050: Keep interfaces small and focused
+- ES-0051: Define interfaces at consumer, not producer
+- ES-0052: Use type assertions with comma-ok
+- ES-0053: Verify interface implementation at compile time
+- ES-0054: Don't use pointers to interfaces
+- ES-0055: No generalized interfaces in provider packages
+- ES-0056: Prefer unexported interfaces
+- ES-0057: Interface placement within a package
+- ES-0060: Handle errors explicitly
+- ES-0061: Wrap errors with context
+- ES-0062: Use sentinel errors for detection
+- ES-0063: No panic in production code
+- ES-0064: Use recover only for server crash prevention
+- ES-0065: Return empty result + nil for "not found"
+- ES-0070: Consistent receiver types for all methods
+- ES-0071: Pointer receiver for modifications
+- ES-0072: Value receiver for read-only
+- ES-0073: Receiver type choice guidelines
+- ES-0080: Doc comments precede declaration
+- ES-0081: Start doc comments with declaration name
+- ES-0090: Start enums with 1, not 0
+- ES-0110: Use strconv instead of fmt for conversions
+- ES-0111: Avoid repeated string <-> []byte conversion
+- ES-0112: Use decimal for financial calculations
+- ES-0120: Use functional options for many optional parameters
+- ES-0130: Import order - standard, external, internal
+- ES-0131: Use import aliases only when necessary
+- ES-0140: Constructor name is "New"
+- ES-0141: Use Dependencies struct for 3+ dependencies
+- ES-0142: Validate dependencies in constructor
+- ES-0143: Use noop defaults for optional dependencies instead of nil-checks
+- ES-0150: Use maps and slices packages to simplify collection operations
+- ES-0160: Domain entity не повторяет структуру таблицы БД
+- ES-0161: Database row struct хранится в пакете `models/` внутри репозитория
+- ES-0162: Маппинг entity ↔ row реализуется как builder в пакете `builders/`
+- ES-0170: Prefer value parameters over pointers
+- ES-0171: nolint annotations are FORBIDDEN
+- ES-0172: Use full object names in log messages
+- ES-0173: Variable naming — no unclear abbreviations
+
+## Coding Style (CS, 36 rules)
+- CS-0001: Line length limit - 120 characters
+- CS-0002: Explicit returns only
+- CS-0003: No magic numbers
+- CS-0004: No global state unless absolutely necessary
+- CS-0010: Empty line after if/switch/select blocks
+- CS-0020: Code should read top-to-bottom like a story
+- CS-0021: Use clear, meaningful names
+- CS-0022: Extract meaningful actions into functions
+- CS-0023: Keep cyclomatic complexity low
+- CS-0024: Avoid over-engineering
+- CS-0030: Never modify linter configuration
+- CS-0031: //nolint directives require justification
+- CS-0040: Anonymous functions in function calls - max 5 lines
+- CS-0050: Each entity in separate package
+- CS-0051: File structure within package
+- CS-0052: Element order in main file
+- CS-0053: Forbidden file patterns
+- CS-0060: Godoc comments for public methods
+- CS-0061: Use gofmt and golangci-lint
+- CS-0070: English-only naming
+- CS-0071: Variable names - meaningful
+- CS-0072: Use idiomatic casing
+- CS-0080: Distinct types for meaningful values
+- CS-0081: Functions returning >3 values need refactoring
+- CS-0082: Function length rules
+- CS-0090: Always check pointers for nil
+- CS-0100: No envDefault in production configs
+- CS-0110: No internal standard references in code comments
+- CS-0111: Minimal inline comments - code must be self-explanatory
+- CS-0112: No decorative comment separators
+- CS-0113: Entity = identity + lifecycle + closed mutable state
+- CS-0114: No error storage in struct fields for deferred retrieval
+- CS-0115: Value Object = value semantics + immutability
+- CS-0116: DTO = transport structure + open fields + no domain invariants
+- CS-0117: Exported Entity/VO/DTO structs must live in entity/vo/dto packages
+- CS-0118: Layer-local structs outside entity/vo/dto must be unexported and package-local
+- CS-0119: One primary exported struct per file in entity/vo/dto packages
+- CS-0120: Struct field visibility must be uniform (all exported or all unexported)
+- CS-0121: Single constructor per entity struct (New() or New<StructName>())
+- CS-0122: Options pattern for multiple initialization variants
+
+## Unit Tests (UT, 33 rules)
+- UT-0001: Table-driven tests mandatory
+- UT-0002: One method = one test function
+- UT-0010: Function naming format Test\<Type\>\_\<Method\>
+- UT-0011: First case must be "happy\_path"
+- UT-0012: Test case naming in snake\_case
+- UT-0020: Mocks ONLY via mockery (never manual mock structs)
+- UT-0021: Use Expecter API, not .On()
+- UT-0022: All mocks with explicit call count
+- UT-0023: ПОЛНЫЙ ЗАПРЕТ на mock.Anything и mock.AnythingOfType
+- UT-0024: New mocks for each subtest
+- UT-0025: Mocking DB Transactions
+- UT-0026: testMocks struct — always group mocks in a struct
+- UT-0027: No decorative section separators in test files
+- UT-0028: No helper functions for test data, mocks, or assertions
+- UT-0029: No package-level shared variables for test data
+- UT-0030: require for critical, assert for additional
+- UT-0031: assert for additional checks (continues test)
+- UT-0032: No logic in tests — use closures in want
+- UT-0033: JSON validation with assert.Contains
+- UT-0040: t.Parallel() at start of main test and each subtest
+- UT-0041: tc := tc variable capture when using t.Parallel()
+- UT-0042: When NOT to use t.Parallel()
+- UT-0060: Test placement rules
+- UT-0070: go-cmp for complex structures
+- UT-0071: synctest for time-dependent code (Go 1.24+)
+- UT-0080: Use Map for simple scenarios
+- UT-0081: Use Slice when order matters
+- UT-0100: One test file per tested struct/function source file
+- UT-0110: Repository unit tests ОБЯЗАТЕЛЬНЫ
+- UT-0111: Мок пула БД через unexported interface
+- UT-0112: Обязательные кейсы для repository тестов
+- UT-0113: Анти-паттерны в repository тестах
+- UT-0114: fakeRows/fakeRow для Query/QueryRow тестов
+
+## Concurrency (EC, 40 rules)
+- EC-0001: Share memory by communicating
+- EC-0002: Prefer channels for coordination, mutex for state protection
+- EC-0010: Every goroutine must have a clear lifecycle
+- EC-0011: Always cancel contexts to signal shutdown
+- EC-0012: Avoid goroutine leaks
+- EC-0013: Check ctx.Done() in long-running operations
+- EC-0020: Unbuffered (0) or size 1 channels by default
+- EC-0021: Close channels on sender side only
+- EC-0022: Respect channel semantics
+- EC-0023: Use buffered channels as semaphores
+- EC-0030: Zero-value mutex is ready to use
+- EC-0031: Embedding mutex in unexported structs
+- EC-0032: Maximum 3 mutexes per struct
+- EC-0033: Always use defer with mutex unlock
+- EC-0034: Use RWMutex for read-heavy workloads
+- EC-0040: Add before starting goroutine
+- EC-0041: Use errgroup for error handling
+- EC-0050: Pass context as first parameter
+- EC-0051: Never store context in structs
+- EC-0052: Use context.Background() or context.TODO() as root
+- EC-0053: Set reasonable timeouts
+- EC-0054: Handle context errors appropriately
+- EC-0055: Always call cancel function
+- EC-0056: Use custom types for context keys
+- EC-0060: Use atomic for simple counters and flags
+- EC-0061: Prefer atomic over mutex for single values
+- EC-0062: Use Swap for entry guards, not Store
+- EC-0063: Don't mix atomic and mutex for same protection
+- EC-0064: Maximum 1 mutex per method
+- EC-0070: Use fixed number of workers
+- EC-0071: Limit concurrency with semaphores
+- EC-0080: Signal shutdown via context cancellation
+- EC-0081: Wait for all goroutines to complete
+- EC-0082: Handle OS signals for graceful shutdown
+- EC-0090: Use -race flag in tests
+- EC-0091: Capture loop variables in goroutines
+- EC-0092: Never share state between goroutines without synchronization
+- EC-0100: Use t.Parallel() for independent tests
+- EC-0101: Don't use t.Parallel() with shared state
+- EC-0102: Use synctest for time-dependent code (Go 1.24+)

@@ -1,0 +1,92 @@
+# External Libraries Template
+# Этот шаблон описывает внешние зависимости проекта в YAML формате
+# При обновлении memory bank заполняется автоматически из go.mod
+
+# Основные (direct) зависимости проекта
+# Группируются по категориям для удобства навигации
+dependencies:
+  # Dependency Injection
+  di: []
+  # Пример:
+  # - name: "go.uber.org/fx"
+  #   version: "v1.20.0"
+  #   description: "Dependency injection framework"
+  #   docs: "https://uber-go.github.io/fx/"
+  #   usage: "DI контейнер для всех сервисов"
+
+  # Database drivers and ORMs
+  database: []
+  # Пример:
+  # - name: "github.com/jackc/pgx/v4"
+  #   version: "v4.18.0"
+  #   description: "PostgreSQL driver"
+  #   docs: "https://github.com/jackc/pgx"
+  #   usage: "Основной драйвер PostgreSQL"
+
+  # Message brokers (Kafka, NSQ, RabbitMQ, etc.)
+  messaging: []
+  # Пример:
+  # - name: "github.com/nsqio/go-nsq"
+  #   version: "v1.1.0"
+  #   description: "NSQ client library"
+  #   docs: "https://nsq.io/clients/go-nsq.html"
+  #   usage: "Pub/sub для async сообщений"
+
+  # HTTP/gRPC frameworks
+  transport: []
+  # Пример:
+  # - name: "google.golang.org/grpc"
+  #   version: "v1.56.0"
+  #   description: "gRPC framework"
+  #   docs: "https://grpc.io/docs/languages/go/"
+
+  # Logging
+  logging: []
+  # Пример:
+  # - name: "go.uber.org/zap"
+  #   version: "v1.24.0"
+  #   description: "Structured logging"
+  #   docs: "https://pkg.go.dev/go.uber.org/zap"
+
+  # Metrics and tracing
+  observability: []
+  # Пример:
+  # - name: "github.com/prometheus/client_golang"
+  #   version: "v1.15.0"
+  #   description: "Prometheus metrics client"
+
+  # Testing
+  testing: []
+  # Пример:
+  # - name: "github.com/stretchr/testify"
+  #   version: "v1.8.4"
+  #   description: "Testing toolkit"
+  #   usage: "Assertions and mocks"
+
+  # Utilities (decimal, uuid, etc.)
+  utilities: []
+  # Пример:
+  # - name: "github.com/google/uuid"
+  #   version: "v1.3.0"
+  #   description: "UUID generation"
+
+  # Configuration
+  config: []
+  # Пример:
+  # - name: "github.com/kelseyhightower/envconfig"
+  #   version: "v1.4.0"
+  #   description: "Environment config parsing"
+
+  # Other dependencies
+  other: []
+
+# Косвенные зависимости, важные для понимания проекта (опционально)
+# Обычно автоматически не заполняется, добавляется вручную при необходимости
+indirect_notable: []
+
+# Метаданные
+metadata:
+  generated_at: ""            # Дата генерации (ISO 8601)
+  go_version: ""              # Версия Go (из go.mod)
+  total_direct: 0             # Количество direct dependencies
+  total_indirect: 0           # Количество indirect dependencies

@@ -1,0 +1,109 @@
+# User Code Review Report Template
+# Используется командой /aggregate-users-code-review
+# Содержит комментарии ревьюеров из Pull Request, структурированные для дальнейшего исправления
+#
+# ⚠️ ПОДДЕРЖКА ИДЕМПОТЕНТНОСТИ:
+# При повторном запуске команды - новые комментарии добавляются,
+# существующие (по comment_id) НЕ дублируются.
+# report_version увеличивается при каждом обновлении.
+#
+# ТИПЫ ЗАМЕЧАНИЙ:
+# - issues: необходимо исправить (прямые ошибки, нарушения стандартов)
+# - requests: требуют анализа, возможно формирования вопросов к пользователю
+#            (предложения, вопросы ревьюера, обсуждаемые улучшения)
+
+# === METADATA ===
+metadata:
+  pr: "PR name or URL"          # PR наименование или ссылка
+  pr_number: 0                  # Номер PR (для API запросов)
+  task_id: "REQ-XXX-TASK-XXX"   # ID задачи (если применимо, иначе "PR-{N}")
+  date: "YYYY-MM-DD"            # Дата первого создания
+  last_updated: "YYYY-MM-DD"    # Дата последнего обновления
+  reviewers: []                 # Список ревьюеров, оставивших комментарии
+  total_comments: 0             # Всего комментариев (issues + requests)
+  report_version: 1             # Увеличивается при каждом обновлении
+
+# === ISSUES ===
+# Замечания, которые необходимо исправить.
+# Признаки ISSUE: прямое указание на ошибку/проблему, нарушение стандартов,
+# ключевые слова: "ошибка", "баг", "нужно исправить", "необходимо", "fix", "bug", "must"
+# Каждый issue имеет уникальный ID в формате UCR-I{NUMBER}
+issues:
+  - id: "UCR-I001"
+    comment_id: "github_comment_id_here"  # ID комментария GitHub (для идемпотентности)
+    reviewer: "username"
+    file: "path/to/file.go"
+    line: 42                    # Номер строки (null если комментарий к файлу в целом)
+    line_end: null              # Конец диапазона строк (null если одна строка)
+    title: "Краткое описание проблемы"
+    comment: |
+      Оригинальный текст комментария ревьюера.
+    code_context: |
+      // Код, к которому относится комментарий.
+      // Извлечён из diff PR (diff_hunk).
+      func example() {
+          // текущий код с проблемой
+      }
+    recommended_fix: null       # Заполняется в фазе анализа (Фаза 7)
+    status: "open"              # open | resolved | wont_fix
+
+# === REQUESTS ===
+# Замечания, требующие анализа и возможного обсуждения с пользователем.
+# Признаки REQUEST: вопрос или предложение ревьюера, требует решения о подходе,
+# ключевые слова: "возможно", "рассмотри", "что если", "consider", "maybe", "?", "предлагаю"
+# Каждый request имеет уникальный ID в формате UCR-R{NUMBER}
+requests:
+  - id: "UCR-R001"
+    comment_id: "github_comment_id_here"
+    reviewer: "username"
+    file: "path/to/file.go"
+    line: 78
+    line_end: null
+    title: "Краткое описание"
+    comment: |
+      Оригинальный текст комментария ревьюера.
+    code_context: |
+      // Код, к которому относится комментарий.
+    analysis_questions: []      # Вопросы, которые нужно задать пользователю
+    recommended_fix: null       # Заполняется после анализа (Фаза 7 или 9)
+    status: "pending_analysis"  # pending_analysis | analysis_complete | resolved | wont_fix
+
+# === QUESTIONS TO USER ===
+# Вопросы к пользователю, сформированные при анализе requests (Фаза 8).
+# Каждый вопрос содержит ссылку на comment и контекст кода для принятия решения.
+# Заполняется только если для request невозможно однозначно определить recommended_fix.
+questions_to_user:
+  - id: "Q001"
+    related_comment: "UCR-R001"     # ID request, к которому относится вопрос
+    related_file: "path/to/file.go"
+    related_line: 78
+    code_context: |
+      // Контекст кода для принятия решения
+    question: "Вопрос к пользователю для уточнения подхода"
+    answer: null                    # Заполняется пользователем
+
+# === FIX PLAN ===
+# Формируется в режиме планирования (Фаза 7) после анализа всех issues и requests.
+# status: pending — до ответов пользователя, ready — готов к исправлению
+fix_plan:
+  status: "pending"  # pending | ready | approved
+  items:
+    - comment_id: "UCR-I001"
+      priority: 1                     # Порядок исправления (1 - первый)
+      approach: "Описание подхода к исправлению"
+      files_to_change:
+        - "path/to/file.go"
+      estimated_complexity: "simple"  # simple | medium | complex
+
+# === SUMMARY ===
+summary:
+  issues_count: 0
+  requests_count: 0
+  questions_count: 0            # Количество вопросов к пользователю
+
+# === VERDICT ===
+# CHANGES_REQUESTED — есть замечания для исправления
+# APPROVED_WITH_REQUESTS — только requests, нет обязательных исправлений
+# APPROVED — нет замечаний
+verdict: "CHANGES_REQUESTED"
+verdict_reason: "Есть замечания ревьюеров, требующие исправления"

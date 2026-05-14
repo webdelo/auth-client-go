@@ -1,0 +1,457 @@
+# DevOps Rules Index
+# Индекс правил для DevOps и инфраструктурных задач.
+# Поиск по ключевым словам: найди keywords, совпадающие с контекстом задачи,
+# и загрузи файл из path соответствующей секции.
+
+metadata:
+  version: "3.0"
+  last_updated: "2026-03-10"
+  description: "Keyword-based index of DevOps rules and patterns"
+  total_rules: 275
+  rule_prefixes:
+    - "DK-XXX: Docker (18 rules)"
+    - "K8-XXX: Kubernetes (17 rules)"
+    - "PGD-XXX: PostgreSQL Deploy (33 rules)"
+    - "CHD-XXX: ClickHouse Deploy (44 rules)"
+    - "RDD-XXX: Redis Deploy (39 rules)"
+    - "MYD-XXX: MySQL Deploy (34 rules)"
+    - "MGD-XXX: MongoDB Deploy (50 rules)"
+    - "KF-XXX: Kafka (40 rules)"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USAGE — ПОРЯДОК ПОИСКА ПРАВИЛ
+# ═══════════════════════════════════════════════════════════════════════════════
+usage: |
+  1. Извлеки ключевые слова из задачи (TASK/PRP файл, описание, код)
+  2. Сопоставь keywords каждой секции ниже с ключевыми словами задачи
+  3. При совпадении ≥1 keyword → загрузи файл по path
+  4. ВСЕГДА загружай common rules (apply ко всем DevOps задачам)
+  5. Если задача затрагивает несколько технологий — загрузи секции для каждой
+
+  Примеры:
+    Задача "создать Dockerfile для signal-analyzer"
+    → keywords match: Docker, Dockerfile, container, multi-stage, image
+    → загрузить: docker.md
+
+    Задача "настроить ClickHouse в Kubernetes с репликацией"
+    → keywords match: kubernetes, clickhouse, deployment, cluster, replica
+    → загрузить: kubernetes.md + clickhouse.md
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DOCKER
+# ═══════════════════════════════════════════════════════════════════════════════
+docker:
+  keywords:
+    # Технология
+    - "docker"
+    - "Dockerfile"
+    - "docker-compose"
+    - "docker compose"
+    - "container"
+    - "контейнер"
+    - "image"
+    - "образ"
+    # Паттерны
+    - "multi-stage"
+    - "scratch"
+    - "distroless"
+    - "alpine"
+    - "CGO_ENABLED"
+    - "HEALTHCHECK"
+    - ".dockerignore"
+    # Операции
+    - "docker build"
+    - "docker run"
+    - "docker push"
+    - "registry"
+    - "Docker Hub"
+    - "GHCR"
+    # Безопасность
+    - "non-root"
+    - "USER nonroot"
+    - "image scan"
+    - "trivy"
+    - "snyk"
+
+  path: "docker.md"
+  lines: 650
+  total_rules: 18
+  rule_id_range: "DK-001..DK-018"
+
+  sections:
+    - name: "Multi-Stage Builds"
+      description: "Patterns for multi-stage Dockerfiles"
+      keywords: ["multi-stage", "builder", "scratch", "distroless"]
+    - name: "Docker Compose"
+      description: "Service orchestration patterns"
+      keywords: ["docker-compose", "compose", "service", "network", "volume"]
+    - name: "Security"
+      description: "Non-root, secrets, scanning"
+      keywords: ["non-root", "USER", "secret", "scan", "trivy"]
+    - name: "Performance"
+      description: "Layer caching, image optimization"
+      keywords: ["cache", "layer", "size", "optimization"]
+
+  key_rules:
+    - id: "DK-001"
+      rule: "Use multi-stage builds for production"
+      critical: true
+    - id: "DK-002"
+      rule: "Run as non-root user"
+      example: "USER nonroot:nonroot"
+      critical: true
+    - id: "DK-003"
+      rule: "Cache dependencies layer separately"
+      example: "COPY go.mod go.sum ./ && RUN go mod download"
+    - id: "DK-004"
+      rule: "Use specific image tags, not :latest"
+      critical: true
+    - id: "DK-005"
+      rule: "Minimize layers, combine RUN commands"
+    - id: "DK-006"
+      rule: "Use .dockerignore"
+      critical: true
+    - id: "DK-007"
+      rule: "Set HEALTHCHECK"
+    - id: "DK-008"
+      rule: "Use CGO_ENABLED=0 for Go"
+    - id: "DK-009"
+      rule: "Use scratch or distroless for production"
+      critical: true
+    - id: "DK-010"
+      rule: "Never expose secrets in ARG/ENV"
+      critical: true
+    - id: "DK-011"
+      rule: "Set resource limits"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KUBERNETES
+# ═══════════════════════════════════════════════════════════════════════════════
+kubernetes:
+  keywords:
+    # Технология
+    - "kubernetes"
+    - "k8s"
+    - "kubectl"
+    - "helm"
+    - "kustomize"
+    # Ресурсы
+    - "Deployment"
+    - "StatefulSet"
+    - "DaemonSet"
+    - "CronJob"
+    - "Service"
+    - "Ingress"
+    - "ConfigMap"
+    - "Secret"
+    - "PersistentVolumeClaim"
+    - "PVC"
+    - "HPA"
+    - "HorizontalPodAutoscaler"
+    - "PodDisruptionBudget"
+    - "NetworkPolicy"
+    # Паттерны
+    - "pod"
+    - "namespace"
+    - "deployment"
+    - "rolling update"
+    - "blue-green"
+    - "canary"
+    - "sidecar"
+    - "init container"
+    # Безопасность
+    - "RBAC"
+    - "securityContext"
+    - "Pod Security"
+    - "ServiceAccount"
+    # Операции
+    - "liveness"
+    - "readiness"
+    - "probe"
+    - "graceful shutdown"
+    - "terminationGracePeriod"
+    - "resource limit"
+    - "resource request"
+
+  path: "kubernetes.md"
+  lines: 798
+  total_rules: 17
+  rule_id_range: "K8-001..K8-017"
+
+  sections:
+    - name: "Deployment"
+      description: "Deployment strategies, rolling updates"
+      keywords: ["Deployment", "rolling", "blue-green", "canary", "replicas"]
+    - name: "Service"
+      description: "ClusterIP, LoadBalancer, Ingress"
+      keywords: ["Service", "ClusterIP", "LoadBalancer", "Ingress", "routing"]
+    - name: "Security"
+      description: "RBAC, NetworkPolicy, securityContext"
+      keywords: ["RBAC", "NetworkPolicy", "securityContext", "ServiceAccount", "Pod Security"]
+    - name: "Observability"
+      description: "Probes, metrics, logging"
+      keywords: ["liveness", "readiness", "probe", "metrics", "logging"]
+
+  key_rules:
+    - id: "K8-001"
+      rule: "Set resource requests and limits"
+      critical: true
+    - id: "K8-002"
+      rule: "Use readiness and liveness probes"
+      critical: true
+    - id: "K8-003"
+      rule: "Run as non-root (securityContext)"
+      critical: true
+    - id: "K8-004"
+      rule: "Use ConfigMaps for config, Secrets for secrets"
+    - id: "K8-005"
+      rule: "Set PodDisruptionBudget for HA"
+    - id: "K8-006"
+      rule: "Use namespaces for isolation"
+    - id: "K8-007"
+      rule: "Set terminationGracePeriodSeconds"
+    - id: "K8-008"
+      rule: "Use HorizontalPodAutoscaler"
+    - id: "K8-009"
+      rule: "Implement graceful shutdown"
+      critical: true
+    - id: "K8-010"
+      rule: "Use Network Policies"
+    - id: "K8-011"
+      rule: "Apply Pod Security Standards"
+      critical: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATABASE DEPLOYMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+postgresql_deploy:
+  keywords:
+    - "postgres deployment"
+    - "pg docker"
+    - "pg kubernetes"
+    - "postgres helm"
+    - "PgBouncer"
+    - "pgbouncer"
+    - "WAL archiving"
+    - "pg_basebackup"
+    - "shared_buffers"
+    - "postgres HA"
+    - "patroni"
+
+  path: "postgresql.md"
+  lines: 1605
+  total_rules: 33
+  rule_id_range: "PGD-001..PGD-033"
+
+  key_rules:
+    - id: "PGD-001"
+      rule: "Memory Configuration"
+      critical: true
+    - id: "PGD-007"
+      rule: "Connection Pooling (CRITICAL для Production)"
+      critical: true
+    - id: "PGD-010"
+      rule: "SSL/TLS Encryption (ОБЯЗАТЕЛЬНО для production)"
+      critical: true
+    - id: "PGD-018"
+      rule: "pg_stat_statements (CRITICAL)"
+      critical: true
+    - id: "PGD-025"
+      rule: "Patroni (Recommended для Production HA)"
+      critical: true
+
+redis_deploy:
+  keywords:
+    - "redis deployment"
+    - "redis docker"
+    - "redis kubernetes"
+    - "redis cluster"
+    - "redis sentinel"
+    - "maxmemory"
+    - "redis HA"
+    - "redis AOF"
+    - "redis RDB"
+
+  path: "redis.md"
+  lines: 1439
+  total_rules: 39
+  rule_id_range: "RDD-001..RDD-039"
+
+  key_rules:
+    - id: "RDD-002"
+      rule: "Production redis.conf (CRITICAL)"
+      critical: true
+    - id: "RDD-005"
+      rule: "Authentication & Authorization (CRITICAL)"
+      critical: true
+    - id: "RDD-008"
+      rule: "Redis Sentinel (Automatic Failover)"
+      critical: true
+    - id: "RDD-018"
+      rule: "Key Metrics (CRITICAL)"
+      critical: true
+
+clickhouse_deploy:
+  keywords:
+    - "clickhouse deployment"
+    - "clickhouse docker"
+    - "clickhouse kubernetes"
+    - "clickhouse cluster"
+    - "ClickHouse Keeper"
+    - "clickhouse replication"
+    - "max_memory_usage"
+    - "clickhouse HA"
+
+  path: "clickhouse.md"
+  lines: 1808
+  total_rules: 44
+  rule_id_range: "CHD-001..CHD-044"
+
+  key_rules:
+    - id: "CHD-001"
+      rule: "Version Selection (CRITICAL)"
+      critical: true
+    - id: "CHD-003"
+      rule: "System Tuning (ОБЯЗАТЕЛЬНО для production)"
+      critical: true
+    - id: "CHD-013"
+      rule: "TLS/SSL Configuration (ОБЯЗАТЕЛЬНО)"
+      critical: true
+    - id: "CHD-019"
+      rule: "Primary Key Design (CRITICAL)"
+      critical: true
+    - id: "CHD-026"
+      rule: "Key Metrics (CRITICAL)"
+      critical: true
+
+mysql_deploy:
+  keywords:
+    - "mysql deployment"
+    - "mysql docker"
+    - "mysql kubernetes"
+    - "mariadb deployment"
+    - "innodb_buffer_pool"
+    - "ProxySQL"
+    - "mysql replication"
+    - "mysql HA"
+
+  path: "mysql.md"
+  lines: 1364
+  total_rules: 34
+  rule_id_range: "MYD-001..MYD-034"
+
+  key_rules:
+    - id: "MYD-003"
+      rule: "Core Configuration (my.cnf)"
+      critical: true
+    - id: "MYD-004"
+      rule: "User Management (CRITICAL)"
+      critical: true
+    - id: "MYD-005"
+      rule: "SSL/TLS Encryption (ОБЯЗАТЕЛЬНО для production)"
+      critical: true
+    - id: "MYD-016"
+      rule: "InnoDB Tuning"
+      critical: true
+
+mongodb_deploy:
+  keywords:
+    - "mongodb deployment"
+    - "mongodb docker"
+    - "mongodb kubernetes"
+    - "mongo replica"
+    - "WiredTiger"
+    - "mongodb sharding"
+    - "mongos"
+    - "mongodb HA"
+
+  path: "mongodb.md"
+  lines: 1491
+  total_rules: 50
+  rule_id_range: "MGD-001..MGD-050"
+
+  key_rules:
+    - id: "MGD-010"
+      rule: "System Tuning (CRITICAL)"
+      critical: true
+    - id: "MGD-012"
+      rule: "Authentication (ОБЯЗАТЕЛЬНО)"
+      critical: true
+    - id: "MGD-016"
+      rule: "Replica Set Architecture"
+      critical: true
+    - id: "MGD-030"
+      rule: "Key Metrics (CRITICAL)"
+      critical: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KAFKA
+# ═══════════════════════════════════════════════════════════════════════════════
+kafka:
+  keywords:
+    - "kafka"
+    - "Kafka"
+    - "broker"
+    - "topic"
+    - "consumer group"
+    - "producer"
+    - "ZooKeeper"
+    - "KRaft"
+    - "kafka-go"
+    - "sarama"
+    - "confluent"
+    - "event streaming"
+    - "message queue"
+    - "очередь сообщений"
+    - "offset"
+    - "partition"
+    - "replication factor"
+
+  path: "kafka.md"
+  lines: 1121
+  total_rules: 40
+  rule_id_range: "KF-001..KF-040"
+
+  key_rules:
+    - id: "KF-002"
+      rule: "KRaft Mode (Recommended для production с Kafka 3.3+)"
+      critical: true
+    - id: "KF-004"
+      rule: "Broker Configuration (server.properties)"
+      critical: true
+    - id: "KF-012"
+      rule: "Encryption (TLS/SSL)"
+      critical: true
+    - id: "KF-020"
+      rule: "Key Metrics (ОБЯЗАТЕЛЬНО мониторить)"
+      critical: true
+    - id: "KF-023"
+      rule: "Consumer Lag Monitoring (CRITICAL)"
+      critical: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMMON DEVOPS RULES
+# ═══════════════════════════════════════════════════════════════════════════════
+common:
+  rules:
+    - id: "DO-001"
+      rule: "Infrastructure as Code (IaC)"
+      description: "All infrastructure in version control"
+    - id: "DO-002"
+      rule: "Immutable infrastructure"
+      description: "Replace, don't modify"
+    - id: "DO-003"
+      rule: "Environment parity"
+      description: "Dev/staging/prod should be similar"
+    - id: "DO-004"
+      rule: "Secrets management"
+      description: "Never commit secrets, use vault/secrets manager"
+    - id: "DO-005"
+      rule: "Monitoring and alerting"
+      description: "Prometheus + Grafana + AlertManager"
+    - id: "DO-006"
+      rule: "Centralized logging"
+      description: "ELK/Loki for log aggregation"
+    - id: "DO-007"
+      rule: "Backup and disaster recovery"
+      description: "Regular backups, tested recovery"

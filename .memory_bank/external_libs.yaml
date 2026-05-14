@@ -1,0 +1,40 @@
+core:
+  - name: "github.com/webdelo/auth-proto/go"
+    version: "v0.1.0"
+    purpose: "gRPC contract for auth.v1 — source of truth, shared with auth server"
+    notes:
+      - "Единственный обязательный SDK-зависимый модуль. Версия фиксирована через теги auth-proto репо (go/vX.Y.Z)."
+      - "При апгрейде версии — обязательно проверить, что grpc/protobuf версии совпадают."
+
+grpc:
+  - name: "google.golang.org/grpc"
+    version: "(pinned to match auth-proto/go)"
+    purpose: "gRPC framework — client side"
+    notes:
+      - "Версия должна совпадать с auth-proto/go, иначе риск ABI-несовместимости."
+      - "Используется напрямую через client-side API: grpc.Dial, grpc.UnaryClientInterceptor, etc."
+  - name: "google.golang.org/protobuf"
+    version: "(pinned to match auth-proto/go)"
+    purpose: "Protobuf runtime"
+
+planned_for_implementation:
+  - name: "golang.org/x/sync"
+    purpose: "singleflight.Group — для сериализации параллельных Refresh-запросов от одного пользователя (race protection)"
+    when_added: "REQ-006 TASK-XXX (refresh middleware)"
+  - name: "github.com/stretchr/testify"
+    purpose: "Unit-тесты — assertions, mocks"
+    when_added: "REQ-006 TASK-XXX (tests)"
+
+intentionally_excluded:
+  - name: "go.uber.org/fx"
+    reason: "SDK не должен навязывать DI-framework consumer'у."
+  - name: "github.com/sirupsen/logrus / go.uber.org/zap"
+    reason: "Логирование — через adapter-интерфейс (consumer передаёт свой logger)."
+  - name: "github.com/prometheus/client_golang"
+    reason: "Метрики — через adapter-интерфейс (опционально, не required)."
+  - name: "github.com/webdelo/go-ctx-logger"
+    reason: "См. логирование выше — SDK не должен зависеть от конкретной либы."
+
+policy:
+  - "Минимизировать публичные зависимости. Каждая прямая dependency = что consumer тянет в свой проект."
+  - "Все adapter-интерфейсы (logger, metrics, transport options) описаны в lib/ — реализации не входят в SDK."

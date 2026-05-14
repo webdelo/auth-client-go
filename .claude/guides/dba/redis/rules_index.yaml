@@ -1,0 +1,92 @@
+# Redis DBA Rules Index
+# Детальный индекс правил Redis для keyword-based загрузки файлов.
+
+metadata:
+  prefix: "RD"
+  total_rules: 102
+  rule_id_range: "RD-001..RD-420"
+  last_updated: "2026-03-10"
+
+keywords:
+  # Технология
+  - "redis"
+  - "go-redis"
+  - "redigo"
+  # Структуры данных
+  - "HSET"
+  - "ZADD"
+  - "XADD"
+  - "streams"
+  - "pub/sub"
+  - "pipeline"
+  - "Lua script"
+  # Паттерны
+  - "cache"
+  - "кэш"
+  - "TTL"
+  - "expiry"
+  - "rate limit"
+  - "distributed lock"
+  - "session"
+  - "leaderboard"
+  # Операции
+  - "SCAN"
+  - "KEYS"
+  - "sentinel"
+  - "cluster"
+
+skill: ".claude/skills/redis-dba.md"
+
+files:
+  - path: "go_integration.md"
+    description: "go-redis client, pipelines, transactions"
+    priority: 1
+    rule_id_range: "RD-001..RD-021"
+    rules_count: 19
+    keywords: ["go-redis", "pipeline", "transaction", "TxPipeline", "connection"]
+  - path: "query_patterns.md"
+    description: "Data structures, Lua scripts, pub/sub"
+    priority: 2
+    rule_id_range: "RD-100..RD-125"
+    rules_count: 21
+    keywords: ["HSET", "ZADD", "XADD", "Lua", "pub/sub", "streams", "sorted set"]
+  - path: "optimization.md"
+    description: "Memory, performance tuning, key design"
+    priority: 2
+    rule_id_range: "RD-200..RD-217"
+    rules_count: 19
+    keywords: ["memory", "optimization", "performance", "key design", "big key"]
+  - path: "persistence.md"
+    description: "RDB, AOF, hybrid persistence"
+    priority: 3
+    rule_id_range: "RD-300..RD-323"
+    rules_count: 23
+    keywords: ["RDB", "AOF", "persistence", "backup", "snapshot"]
+  - path: "clustering.md"
+    description: "Cluster mode, sharding, sentinel"
+    priority: 3
+    rule_id_range: "RD-400..RD-420"
+    rules_count: 20
+    keywords: ["cluster", "sharding", "sentinel", "HA", "failover"]
+
+key_rules:
+  - id: "RD-001"
+    rule: "Use Pipeline for batch operations"
+    example: "pipe := rdb.Pipeline()"
+  - id: "RD-002"
+    rule: "Use Lua scripts for atomic operations"
+  - id: "RD-003"
+    rule: "Set TTL for cache keys"
+    example: "rdb.Set(ctx, key, val, time.Hour)"
+    critical: true
+  - id: "RD-004"
+    rule: "Use SCAN instead of KEYS in production"
+    critical: true
+  - id: "RD-005"
+    rule: "Handle redis.Nil for missing keys"
+    critical: true
+  - id: "RD-006"
+    rule: "Use Streams for reliable messaging"
+  - id: "RD-007"
+    rule: "Prefix keys with namespace"
+    example: "app:users:123"

@@ -1,0 +1,85 @@
+# AI Behavior Security Guidelines
+# Version: 1.0
+# Description: Security rules for AI assistants when working with sensitive data
+
+rules:
+  # === Secrets Handling (CRITICAL) ===
+
+  SEC-0001:
+    title: "Never output secrets to console or responses"
+    severity: critical
+    description: |
+      AI assistant MUST NOT output any secrets, tokens, passwords, or credentials
+      to console output, responses, logs, or any other visible medium.
+
+  SEC-0002:
+    title: "Never read sensitive configuration files"
+    severity: critical
+    description: |
+      AI assistant MUST NOT read or display contents of files that may contain secrets.
+    files:
+      - "~/.bashrc"
+      - "~/.zshrc"
+      - "~/.bash_profile"
+      - "~/.config/gh/*"
+      - "~/.ssh/*"
+      - ".env"
+      - ".env.*"
+      - "*credentials*"
+      - "*secrets*"
+      - "*.pem"
+      - "*.key"
+
+  SEC-0003:
+    title: "Forbidden operations with secrets"
+    severity: critical
+    description: |
+      The following operations are FORBIDDEN:
+    forbidden:
+      - "cat ~/.bashrc"
+      - "grep TOKEN ~/.bashrc"
+      - "echo $GH_TOKEN"
+      - "Outputting values of *TOKEN*, *SECRET*, *KEY*, *PASSWORD* variables"
+      - "Displaying contents of configuration files with credentials"
+
+  SEC-0004:
+    title: "Allowed operations for existence checks"
+    severity: info
+    description: |
+      These operations ARE ALLOWED for checking existence without revealing values.
+    allowed:
+      - "[ -f ~/.bashrc ] && echo 'exists'"
+      - "[ -n \"$GH_TOKEN\" ] && echo 'set'"
+      - "echo 'export VAR=\"value\"' >> ~/.bashrc"
+      - "gh auth status"
+
+  SEC-0005:
+    title: "Working with secrets - safe patterns"
+    severity: high
+    description: |
+      When working with secrets:
+      1. Never output the value
+      2. Use directly in commands without echo/cat
+      3. Check only existence, not value
+
+  # === File Operations Security ===
+
+  SEC-0006:
+    title: "Validate file paths before operations"
+    severity: medium
+    description: |
+      Before reading or writing files, validate that paths don't contain
+      path traversal attempts (../) or access to sensitive directories.
+
+  SEC-0007:
+    title: "Never commit secrets to git"
+    severity: critical
+    description: |
+      Before git add/commit, check for:
+      - .env files
+      - Files containing API keys
+      - Private keys
+      - Credentials in code
+    actions:
+      - "Warn user if sensitive files are staged"
+      - "Refuse to commit files with obvious secrets"
