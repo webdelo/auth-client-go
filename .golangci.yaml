@@ -1,0 +1,62 @@
+# .golangci.yaml
+version: "2"
+
+run:
+  timeout: 5m
+  go: '1.24'
+
+linters:
+  enable:
+    - bodyclose
+    - dupl
+    - goconst
+    - gocritic
+    - gocyclo
+    - revive
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - nolintlint
+    - rowserrcheck
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - prealloc
+  settings:
+    dupl:
+      threshold: 200
+    lll:
+      line-length: 140
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocritic:
+      disabled-checks:
+        - hugeParam
+      enabled-tags:
+        - performance
+        - style
+        - experimental
+    gosec:
+      excludes:
+        - G306
+        - G401
+        - G501
+  exclusions:
+    paths:
+      - mocks
+      - ".*_test\\.go$"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/webdelo/auth-client-go

@@ -1,0 +1,5 @@
+app:
+  slug: AUTH_CLIENT_GO
+  project_type: lib
+  env_prefix: AUTH_CLIENT_GO
+  integration_tests: true

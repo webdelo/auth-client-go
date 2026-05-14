@@ -1,0 +1,15 @@
+---
+disable-version-string: true
+resolve-type-alias: false
+issue-845-fix: true
+with-expecter: true
+log-level: error
+
+packages:
+  # Interfaces are defined where they are consumed (Go best practice).
+  # Generate mocks for library package which contains interfaces for dependencies.
+  github.com/webdelo/auth-client-go/lib:
+    config:
+      all: true
+      outpkg: mocks
+      dir: "{{.InterfaceDir}}/mocks"
