@@ -1,5 +1,5 @@
 tasks: []
 
 notes:
-  - "Список заполняется по мере декомпозиции REQ-006 (SDK v0.1.0 implementation)."
+  - "Список заполняется по мере декомпозиции REQ-001 (SDK v0.1.0 implementation)."
   - "Формат записи задачи — см. AUTH .memory_bank/tasks_list.yaml для образца."

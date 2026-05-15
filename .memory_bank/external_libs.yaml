@@ -20,10 +20,10 @@ grpc:
 planned_for_implementation:
   - name: "golang.org/x/sync"
     purpose: "singleflight.Group — для сериализации параллельных Refresh-запросов от одного пользователя (race protection)"
-    when_added: "REQ-006 TASK-XXX (refresh middleware)"
+    when_added: "REQ-001 TASK-XXX (refresh middleware)"
   - name: "github.com/stretchr/testify"
     purpose: "Unit-тесты — assertions, mocks"
-    when_added: "REQ-006 TASK-XXX (tests)"
+    when_added: "REQ-001 TASK-XXX (tests)"
 
 intentionally_excluded:
   - name: "go.uber.org/fx"

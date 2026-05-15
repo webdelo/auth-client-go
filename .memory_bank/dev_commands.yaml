@@ -73,5 +73,5 @@ release:
     category: release
 
 notes:
-  - "integration_tests scaffolding (test-integration target, dev/deployments/test.env, docker-compose с AUTH-контейнером) генерится не автоматически — добавляется в REQ-006 TASK-001."
+  - "integration_tests scaffolding (test-integration target, dev/deployments/test.env, docker-compose с AUTH-контейнером) генерится не автоматически — добавляется в REQ-001 TASK-001."
   - "ALWAYS use make commands. FORBIDDEN: raw `go build`/`go test -c` without `-o .temp/` flag — polutes project root."

@@ -31,7 +31,7 @@ coding_standards:
 devops:
   containerization: []
   databases: []
-  note: "SDK не имеет собственных infrastructure-зависимостей. Integration-тесты поднимают AUTH-контейнер через docker-compose (см. REQ-006)."
+  note: "SDK не имеет собственных infrastructure-зависимостей. Integration-тесты поднимают AUTH-контейнер через docker-compose (см. REQ-001)."
 
 dependencies:
   - name: "github.com/webdelo/auth-proto/go"

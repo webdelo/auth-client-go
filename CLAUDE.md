@@ -62,7 +62,7 @@ make release-dry-run          # Preview release
 
 ## Architecture
 
-**SDK design (after REQ-006 implementation):**
+**SDK design (after REQ-001 implementation):**
 
 ```
 lib/
