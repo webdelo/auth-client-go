@@ -39,6 +39,528 @@ func (_m *mockauthServiceClient) EXPECT() *mockauthServiceClient_Expecter {
 	return &mockauthServiceClient_Expecter{mock: &_m.Mock}
 }
 
+// ChangePassword provides a mock function for the type mockauthServiceClient
+func (_mock *mockauthServiceClient) ChangePassword(ctx context.Context, in *auth_v1.ChangePasswordRequest, opts ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ChangePassword")
+	}
+
+	var r0 *auth_v1.ChangePasswordResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.ChangePasswordRequest, ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.ChangePasswordRequest, ...grpc.CallOption) *auth_v1.ChangePasswordResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth_v1.ChangePasswordResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *auth_v1.ChangePasswordRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockauthServiceClient_ChangePassword_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ChangePassword'
+type mockauthServiceClient_ChangePassword_Call struct {
+	*mock.Call
+}
+
+// ChangePassword is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *auth_v1.ChangePasswordRequest
+//   - opts ...grpc.CallOption
+func (_e *mockauthServiceClient_Expecter) ChangePassword(ctx interface{}, in interface{}, opts ...interface{}) *mockauthServiceClient_ChangePassword_Call {
+	return &mockauthServiceClient_ChangePassword_Call{Call: _e.mock.On("ChangePassword",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *mockauthServiceClient_ChangePassword_Call) Run(run func(ctx context.Context, in *auth_v1.ChangePasswordRequest, opts ...grpc.CallOption)) *mockauthServiceClient_ChangePassword_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *auth_v1.ChangePasswordRequest
+		if args[1] != nil {
+			arg1 = args[1].(*auth_v1.ChangePasswordRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *mockauthServiceClient_ChangePassword_Call) Return(changePasswordResponse *auth_v1.ChangePasswordResponse, err error) *mockauthServiceClient_ChangePassword_Call {
+	_c.Call.Return(changePasswordResponse, err)
+	return _c
+}
+
+func (_c *mockauthServiceClient_ChangePassword_Call) RunAndReturn(run func(ctx context.Context, in *auth_v1.ChangePasswordRequest, opts ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error)) *mockauthServiceClient_ChangePassword_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetCurrentUser provides a mock function for the type mockauthServiceClient
+func (_mock *mockauthServiceClient) GetCurrentUser(ctx context.Context, in *auth_v1.GetCurrentUserRequest, opts ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCurrentUser")
+	}
+
+	var r0 *auth_v1.GetCurrentUserResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.GetCurrentUserRequest, ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.GetCurrentUserRequest, ...grpc.CallOption) *auth_v1.GetCurrentUserResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth_v1.GetCurrentUserResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *auth_v1.GetCurrentUserRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockauthServiceClient_GetCurrentUser_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCurrentUser'
+type mockauthServiceClient_GetCurrentUser_Call struct {
+	*mock.Call
+}
+
+// GetCurrentUser is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *auth_v1.GetCurrentUserRequest
+//   - opts ...grpc.CallOption
+func (_e *mockauthServiceClient_Expecter) GetCurrentUser(ctx interface{}, in interface{}, opts ...interface{}) *mockauthServiceClient_GetCurrentUser_Call {
+	return &mockauthServiceClient_GetCurrentUser_Call{Call: _e.mock.On("GetCurrentUser",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *mockauthServiceClient_GetCurrentUser_Call) Run(run func(ctx context.Context, in *auth_v1.GetCurrentUserRequest, opts ...grpc.CallOption)) *mockauthServiceClient_GetCurrentUser_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *auth_v1.GetCurrentUserRequest
+		if args[1] != nil {
+			arg1 = args[1].(*auth_v1.GetCurrentUserRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *mockauthServiceClient_GetCurrentUser_Call) Return(getCurrentUserResponse *auth_v1.GetCurrentUserResponse, err error) *mockauthServiceClient_GetCurrentUser_Call {
+	_c.Call.Return(getCurrentUserResponse, err)
+	return _c
+}
+
+func (_c *mockauthServiceClient_GetCurrentUser_Call) RunAndReturn(run func(ctx context.Context, in *auth_v1.GetCurrentUserRequest, opts ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error)) *mockauthServiceClient_GetCurrentUser_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Login provides a mock function for the type mockauthServiceClient
+func (_mock *mockauthServiceClient) Login(ctx context.Context, in *auth_v1.LoginRequest, opts ...grpc.CallOption) (*auth_v1.LoginResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Login")
+	}
+
+	var r0 *auth_v1.LoginResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.LoginRequest, ...grpc.CallOption) (*auth_v1.LoginResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.LoginRequest, ...grpc.CallOption) *auth_v1.LoginResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth_v1.LoginResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *auth_v1.LoginRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockauthServiceClient_Login_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Login'
+type mockauthServiceClient_Login_Call struct {
+	*mock.Call
+}
+
+// Login is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *auth_v1.LoginRequest
+//   - opts ...grpc.CallOption
+func (_e *mockauthServiceClient_Expecter) Login(ctx interface{}, in interface{}, opts ...interface{}) *mockauthServiceClient_Login_Call {
+	return &mockauthServiceClient_Login_Call{Call: _e.mock.On("Login",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *mockauthServiceClient_Login_Call) Run(run func(ctx context.Context, in *auth_v1.LoginRequest, opts ...grpc.CallOption)) *mockauthServiceClient_Login_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *auth_v1.LoginRequest
+		if args[1] != nil {
+			arg1 = args[1].(*auth_v1.LoginRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *mockauthServiceClient_Login_Call) Return(loginResponse *auth_v1.LoginResponse, err error) *mockauthServiceClient_Login_Call {
+	_c.Call.Return(loginResponse, err)
+	return _c
+}
+
+func (_c *mockauthServiceClient_Login_Call) RunAndReturn(run func(ctx context.Context, in *auth_v1.LoginRequest, opts ...grpc.CallOption) (*auth_v1.LoginResponse, error)) *mockauthServiceClient_Login_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Logout provides a mock function for the type mockauthServiceClient
+func (_mock *mockauthServiceClient) Logout(ctx context.Context, in *auth_v1.LogoutRequest, opts ...grpc.CallOption) (*auth_v1.LogoutResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Logout")
+	}
+
+	var r0 *auth_v1.LogoutResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.LogoutRequest, ...grpc.CallOption) (*auth_v1.LogoutResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.LogoutRequest, ...grpc.CallOption) *auth_v1.LogoutResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth_v1.LogoutResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *auth_v1.LogoutRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockauthServiceClient_Logout_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Logout'
+type mockauthServiceClient_Logout_Call struct {
+	*mock.Call
+}
+
+// Logout is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *auth_v1.LogoutRequest
+//   - opts ...grpc.CallOption
+func (_e *mockauthServiceClient_Expecter) Logout(ctx interface{}, in interface{}, opts ...interface{}) *mockauthServiceClient_Logout_Call {
+	return &mockauthServiceClient_Logout_Call{Call: _e.mock.On("Logout",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *mockauthServiceClient_Logout_Call) Run(run func(ctx context.Context, in *auth_v1.LogoutRequest, opts ...grpc.CallOption)) *mockauthServiceClient_Logout_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *auth_v1.LogoutRequest
+		if args[1] != nil {
+			arg1 = args[1].(*auth_v1.LogoutRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *mockauthServiceClient_Logout_Call) Return(logoutResponse *auth_v1.LogoutResponse, err error) *mockauthServiceClient_Logout_Call {
+	_c.Call.Return(logoutResponse, err)
+	return _c
+}
+
+func (_c *mockauthServiceClient_Logout_Call) RunAndReturn(run func(ctx context.Context, in *auth_v1.LogoutRequest, opts ...grpc.CallOption) (*auth_v1.LogoutResponse, error)) *mockauthServiceClient_Logout_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LogoutAll provides a mock function for the type mockauthServiceClient
+func (_mock *mockauthServiceClient) LogoutAll(ctx context.Context, in *auth_v1.LogoutAllRequest, opts ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LogoutAll")
+	}
+
+	var r0 *auth_v1.LogoutAllResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.LogoutAllRequest, ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.LogoutAllRequest, ...grpc.CallOption) *auth_v1.LogoutAllResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth_v1.LogoutAllResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *auth_v1.LogoutAllRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockauthServiceClient_LogoutAll_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LogoutAll'
+type mockauthServiceClient_LogoutAll_Call struct {
+	*mock.Call
+}
+
+// LogoutAll is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *auth_v1.LogoutAllRequest
+//   - opts ...grpc.CallOption
+func (_e *mockauthServiceClient_Expecter) LogoutAll(ctx interface{}, in interface{}, opts ...interface{}) *mockauthServiceClient_LogoutAll_Call {
+	return &mockauthServiceClient_LogoutAll_Call{Call: _e.mock.On("LogoutAll",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *mockauthServiceClient_LogoutAll_Call) Run(run func(ctx context.Context, in *auth_v1.LogoutAllRequest, opts ...grpc.CallOption)) *mockauthServiceClient_LogoutAll_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *auth_v1.LogoutAllRequest
+		if args[1] != nil {
+			arg1 = args[1].(*auth_v1.LogoutAllRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *mockauthServiceClient_LogoutAll_Call) Return(logoutAllResponse *auth_v1.LogoutAllResponse, err error) *mockauthServiceClient_LogoutAll_Call {
+	_c.Call.Return(logoutAllResponse, err)
+	return _c
+}
+
+func (_c *mockauthServiceClient_LogoutAll_Call) RunAndReturn(run func(ctx context.Context, in *auth_v1.LogoutAllRequest, opts ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error)) *mockauthServiceClient_LogoutAll_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RefreshToken provides a mock function for the type mockauthServiceClient
+func (_mock *mockauthServiceClient) RefreshToken(ctx context.Context, in *auth_v1.RefreshTokenRequest, opts ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
+	// grpc.CallOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, in)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RefreshToken")
+	}
+
+	var r0 *auth_v1.RefreshTokenResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.RefreshTokenRequest, ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *auth_v1.RefreshTokenRequest, ...grpc.CallOption) *auth_v1.RefreshTokenResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*auth_v1.RefreshTokenResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *auth_v1.RefreshTokenRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockauthServiceClient_RefreshToken_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RefreshToken'
+type mockauthServiceClient_RefreshToken_Call struct {
+	*mock.Call
+}
+
+// RefreshToken is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *auth_v1.RefreshTokenRequest
+//   - opts ...grpc.CallOption
+func (_e *mockauthServiceClient_Expecter) RefreshToken(ctx interface{}, in interface{}, opts ...interface{}) *mockauthServiceClient_RefreshToken_Call {
+	return &mockauthServiceClient_RefreshToken_Call{Call: _e.mock.On("RefreshToken",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *mockauthServiceClient_RefreshToken_Call) Run(run func(ctx context.Context, in *auth_v1.RefreshTokenRequest, opts ...grpc.CallOption)) *mockauthServiceClient_RefreshToken_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *auth_v1.RefreshTokenRequest
+		if args[1] != nil {
+			arg1 = args[1].(*auth_v1.RefreshTokenRequest)
+		}
+		var arg2 []grpc.CallOption
+		variadicArgs := make([]grpc.CallOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(grpc.CallOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *mockauthServiceClient_RefreshToken_Call) Return(refreshTokenResponse *auth_v1.RefreshTokenResponse, err error) *mockauthServiceClient_RefreshToken_Call {
+	_c.Call.Return(refreshTokenResponse, err)
+	return _c
+}
+
+func (_c *mockauthServiceClient_RefreshToken_Call) RunAndReturn(run func(ctx context.Context, in *auth_v1.RefreshTokenRequest, opts ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error)) *mockauthServiceClient_RefreshToken_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ValidateToken provides a mock function for the type mockauthServiceClient
 func (_mock *mockauthServiceClient) ValidateToken(ctx context.Context, in *auth_v1.ValidateTokenRequest, opts ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error) {
 	// grpc.CallOption

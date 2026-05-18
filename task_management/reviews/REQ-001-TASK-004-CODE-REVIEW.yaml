@@ -1,0 +1,373 @@
+# Aggregated Code Review Report
+# Task:    REQ-001-TASK-004
+# Sources: code-reviewer (authpkg) + test-reviewer
+# Date:    2026-05-18
+
+# === METADATA ===
+verdict: APPROVED_WITH_COMMENTS
+
+metadata:
+  task_id: "REQ-001-TASK-004"
+  date: "2026-05-18"
+  review_date: "2026-05-18"
+  report_types_aggregated:
+    - "code-review"
+    - "test-review"
+  source_reports:
+    code_review:
+      - ".memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-004_authpkg.yaml"
+    test_review:
+      - ".memory_bank/agent_task_results/2026-05-18_test-review_REQ-001-TASK-004.yaml"
+
+# === SUMMARY ===
+summary:
+  critical_count: 0
+  warning_count: 4
+  suggestion_count: 6
+  description: >
+    All six auth-operation methods (Login, Refresh, Logout, LogoutAll, ChangePassword,
+    GetCurrentUser) are correctly implemented: PRP gotchas satisfied, singleflight
+    deduplication correct, timeouts and error handling compliant with standards.
+    173 unit tests pass with race detector clean; coverage exceeds DOD thresholds
+    (lib 97.2%, internal/refresh 100%). No critical or blocking issues found.
+    Seven style/standards findings (4 test-standards warnings + 3 code-style
+    suggestions) are recommended for cleanup before next review cycle.
+
+# === COUNTS ===
+counts:
+  critical: 0
+  error: 0
+  warning: 4
+  suggestion: 6   # TEST-S001..S003 + AUTH-S001..S003
+
+# === STATIC ANALYSIS ===
+static_analysis:
+  build: "pass"
+  fmt: "pass"
+  vet: "pass"
+  lint: "pass"
+  tests: "pass"
+  race_detector: "pass"
+  make_audit: "pass"
+
+# === TEST RESULTS ===
+test_results:
+  total: 173
+  passed: 173
+  failed: 0
+  skipped: 0
+  coverage:
+    lib: "97.2%"
+    lib_internal_cache: "88.9%"
+    lib_internal_refresh: "100.0%"
+    lib_auth_go_refresh_function: "94.7%"
+    dod_threshold_met: true
+
+# === FINDINGS ===
+# All items verbatim from source reports; global IDs assigned.
+# Full details (rationale, current_code, recommended_fix) are in source_report at original_id.
+
+findings:
+
+  # ─── WARNINGS (from test-review) ──────────────────────────────────────────
+
+  - id: "TR-W001"
+    original_id: "TEST-W001"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: WARNING
+    rule: "UT-0002"
+    file: "lib/internal/refresh/group_test.go"
+    line: "14, 51, 100, 126, 149"
+    message: >
+      Five separate top-level test functions cover a single method (Group.Do):
+      TestGroup_Do_HappyPath, TestGroup_Do_ConcurrentDedupSingleCall,
+      TestGroup_Do_DifferentKeysIndependent, TestGroup_Do_KeyForgottenNextCallReruns,
+      TestGroup_Do_FnErrorPropagates. UT-0002 requires all cases for one method to be
+      in one TestGroup_Do function with a case table.
+    fix: >
+      Consolidate into TestGroup_Do(t *testing.T). For concurrent cases, use
+      prepareFn / runFn closures in the table rows similar to how auth_test.go handles
+      TestClient_Refresh_SingleFlight via a standalone function — OR accept the split
+      as a justified exception with a comment.
+      Minimal fix: rename to a single TestGroup_Do and move all cases inside, even if
+      some run inline (not as subtests) — the rule only prohibits separate top-level
+      functions, not inline sequential blocks.
+
+  - id: "TR-W002"
+    original_id: "TEST-W002"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: WARNING
+    rule: "UT-0002"
+    file: "lib/auth_test.go"
+    line: "272, 336"
+    message: >
+      TestClient_Refresh_SingleFlight (line 272) and TestClient_Refresh_FnPanicRecovered
+      (line 336) are standalone test functions covering the Refresh method, which already
+      has TestClient_Refresh (line 160) as its table-driven test. UT-0002 forbids splitting
+      one method across multiple functions.
+    fix: >
+      Add a comment block above each function explaining why it lives outside the table:
+        // TestClient_Refresh_SingleFlight is a standalone test (UT-0002 exception):
+        // concurrent goroutine rendezvous cannot be expressed as a table row.
+      Alternatively, embed them as named closures executed inside TestClient_Refresh,
+      though this reduces readability.
+
+  - id: "TR-W003"
+    original_id: "TEST-W003"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: WARNING
+    rule: "UT-0011"
+    file: "lib/auth_test.go"
+    line: "170, 587"
+    message: >
+      Two table-driven tests use descriptive happy-path names instead of the canonical
+      "happy_path":
+        - TestClient_Refresh: first case is "happy_path_returns_rotated_token" (line 170)
+        - TestClient_GetCurrentUser: first case is "happy_path_returns_user_with_email" (line 587)
+      UT-0011 requires the first case to be named exactly "happy_path".
+    fix: >
+      Rename "happy_path_returns_rotated_token" → "happy_path" in TestClient_Refresh.
+      Rename "happy_path_returns_user_with_email" → "happy_path" in TestClient_GetCurrentUser.
+
+  - id: "TR-W004"
+    original_id: "TEST-W004"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: WARNING
+    rule: "UT-0029"
+    file: "lib/auth_test.go"
+    line: "37"
+    message: >
+      `var matchCtx = mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })`
+      is a package-level variable. UT-0029 forbids package-level shared test data variables.
+    fix: >
+      Either:
+      (a) Inline the matcher where needed:
+            mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })
+      (b) Convert to a helper function:
+            func matchAnyCtx() interface{} {
+                return mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })
+            }
+      Option (b) is cleaner since it avoids UT-0029 and remains DRY.
+
+  # ─── SUGGESTIONS (from test-review) ──────────────────────────────────────
+
+  - id: "TR-S001"
+    original_id: "TEST-S001"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: SUGGESTION
+    rule: "coverage"
+    file: "lib/auth.go"
+    line: "163-168"
+    message: >
+      The type-assertion guard `resp, ok := v.(*auth_v1.RefreshTokenResponse); if !ok { ... }`
+      in Refresh is untested (contributes to 94.7% instead of 100%). This path is unreachable
+      in unit tests because FakeAuthClient always returns the correct type. Coverage at 94.7%
+      already exceeds the >=80% DOD threshold.
+    fix: >
+      Add a subcase to TestClient_Refresh that injects a FakeAuthClient returning a
+      wrong type (e.g., return a plain string cast to any), verifying the
+      ErrUnavailable wrapping. Requires an explicit "return_error_on_bad_singleflight_type"
+      case with a custom RefreshTokenFunc that returns (interface{}("bad"), nil).
+
+  - id: "TR-S002"
+    original_id: "TEST-S002"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: SUGGESTION
+    rule: "UT-0001"
+    file: "lib/internal/refresh/group_test.go"
+    line: "14"
+    message: >
+      TestGroup_Do_HappyPath has a table with exactly one entry ("happy_path"). A table
+      wrapping a single case provides no parameterization benefit and adds unnecessary
+      indirection. If UT-0002 is resolved (all cases merged into TestGroup_Do), this
+      single-entry table should be inlined.
+    fix: >
+      After merging all TestGroup_Do_* into TestGroup_Do, the happy_path case can be
+      the first entry in the consolidated table.
+
+  - id: "TR-S003"
+    original_id: "TEST-S003"
+    source_report: "2026-05-18_test-review_REQ-001-TASK-004.yaml"
+    severity: SUGGESTION
+    rule: "general"
+    file: "lib/auth_integration_test.go"
+    line: "131-132"
+    message: >
+      TestRefresh_Race omits t.Parallel() with a comment "Not parallel — stress test;
+      isolation from other integration tests matters." This is correct and intentional.
+      The comment sufficiently justifies the exception. No action needed — noted for
+      completeness.
+    fix: "No action required. Exception is already documented in-code."
+
+  # ─── SUGGESTIONS (from code-review) ──────────────────────────────────────
+
+  - id: "CR-S001"
+    original_id: "AUTH-S001"
+    source_report: "2026-05-18_code-review_REQ-001-TASK-004_authpkg.yaml"
+    severity: SUGGESTION
+    rule: "CS-0110"
+    file: "lib/internal/refresh/group.go"
+    line: "10"
+    message: >
+      Package-level comment ends with "See REQ-001-ADR.md §A3 + §R8." — a reference to
+      an internal project document. CS-0110 discourages internal standard references in
+      code comments (the rule targets rule/standard identifiers). The reference is
+      meaningful for contributors but opaque to external SDK consumers of this internal
+      package. The WHY is already explained in the preceding prose.
+    fix: >
+      Remove the trailing "See REQ-001-ADR.md §A3 + §R8." line from the package comment,
+      or replace it with a self-contained sentence:
+        // Subsequent calls with the same key always invoke fn fresh,
+        // which is required for one-time-use tokens like OAuth refresh tokens.
+
+  - id: "CR-S002"
+    original_id: "AUTH-S002"
+    source_report: "2026-05-18_code-review_REQ-001-TASK-004_authpkg.yaml"
+    severity: SUGGESTION
+    rule: "PRP-gotcha-7 (partial)"
+    file: "lib/auth.go"
+    line: "176"
+    message: >
+      Task spec item 5 states: "On success Login/Logout/LogoutAll/ChangePassword/Refresh
+      — Info with user UUID". The Refresh success log (line 176) emits only
+      "authclient: refresh success" with no user_uuid field. The other four methods
+      (Logout, LogoutAll, ChangePassword) also omit user_uuid. This is technically
+      correct — the opaque refresh token and accessToken inputs contain no user UUID
+      without JWT parsing (intentionally avoided per ADR §14) — but diverges from the
+      literal spec wording. Worth a brief clarifying comment or a note in the task
+      result to close the spec ambiguity.
+    fix: >
+      No code change required. Add a comment in the task result (task_management/results/)
+      clarifying: "Refresh/Logout/LogoutAll/ChangePassword success logs do not include
+      user_uuid because the SDK intentionally avoids JWT parsing (ADR §14); user_uuid is
+      logged only where AUTH returns User data in the response (Login, GetCurrentUser)."
+
+  - id: "CR-S003"
+    original_id: "AUTH-S003"
+    source_report: "2026-05-18_code-review_REQ-001-TASK-004_authpkg.yaml"
+    severity: SUGGESTION
+    rule: "CS-0110"
+    file: "lib/auth.go"
+    line: "17, 43, 120, 125, 129, 270"
+    message: >
+      Several public godoc comments reference internal planning artifacts:
+      "TASK-005", "REQ-001-ADR §R3", "REQ-001-ADR §R11", "REQ-001-ADR §R10".
+      These help contributors understand design rationale but are opaque to external
+      SDK consumers (BFF, simple-trader). CS-0110 examples target rule identifiers;
+      TASK/ADR cross-references are a softer violation. Considered SUGGESTION only.
+      For a public SDK, prefer self-contained explanations or link to public README
+      sections instead.
+    fix: >
+      For "TASK-005" references: replace with the actual function name once available,
+      e.g. "use IPFromRequest(r) / UserAgentFromRequest(r) helpers (see helpers.go)".
+      For "REQ-001-ADR §R11": replace with an inline explanation,
+      e.g. "not retried — retrying a refresh that succeeded server-side would
+      trigger AUTH family detection and invalidate the user's session".
+
+# === POSITIVE OBSERVATIONS ===
+positive:
+  - >
+    All PRP critical gotchas verified correct: Forget() is called directly after
+    sf.Do (not in defer), ensuring next caller always gets a fresh RPC.
+  - >
+    recover() is correctly scoped inside the singleflight fn, not at Refresh method
+    level. Followers receive wrapped ErrUnavailable, not a propagated panic.
+  - >
+    hashToken(refreshToken) is used as the singleflight key — raw token never
+    appears on the heap as a map key.
+  - >
+    Timeout assignments are correct per the spec: LoginTimeout for bcrypt-cost
+    operations (Login, ChangePassword), RefreshTimeout for token-based operations
+    (Refresh, Logout), ValidateTimeout for read-only server-side operations
+    (LogoutAll, GetCurrentUser).
+  - >
+    comma-ok type assertion on singleflight return value (auth.go:162), with a
+    defensive ErrUnavailable path for the impossible-but-handled case.
+  - >
+    Login nil-User and GetCurrentUser nil-User handled with distinct semantics
+    (lenient vs strict) exactly as specified in PRP gotcha #5.
+  - >
+    logUnavailableIfNeeded correctly gates on errors.Is(err, ErrUnavailable) —
+    not on error string matching — preserving the errors.Is chain.
+  - >
+    173 tests pass, race detector clean across 10 repetitions of the most critical
+    concurrency test (TestClient_Refresh_SingleFlight). All DOD items satisfied.
+  - >
+    Mock setup uses EXPECT() Expecter API with explicit call counts (.Once(),
+    .Times(2)) on all MockLogger expectations; no mock.Anything on business data.
+  - >
+    t.Parallel() present at start of every Test function and every subtest;
+    tc := tc capture in all range loops; i := i in goroutine-spawning loops.
+
+# === RECOMMENDATIONS ===
+recommendations:
+  - "TR-W003 (trivial): rename two happy-path table cases to the canonical 'happy_path'."
+  - "TR-W004 (trivial): convert package-level matchCtx var to a matchAnyCtx() helper function."
+  - "TR-W001 + TR-W002: add UT-0002 exception comments above standalone concurrent test functions, or consolidate into single TestGroup_Do / TestClient_Refresh."
+  - "CR-S001 + CR-S003: replace internal ADR/task cross-references in godoc with self-contained explanations for external SDK consumers."
+  - "CR-S002: document the spec ambiguity around user_uuid in Refresh/Logout logs in task_management/results/."
+  - "TR-S001 (optional): cover the unreachable type-assert !ok branch via a FakeAuthClient returning a wrong type."
+
+# === VALIDATION ===
+validation:
+  status: "PASSED"
+  checks:
+    - name: "All code-review source reports processed"
+      expected: 1
+      actual: 1
+      status: "PASS"
+    - name: "All test-review source reports processed"
+      expected: 1
+      actual: 1
+      status: "PASS"
+    - name: "Code-review critical count matches source"
+      expected: 0
+      actual: 0
+      status: "PASS"
+    - name: "Code-review warning count matches source"
+      expected: 0
+      actual: 0
+      status: "PASS"
+    - name: "Code-review suggestion count matches source"
+      expected: 3
+      actual: 3
+      status: "PASS"
+    - name: "Test-review critical count matches source"
+      expected: 0
+      actual: 0
+      status: "PASS"
+    - name: "Test-review warning count matches source"
+      expected: 4
+      actual: 4
+      status: "PASS"
+    - name: "Test-review suggestion count matches source"
+      expected: 3
+      actual: 3
+      status: "PASS"
+    - name: "All findings present (4 warnings + 6 suggestions = 10 total)"
+      expected: 10
+      actual: 10
+      status: "PASS"
+
+# === OVERALL SUMMARY ===
+overall_summary:
+  code_quality:
+    status: "good"         # excellent | good | needs_improvement | poor
+    critical_issues: 0
+    all_prp_gotchas: "PASS"
+    static_analysis: "all pass"
+  test_quality:
+    status: "good"
+    coverage_lib: "97.2%"
+    coverage_internal_refresh: "100.0%"
+    race_detector: "CLEAN"
+    dod_items: "all PASS"
+
+# === VERDICT ===
+verdict: "APPROVED_WITH_COMMENTS"
+verdict_reason: >
+  No critical or blocking issues. All PRP gotchas satisfied, 173 tests pass with
+  race detector clean, DOD thresholds met. Four test-standards warnings (UT-0002,
+  UT-0011, UT-0029) carry documented architectural justification and do not
+  introduce correctness risk. Three code-style suggestions address internal ADR
+  references in public godoc. Recommended cleanup before next review cycle.

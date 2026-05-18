@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	cachepkg "github.com/webdelo/auth-client-go/lib/internal/cache"
+	"github.com/webdelo/auth-client-go/lib/internal/refresh"
 )
 
 const (
@@ -182,6 +183,12 @@ type authServiceClient interface {
 		in *auth_v1.ValidateTokenRequest,
 		opts ...grpc.CallOption,
 	) (*auth_v1.ValidateTokenResponse, error)
+	Login(ctx context.Context, in *auth_v1.LoginRequest, opts ...grpc.CallOption) (*auth_v1.LoginResponse, error)
+	RefreshToken(ctx context.Context, in *auth_v1.RefreshTokenRequest, opts ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error)
+	Logout(ctx context.Context, in *auth_v1.LogoutRequest, opts ...grpc.CallOption) (*auth_v1.LogoutResponse, error)
+	LogoutAll(ctx context.Context, in *auth_v1.LogoutAllRequest, opts ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error)
+	ChangePassword(ctx context.Context, in *auth_v1.ChangePasswordRequest, opts ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error)
+	GetCurrentUser(ctx context.Context, in *auth_v1.GetCurrentUserRequest, opts ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error)
 }
 
 // Client is the SDK entry point. Create with New, dispose with Close.
@@ -196,6 +203,10 @@ type Client struct {
 	logger      Logger
 	failMode    FailMode
 	openMethods map[string]struct{}
+
+	// sf deduplicates concurrent Refresh calls with the same refresh token
+	// (singleflight). Zero-value ready; created in New.
+	sf *refresh.Group
 
 	// bgCtx is the owner-lifetime context for background goroutines (cache
 	// cleaner, etc.). It is NOT a request context. Cancelled by Close.
@@ -261,6 +272,7 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 		logger:      cfg.Logger,
 		failMode:    cfg.FailMode,
 		openMethods: defaultOpenMethods(),
+		sf:          &refresh.Group{},
 		bgCtx:       bgCtx,
 		cancelBG:    cancelBG,
 	}
