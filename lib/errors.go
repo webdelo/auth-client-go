@@ -1,13 +1,7 @@
-// Package authclient is the official Go SDK for the webdelo/auth service.
-//
-// The SDK is a thin wrapper over the gRPC contract from
-// github.com/webdelo/auth-proto with non-trivial concerns baked in: a
-// ValidateToken TTL cache, an HTTP middleware, a gRPC unary interceptor,
-// refresh-race serialization, and typed errors. Create a Client with New,
-// dispose with Close.
 package authclient
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -40,8 +34,15 @@ var ErrUnavailable = errors.New("authclient: service unavailable")
 // rate-limited responses). Use errors.Is(err, ErrXxx) for sentinel detection
 // and RetryAfter(err) for the retry hint.
 type AuthError struct {
-	Err        error
-	RetryAfter time.Duration
+	// Err is the wrapped sentinel error (ErrRateLimited, etc.) used by
+	// errors.Is for sentinel detection.
+	Err error
+
+	// RetryAfterHint is the AUTH-server-provided Retry-After value for
+	// ErrRateLimited errors. Zero means "no hint" (AUTH did not include
+	// one). Read via the RetryAfter helper rather than the field directly
+	// when extracting from a wrapped error.
+	RetryAfterHint time.Duration
 }
 
 // Error implements the error interface, delegating to the wrapped sentinel.
@@ -49,6 +50,7 @@ func (e *AuthError) Error() string {
 	if e == nil || e.Err == nil {
 		return ""
 	}
+
 	return e.Err.Error()
 }
 
@@ -57,6 +59,7 @@ func (e *AuthError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
+
 	return e.Err
 }
 
@@ -66,8 +69,9 @@ func (e *AuthError) Unwrap() error {
 func RetryAfter(err error) time.Duration {
 	var ae *AuthError
 	if errors.As(err, &ae) {
-		return ae.RetryAfter
+		return ae.RetryAfterHint
 	}
+
 	return 0
 }
 
@@ -78,19 +82,23 @@ func mapGRPCError(err error) error {
 	if err == nil {
 		return nil
 	}
+
 	st, ok := statusFromWrapped(err)
 	if !ok {
 		return fmt.Errorf("authclient: %w", ErrUnavailable)
 	}
+
 	switch st.Code() {
 	case codes.Unauthenticated:
 		return ErrInvalidToken
 	case codes.PermissionDenied:
 		return ErrBlocked
 	case codes.ResourceExhausted:
-		return &AuthError{Err: ErrRateLimited, RetryAfter: retryAfterFromStatus(st)}
+		return &AuthError{Err: ErrRateLimited, RetryAfterHint: retryAfterFromStatus(st)}
 	case codes.Unavailable, codes.DeadlineExceeded:
 		return ErrUnavailable
+	case codes.Canceled:
+		return fmt.Errorf("authclient: %w", context.Canceled)
 	default:
 		return fmt.Errorf("authclient: unexpected grpc code %s: %w", st.Code(), ErrUnavailable)
 	}
@@ -114,6 +122,7 @@ func statusFromWrapped(err error) (*status.Status, bool) {
 			return st, true
 		}
 	}
+
 	return nil, false
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -83,7 +84,9 @@ func TestClient_ValidateAccessToken(t *testing.T) {
 			},
 			want: func(t *testing.T, user authclient.User, err error, m *validateTestMocks) {
 				require.NoError(t, err)
-				assert.Equal(t, authclient.User{UUID: "u1", Role: authclient.RoleUser}, user)
+				if diff := cmp.Diff(authclient.User{UUID: "u1", Role: authclient.RoleUser}, user); diff != "" {
+					t.Errorf("user mismatch (-want +got):\n%s", diff)
+				}
 				assert.Equal(t, 1, m.auth.ValidateCalls)
 			},
 		},
@@ -332,7 +335,9 @@ func TestClient_ValidateAccessToken(t *testing.T) {
 			},
 			want: func(t *testing.T, user authclient.User, err error, m *validateTestMocks) {
 				require.NoError(t, err)
-				assert.Equal(t, authclient.User{UUID: "uABC", Role: authclient.RoleUser}, user)
+				if diff := cmp.Diff(authclient.User{UUID: "uABC", Role: authclient.RoleUser}, user); diff != "" {
+					t.Errorf("user mismatch (-want +got):\n%s", diff)
+				}
 			},
 		},
 	}

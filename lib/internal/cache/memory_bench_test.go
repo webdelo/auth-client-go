@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-func BenchmarkMemoryCache_Get(b *testing.B) {
-	c := NewMemoryCache(context.Background(), time.Minute)
+func BenchmarkValidateCache_Hit(b *testing.B) {
+	c := New(context.Background(), time.Minute)
 	c.Set(context.Background(), "k", "user-payload", time.Minute)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -17,7 +17,7 @@ func BenchmarkMemoryCache_Get(b *testing.B) {
 }
 
 func BenchmarkMemoryCache_Set(b *testing.B) {
-	c := NewMemoryCache(context.Background(), time.Minute)
+	c := New(context.Background(), time.Minute)
 	payload := "user-payload"
 	b.ReportAllocs()
 	b.ResetTimer()

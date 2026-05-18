@@ -3,6 +3,7 @@ package authclient
 import (
 	"context"
 	"errors"
+	"runtime/debug"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -31,8 +32,11 @@ func (c *Client) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	) (resp interface{}, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				c.logger.Error(ctx, "authclient: grpc handler panic", nil, "panic", r)
-				err = status.Errorf(codes.Internal, "panic: %v", r)
+				c.logger.Error(ctx, "authclient: grpc handler panic", nil,
+					"panic", r,
+					"stack", string(debug.Stack()),
+				)
+				err = status.Error(codes.Internal, "internal error")
 				resp = nil
 			}
 		}()
@@ -43,15 +47,17 @@ func (c *Client) UnaryInterceptor() grpc.UnaryServerInterceptor {
 
 		md, mdOK := metadata.FromIncomingContext(ctx)
 		if !mdOK {
-			return nil, status.Error(codes.Unauthenticated, "missing metadata")
+			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
+
 		authValues := md.Get("authorization")
 		if len(authValues) == 0 {
-			return nil, status.Error(codes.Unauthenticated, "missing authorization")
+			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
+
 		token, tokOK := bearerToken(authValues[0])
 		if !tokOK {
-			return nil, status.Error(codes.Unauthenticated, "invalid authorization header")
+			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
 
 		user, vErr := c.ValidateAccessToken(ctx, token)
@@ -67,7 +73,7 @@ func (c *Client) UnaryInterceptor() grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.ResourceExhausted, "rate limited")
 
 		case vErr != nil: // ErrInvalidToken / ErrExpired / ErrBlocked
-			return nil, status.Error(codes.Unauthenticated, vErr.Error())
+			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 		}
 
 		return handler(WithUser(ctx, user), req)

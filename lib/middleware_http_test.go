@@ -119,14 +119,14 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 	)
 
 	tests := map[string]struct {
-		authzHeader  string
+		setupRequest func(*http.Request) // never nil — even no-op cases must pass func(*http.Request) {}
 		failMode     authclient.FailMode
 		prepareMocks func(*testing.T, *httpMiddlewareTestMocks)
 		want         func(*testing.T, *httptest.ResponseRecorder, bool)
 	}{
 		"happy_path": {
-			authzHeader: "Bearer valid-token",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer valid-token") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("valid-token")
 				expectedUser := authclient.User{UUID: "uid1", Role: authclient.RoleUser}
@@ -162,8 +162,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"missing_authorization_returns_401": {
-			authzHeader: "",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(*http.Request) {},
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				// Cache and auth must not be touched.
 			},
@@ -174,8 +174,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"malformed_bearer_returns_401": {
-			authzHeader: "Token xyz",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Token xyz") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				// Cache and auth must not be touched.
 			},
@@ -185,8 +185,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"invalid_token_returns_401_with_error_attribute": {
-			authzHeader: "Bearer abc",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer abc") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("abc")
 
@@ -211,8 +211,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"expired_token_returns_401": {
-			authzHeader: "Bearer expired-tok",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer expired-tok") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("expired-tok")
 
@@ -236,8 +236,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"blocked_user_returns_401": {
-			authzHeader: "Bearer blocked-tok",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer blocked-tok") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("blocked-tok")
 
@@ -261,8 +261,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"unavailable_failclosed_returns_503": {
-			authzHeader: "Bearer tok-down",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer tok-down") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("tok-down")
 
@@ -284,8 +284,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"unavailable_failopen_passes_through_with_empty_user": {
-			authzHeader: "Bearer tok-down-open",
-			failMode:    authclient.FailOpen,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer tok-down-open") },
+			failMode:     authclient.FailOpen,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("tok-down-open")
 
@@ -306,8 +306,8 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 			},
 		},
 		"rate_limited_returns_429_no_header": {
-			authzHeader: "Bearer tok-throttled",
-			failMode:    authclient.FailClosed,
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer tok-throttled") },
+			failMode:     authclient.FailClosed,
 			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
 				expectedKey := authclient.HashToken("tok-throttled")
 
@@ -359,9 +359,7 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 
 			handler := c.HTTPMiddleware(next)
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			if tc.authzHeader != "" {
-				req.Header.Set("Authorization", tc.authzHeader)
-			}
+			tc.setupRequest(req)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 

@@ -5,20 +5,40 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// Package-level constants for time-dependent subtests.
+// entryTTL is the TTL used for short-lived test entries; sleepBeforeExpiry
+// must be > entryTTL to guarantee the entry is expired before Get is called.
+const (
+	entryTTL          = 10 * time.Millisecond
+	sleepBeforeExpiry = 25 * time.Millisecond // > entryTTL ensures expiry
+)
+
+// cleanupInterval is the cleanup-loop tick period used in cleanup tests.
+// shortTTL is the entry TTL for cleanup-eviction tests; it must be <
+// cleanupInterval so the entry expires before the first tick.
+// cleanupWait is the virtual sleep injected inside a synctest bubble; it must
+// be > shortTTL + cleanupInterval so at least one cleanup tick fires after
+// the entry has expired.
+const (
+	cleanupInterval = 20 * time.Millisecond
+	shortTTL        = 5 * time.Millisecond
+	cleanupWait     = 60 * time.Millisecond // > shortTTL + cleanupInterval
+)
+
 func TestMemoryCache_Get(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		setup       func(c *MemoryCache)
-		key         string
-		sleepBefore time.Duration
-		want        func(*testing.T, any, bool)
+		setup func(c *MemoryCache)
+		key   string
+		want  func(*testing.T, any, bool)
 	}{
 		"happy_path": {
 			setup: func(c *MemoryCache) {
@@ -33,17 +53,6 @@ func TestMemoryCache_Get(t *testing.T) {
 		"miss_returns_false": {
 			setup: func(c *MemoryCache) {},
 			key:   "missing",
-			want: func(t *testing.T, val any, ok bool) {
-				require.False(t, ok)
-				assert.Nil(t, val)
-			},
-		},
-		"expired_returns_false": {
-			setup: func(c *MemoryCache) {
-				c.Set(context.Background(), "expiring", "payload", 10*time.Millisecond)
-			},
-			key:         "expiring",
-			sleepBefore: 20 * time.Millisecond,
 			want: func(t *testing.T, val any, ok bool) {
 				require.False(t, ok)
 				assert.Nil(t, val)
@@ -67,17 +76,32 @@ func TestMemoryCache_Get(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			c := NewMemoryCache(context.Background(), 0)
+			c := New(context.Background(), 0)
 			tc.setup(c)
-
-			if tc.sleepBefore > 0 {
-				time.Sleep(tc.sleepBefore)
-			}
 
 			val, ok := c.Get(context.Background(), tc.key)
 			tc.want(t, val, ok)
 		})
 	}
+}
+
+// TestMemoryCache_Get_ExpiryWithSynctest verifies that a Get on an expired
+// entry returns (nil, false). Uses testing/synctest so time advances
+// deterministically without real sleeps.
+func TestMemoryCache_Get_ExpiryWithSynctest(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		c := New(context.Background(), 0)
+		c.Set(context.Background(), "expiring", "payload", entryTTL)
+
+		// Advance virtual clock past the entry TTL.
+		time.Sleep(sleepBeforeExpiry)
+
+		val, ok := c.Get(context.Background(), "expiring")
+		require.False(t, ok)
+		assert.Nil(t, val)
+	})
 }
 
 func TestMemoryCache_Delete(t *testing.T) {
@@ -115,7 +139,7 @@ func TestMemoryCache_Delete(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			c := NewMemoryCache(context.Background(), 0)
+			c := New(context.Background(), 0)
 			tc.setup(c)
 			c.Delete(context.Background(), tc.key)
 			tc.want(t, c)
@@ -124,34 +148,29 @@ func TestMemoryCache_Delete(t *testing.T) {
 }
 
 // TestMemoryCache_Cleanup tests the background goroutine lifecycle.
-// Goroutine-count subtests are NOT parallel (they measure global runtime state).
+//
+// UT-0042 exception: subtests do NOT call t.Parallel() because some measure
+// runtime.NumGoroutine() (global state) or run inside synctest bubbles which
+// manage their own goroutines.
 func TestMemoryCache_Cleanup(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
 		run func(t *testing.T)
 	}{
 		"goroutine_exits_when_ctx_cancelled": {
 			run: func(t *testing.T) {
-				baseline := runtime.NumGoroutine()
+				// Use synctest for deterministic goroutine-lifecycle verification.
+				// c.Wait() blocks until the cleanup goroutine has exited, so there
+				// is no need to poll runtime.NumGoroutine().
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(context.Background())
 
-				ctx, cancel := context.WithCancel(context.Background())
-				_ = NewMemoryCache(ctx, 10*time.Millisecond)
+					c := New(ctx, cleanupInterval)
 
-				// Give the goroutine a moment to start.
-				time.Sleep(20 * time.Millisecond)
-
-				cancel()
-
-				// Wait up to 200ms for the goroutine to exit.
-				deadline := time.Now().Add(200 * time.Millisecond)
-				for time.Now().Before(deadline) {
-					runtime.Gosched()
-					time.Sleep(5 * time.Millisecond)
-					if runtime.NumGoroutine() <= baseline {
-						break
-					}
-				}
-
-				assert.LessOrEqual(t, runtime.NumGoroutine(), baseline)
+					cancel()
+					c.Wait() // returns once cleanupLoop exits
+				})
 			},
 		},
 		"zero_interval_no_goroutine_started": {
@@ -159,7 +178,7 @@ func TestMemoryCache_Cleanup(t *testing.T) {
 				baseline := runtime.NumGoroutine()
 
 				ctx := context.Background()
-				_ = NewMemoryCache(ctx, 0)
+				_ = New(ctx, 0)
 
 				runtime.Gosched()
 
@@ -168,25 +187,30 @@ func TestMemoryCache_Cleanup(t *testing.T) {
 		},
 		"expired_entry_removed_by_cleanup": {
 			run: func(t *testing.T) {
-				ctx, cancel := context.WithCancel(context.Background())
-				t.Cleanup(cancel)
+				// Use synctest so time.Sleep advances the fake clock instantly
+				// when all goroutines in the bubble are blocked.
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(context.Background())
+					t.Cleanup(cancel)
 
-				const cleanupInterval = 20 * time.Millisecond
-				c := NewMemoryCache(ctx, cleanupInterval)
-				c.Set(context.Background(), "short", "val", 5*time.Millisecond)
+					c := New(ctx, cleanupInterval)
+					c.Set(context.Background(), "short", "val", shortTTL)
 
-				// Wait for entry to expire and cleanup to run.
-				time.Sleep(60 * time.Millisecond)
+					// Advance virtual clock: shortTTL expires, cleanup tick fires.
+					time.Sleep(cleanupWait)
 
-				// The cleanup loop should have removed the entry.
-				// Even if it wasn't removed proactively, Get does lazy eviction —
-				// the key must not be returned regardless.
-				_, ok := c.Get(context.Background(), "short")
-				require.False(t, ok)
+					// The cleanup loop should have removed the entry.
+					// Even if it wasn't removed proactively, Get does lazy eviction —
+					// the key must not be returned regardless.
+					_, ok := c.Get(context.Background(), "short")
+					require.False(t, ok)
+				})
 			},
 		},
 	}
 
+	// UT-0042 exception: no t.Parallel() inside the loop — subtests measure
+	// global runtime state or use synctest bubbles with their own goroutines.
 	for name, tc := range tests {
 		tc := tc
 
@@ -196,6 +220,9 @@ func TestMemoryCache_Cleanup(t *testing.T) {
 	}
 }
 
+// TestMemoryCache_Concurrent exercises Set/Get/Delete under 50 concurrent
+// goroutines to detect data races. Always run under -race (go test -race).
+// Not table-driven yet; add table structure when additional scenarios appear.
 func TestMemoryCache_Concurrent(t *testing.T) {
 	t.Parallel()
 
@@ -205,7 +232,7 @@ func TestMemoryCache_Concurrent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	c := NewMemoryCache(ctx, time.Second)
+	c := New(ctx, time.Second)
 
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)

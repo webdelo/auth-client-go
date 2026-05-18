@@ -143,7 +143,7 @@ func TestRetryAfter(t *testing.T) {
 		want  time.Duration
 	}{
 		"happy_path": {
-			input: &AuthError{Err: ErrRateLimited, RetryAfter: 5 * time.Second},
+			input: &AuthError{Err: ErrRateLimited, RetryAfterHint: 5 * time.Second},
 			want:  5 * time.Second,
 		},
 		"non_auth_error_returns_zero": {
@@ -155,7 +155,7 @@ func TestRetryAfter(t *testing.T) {
 			want:  0,
 		},
 		"wrapped_auth_error_returns_value": {
-			input: fmt.Errorf("ctx: %w", &AuthError{Err: ErrRateLimited, RetryAfter: 3 * time.Second}),
+			input: fmt.Errorf("ctx: %w", &AuthError{Err: ErrRateLimited, RetryAfterHint: 3 * time.Second}),
 			want:  3 * time.Second,
 		},
 	}

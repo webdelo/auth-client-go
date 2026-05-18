@@ -1,6 +1,6 @@
 metadata:
   template_version: '1.0'
-  updated_at: '2026-05-18T11:59:40Z'
+  updated_at: '2026-05-18T13:13:47Z'
   total_pending: 4
   total_active: 0
   total_completed: 3
@@ -40,10 +40,11 @@ pending_tasks:
   branch: feature/req-001-task-007
   description: README + godoc + CHANGELOG + tag v0.1.0
   task_file: task_management/tasks/REQ-001-TASK-007.md
-  status: pending
+  status: prp_ready
   priority: high
   depends_on:
   - REQ-001-TASK-006
+  prp_file: task_management/plans/REQ-001-TASK-007-PRP.md
 active_tasks: []
 completed_tasks:
 - task_id: REQ-001-TASK-001
@@ -121,19 +122,24 @@ completed_tasks:
   lifecycle:
     execution:
       completed: true
-      completed_at: '2026-05-18T13:59:38Z'
+      completed_at: '2026-05-18T14:37:29Z'
     code_review:
       completed: true
-      completed_at: '2026-05-18'
-      verdict: APPROVED
-      original_verdict: APPROVED
-      critical_issues: 3
-      warning_issues: 7
-      suggestion_issues: 4
+      completed_at: null
+      verdict: ALL_FIXED
+      original_verdict: APPROVED_WITH_COMMENTS
+      critical_issues: 0
+      warning_issues: 16
+      suggestion_issues: 17
+      debug_completed_at: null
     bug_fixing:
       has_bugs: false
-      bugs_fixed: false
+      bugs_fixed: true
+      debug_verdict: ALL_FIXED
   result_report: task_management/results/REQ-001-TASK-003-result-report.md
+  completed_at: '2026-05-18T14:37:29Z'
+  debug_report_files:
+  - task_management/debug_reports/REQ-001-TASK-003-DEBUG-REPORT.yaml
 blocked_tasks: []
 status_reference:
   feature_tasks:

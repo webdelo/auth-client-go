@@ -20,16 +20,18 @@ const (
 // must not contain inner whitespace, and must be ≤ 8 KiB.
 func bearerToken(authz string) (string, bool) {
 	authz = strings.TrimLeft(authz, " \t")
-	if len(authz) < len(bearerPrefix) ||
+	if len(authz) < len(bearerPrefix) || len(authz) > len(bearerPrefix)+maxBearerLen+1 ||
 		!strings.EqualFold(authz[:len(bearerPrefix)], bearerPrefix) {
 		return "", false
 	}
+
 	token := strings.TrimSpace(authz[len(bearerPrefix):])
 	if token == "" ||
-		strings.ContainsAny(token, " \t\r\n") ||
-		len(token) > maxBearerLen {
+		len(token) > maxBearerLen ||
+		strings.ContainsAny(token, " \t\r\n") {
 		return "", false
 	}
+
 	return token, true
 }
 
@@ -51,7 +53,7 @@ func (c *Client) HTTPMiddleware(next http.Handler) http.Handler {
 		token, ok := bearerToken(r.Header.Get("Authorization"))
 		if !ok {
 			w.Header().Set("WWW-Authenticate", wwwAuthMissing)
-			http.Error(w, "missing or malformed token", http.StatusUnauthorized)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -76,7 +78,7 @@ func (c *Client) HTTPMiddleware(next http.Handler) http.Handler {
 
 		case err != nil: // ErrInvalidToken / ErrExpired / ErrBlocked
 			w.Header().Set("WWW-Authenticate", wwwAuthInvalid)
-			http.Error(w, err.Error(), http.StatusUnauthorized)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 

@@ -396,6 +396,7 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 						"authclient: grpc handler panic",
 						nil,
 						"panic", "boom",
+						"stack", mock.Anything,
 					).
 					Return().
 					Once()
@@ -407,7 +408,7 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 				require.Error(t, err)
 				assert.Nil(t, resp)
 				assert.Equal(t, codes.Internal, status.Code(err))
-				assert.Contains(t, err.Error(), "panic: boom")
+				assert.Contains(t, err.Error(), "internal error")
 			},
 		},
 	}

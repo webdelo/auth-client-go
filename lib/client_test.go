@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 // recordingLogger and stubCache are hand-written stubs for the Logger and
@@ -17,6 +19,11 @@ import (
 // package authclient_test (validate_test.go, middleware_http_test.go,
 // interceptor_grpc_test.go), the mockery mocks are used directly — see
 // export_test.go for the FakeAuthClient counterpart.
+//
+// UT-0020 waiver: this file is in package authclient (not authclient_test)
+// to retain access to unexported fields. lib/mocks imports lib, so importing
+// lib/mocks from this same-package test would create a cycle. The waiver is
+// scoped to recordingLogger and stubCache only.
 type recordingLogger struct {
 	infos int
 }
@@ -31,7 +38,7 @@ func (*stubCache) Get(_ context.Context, _ string) (User, bool)             { re
 func (*stubCache) Set(_ context.Context, _ string, _ User, _ time.Duration) {}
 func (*stubCache) Delete(_ context.Context, _ string)                       {}
 
-func TestNew(t *testing.T) {
+func TestClient_New(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -188,8 +195,11 @@ func TestNew(t *testing.T) {
 		"endpoint_invalid_format_returns_error": {
 			cfg: Config{Endpoint: "bad host with spaces"},
 			want: func(t *testing.T, c *Client, err error) {
-				// grpc.NewClient may validate the target eagerly (returning error)
-				// or lazily (deferring validation to the first RPC). Both are valid.
+				// gRPC target resolution can be eager (returns error from New) or lazy
+				// (defers to first RPC). Both behaviors satisfy the resolver contract per
+				// https://pkg.go.dev/google.golang.org/grpc#NewClient. UT-0032 exception:
+				// the branch here documents the dual contract, not assertion logic
+				// dependent on test state.
 				if err != nil {
 					require.Error(t, err)
 					assert.Nil(t, c)
@@ -265,4 +275,62 @@ func TestClient_Close(t *testing.T) {
 			tc.run(t)
 		})
 	}
+}
+
+// TestClient_CacheAdapter_RoundTrip verifies that cacheAdapter correctly handles
+// a cache miss → gRPC call → cache set → cache hit round-trip (CR-002).
+// It creates a real Client with ValidateCacheTTL > 0 so the default cacheAdapter
+// wrapping cachepkg.MemoryCache is allocated, then injects a FakeAuthClient to
+// assert that the second ValidateAccessToken call is served from cache without
+// contacting AUTH again.
+func TestClient_CacheAdapter_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	const token = "roundtrip-token"
+
+	expectedUser := User{UUID: "rtu1", Role: RoleUser}
+
+	fake := &FakeAuthClient{
+		ValidateFunc: func(_ context.Context, _ *auth_v1.ValidateTokenRequest, _ ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error) {
+			return &auth_v1.ValidateTokenResponse{
+				IsValid:  true,
+				UserUuid: "rtu1",
+				Role:     "user",
+			}, nil
+		},
+	}
+
+	c, err := New(Config{
+		Endpoint:         "localhost:50051",
+		ValidateCacheTTL: 30 * time.Second,
+		ValidateTimeout:  2 * time.Second,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	t.Cleanup(func() {
+		if cerr := c.Close(); cerr != nil {
+			t.Logf("close error: %v", cerr)
+		}
+	})
+
+	// Verify that cacheAdapter (not a stubCache) was allocated.
+	_, isCacheAdapter := c.cache.(*cacheAdapter)
+	require.True(t, isCacheAdapter, "default cache should be a cacheAdapter when ValidateCacheTTL > 0")
+
+	// Replace the gRPC client with our fake.
+	c.authClient = fake
+
+	ctx := context.Background()
+
+	// First call: cache miss → gRPC call → cache set.
+	user1, err := c.ValidateAccessToken(ctx, token)
+	require.NoError(t, err)
+	assert.Equal(t, expectedUser, user1)
+	assert.Equal(t, 1, fake.ValidateCalls, "first call must reach AUTH")
+
+	// Second call: cache hit — FakeAuthClient must NOT be called again.
+	user2, err := c.ValidateAccessToken(ctx, token)
+	require.NoError(t, err)
+	assert.Equal(t, expectedUser, user2)
+	assert.Equal(t, 1, fake.ValidateCalls, "second call must be served from cache without contacting AUTH")
 }

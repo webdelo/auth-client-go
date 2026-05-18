@@ -1,9 +1,17 @@
+// Package authclient is the official Go SDK for the webdelo/auth service.
+//
+// The SDK is a thin wrapper over the gRPC contract from
+// github.com/webdelo/auth-proto with non-trivial concerns baked in: a
+// ValidateToken TTL cache, an HTTP middleware, a gRPC unary interceptor,
+// refresh-race serialization, and typed errors. Create a Client with New,
+// dispose with Close.
 package authclient
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +71,11 @@ const (
 // implementation is created by New when Config.Cache is nil and WithCache
 // is not applied; supply a custom implementation via WithCache to override
 // TTL semantics or storage backend.
+//
+// On a cancelled ctx, implementations should return the zero value
+// (Get) or be a no-op (Set/Delete) immediately rather than blocking.
+// Implementations must not use ctx to bound the TTL of stored entries —
+// ttl is the sole TTL source.
 type Cache interface {
 	// Get returns the cached User and ok=true on hit.
 	Get(ctx context.Context, key string) (user User, ok bool)
@@ -79,8 +92,9 @@ type Config struct {
 	Endpoint string
 
 	// ValidateCacheTTL is the TTL for ValidateToken results. Defaults to 30s
-	// when negative. Zero means "cache disabled" and is preserved as-is by
-	// New; the cache layer skips creation when TTL is zero.
+	// when negative. Zero means "cache disabled": New still allocates an
+	// in-memory cache object, but Set is a no-op for TTL=0 so no entries are
+	// ever stored. Effectively every ValidateAccessToken call reaches gRPC.
 	ValidateCacheTTL time.Duration
 
 	// FailMode controls middleware behavior when AUTH is unreachable.
@@ -97,9 +111,13 @@ type Config struct {
 	RefreshTimeout time.Duration
 
 	// DialOptions are appended to the SDK defaults, allowing the consumer
-	// to override transport credentials (TLS), interceptors, etc. The SDK
-	// insecure.NewCredentials() comes first; user options come after, so a
-	// user-supplied WithTransportCredentials wins.
+	// to override transport credentials (TLS), interceptors, etc.
+	// Caller-supplied options come after SDK defaults so they win.
+	//
+	// SECURITY: the SDK default transport is insecure.NewCredentials()
+	// (plaintext). Production deployments to a remote AUTH server MUST
+	// supply grpc.WithTransportCredentials(...) here to enable TLS.
+	// Caller-supplied options come after SDK defaults so they win.
 	DialOptions []grpc.DialOption
 
 	// Logger is the diagnostic logger. Defaults to NoopLogger if nil.
@@ -173,7 +191,8 @@ type Client struct {
 	cfg         Config
 	grpcConn    *grpc.ClientConn
 	authClient  authServiceClient
-	cache       Cache // token validation cache (default = cacheAdapter wrapping cache.MemoryCache)
+	cache       Cache                 // token validation cache (default = cacheAdapter wrapping cache.MemoryCache)
+	memCache    *cachepkg.MemoryCache // non-nil only when SDK created the default MemoryCache
 	logger      Logger
 	failMode    FailMode
 	openMethods map[string]struct{}
@@ -189,6 +208,15 @@ type Client struct {
 	closeErr  error
 }
 
+// isLocalEndpoint reports whether the endpoint points to the local machine,
+// used as a heuristic to suppress the insecure-transport warning.
+func isLocalEndpoint(endpoint string) bool {
+	return strings.HasPrefix(endpoint, "localhost") ||
+		strings.HasPrefix(endpoint, "127.") ||
+		strings.HasPrefix(endpoint, "[::1]") ||
+		strings.HasPrefix(endpoint, "unix:")
+}
+
 // New creates a Client. It validates Endpoint, applies defaults, sets up the
 // gRPC connection (lazy — does NOT block on dial), and registers the default
 // open methods for the interceptor. The returned Client must be closed with
@@ -199,6 +227,13 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 	}
 
 	cfg = applyDefaults(cfg)
+
+	if !isLocalEndpoint(cfg.Endpoint) && len(cfg.DialOptions) == 0 {
+		cfg.Logger.Warn(context.Background(),
+			"authclient: insecure (plaintext) transport for non-local endpoint — supply WithTransportCredentials(TLS) in DialOptions for production",
+			"endpoint", cfg.Endpoint,
+		)
+	}
 
 	dialOpts := make([]grpc.DialOption, 0, defaultDialOptionsCount+len(cfg.DialOptions))
 	dialOpts = append(dialOpts,
@@ -238,9 +273,12 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 	if c.cache == nil && cfg.Cache != nil {
 		c.cache = cfg.Cache
 	}
+
 	if c.cache == nil {
 		cleanupInterval := cfg.ValidateCacheTTL / 2
-		c.cache = newCacheAdapter(cachepkg.NewMemoryCache(bgCtx, cleanupInterval))
+		mc := cachepkg.New(bgCtx, cleanupInterval)
+		c.memCache = mc
+		c.cache = newCacheAdapter(mc)
 	}
 
 	return c, nil
@@ -262,18 +300,23 @@ func applyDefaults(cfg Config) Config {
 	if cfg.ValidateCacheTTL < 0 {
 		cfg.ValidateCacheTTL = defaultValidateCacheTTL
 	}
+
 	if cfg.ValidateTimeout <= 0 {
 		cfg.ValidateTimeout = defaultValidateTimeout
 	}
+
 	if cfg.LoginTimeout <= 0 {
 		cfg.LoginTimeout = defaultLoginTimeout
 	}
+
 	if cfg.RefreshTimeout <= 0 {
 		cfg.RefreshTimeout = defaultRefreshTimeout
 	}
+
 	if cfg.Logger == nil {
 		cfg.Logger = NoopLogger{}
 	}
+
 	return cfg
 }
 
@@ -291,6 +334,9 @@ func defaultOpenMethods() map[string]struct{} {
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
 		c.cancelBG()
+		if c.memCache != nil {
+			c.memCache.Wait()
+		}
 		c.closeErr = c.grpcConn.Close()
 	})
 	return c.closeErr
@@ -316,10 +362,12 @@ func (a *cacheAdapter) Get(ctx context.Context, key string) (User, bool) {
 	if !ok {
 		return User{}, false
 	}
+
 	user, ok := v.(User)
 	if !ok {
 		return User{}, false
 	}
+
 	return user, true
 }
 

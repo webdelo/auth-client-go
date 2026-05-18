@@ -55,6 +55,7 @@ func (c *Client) ValidateAccessToken(ctx context.Context, accessToken string) (U
 	if err != nil {
 		return User{}, mapGRPCError(err)
 	}
+
 	if !resp.IsValid {
 		return User{}, mapErrorReason(resp.ErrorReason)
 	}

@@ -21,12 +21,13 @@ type entry struct {
 // are opaque (any) — the wrapping adapter in package authclient type-asserts
 // to authclient.User. Read access is lock-free via sync.Map. A background
 // goroutine drains tombstones on cleanupInterval; it exits when the bgCtx
-// passed to NewMemoryCache is cancelled, ensuring no goroutine leak.
+// passed to New is cancelled, ensuring no goroutine leak.
 type MemoryCache struct {
-	m sync.Map // key string -> entry
+	m  sync.Map // key string -> entry
+	wg sync.WaitGroup
 }
 
-// NewMemoryCache constructs a MemoryCache and, when cleanupInterval > 0,
+// New constructs a MemoryCache and, when cleanupInterval > 0,
 // launches a background cleanup goroutine.
 //
 // bgCtx controls the cleanup goroutine lifecycle. Cancel it to stop the
@@ -34,10 +35,15 @@ type MemoryCache struct {
 // Client's background context to bind the cleanup lifetime to Client.Close.
 // A cleanupInterval of 0 or less skips the goroutine entirely — expired
 // entries are still evicted lazily inside Get.
-func NewMemoryCache(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
+//
+// A cleanupInterval of TTL/2 is recommended: frequent enough to bound
+// memory growth while keeping overhead low. A value of 0 or less skips
+// the goroutine entirely — expired entries are still evicted lazily inside Get.
+func New(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
 	c := &MemoryCache{}
 
 	if cleanupInterval > 0 {
+		c.wg.Add(1)
 		go c.cleanupLoop(bgCtx, cleanupInterval)
 	}
 
@@ -52,7 +58,12 @@ func (c *MemoryCache) Get(_ context.Context, key string) (any, bool) {
 		return nil, false
 	}
 
-	e := v.(entry)
+	e, ok := v.(entry)
+	if !ok {
+		c.m.Delete(key)
+		return nil, false
+	}
+
 	if time.Now().After(e.expiresAt) {
 		c.m.Delete(key)
 		return nil, false
@@ -78,9 +89,18 @@ func (c *MemoryCache) Delete(_ context.Context, key string) {
 	c.m.Delete(key)
 }
 
+// Wait blocks until the background cleanup goroutine has exited. Call after
+// cancelling the bgCtx passed to New to ensure the goroutine has stopped
+// before releasing resources (e.g. closing the gRPC connection).
+// If no cleanup goroutine was started (cleanupInterval <= 0), Wait returns
+// immediately.
+func (c *MemoryCache) Wait() { c.wg.Wait() }
+
 // cleanupLoop scans the map once per interval and removes expired entries.
 // Exits when ctx is cancelled.
 func (c *MemoryCache) cleanupLoop(ctx context.Context, interval time.Duration) {
+	defer c.wg.Done()
+
 	t := time.NewTicker(interval)
 	defer t.Stop()
 
@@ -91,7 +111,12 @@ func (c *MemoryCache) cleanupLoop(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 			now := time.Now()
 			c.m.Range(func(k, v any) bool {
-				if now.After(v.(entry).expiresAt) {
+				e, ok := v.(entry)
+				if !ok {
+					c.m.Delete(k)
+					return true
+				}
+				if now.After(e.expiresAt) {
 					c.m.Delete(k)
 				}
 				return true

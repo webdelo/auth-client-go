@@ -15,9 +15,15 @@ import (
 	"google.golang.org/grpc"
 )
 
-// FakeAuthClient is an exported test double for the unexported authServiceClient
-// interface. It is defined here (package authclient) so external test packages
-// can reference it without triggering an import cycle via lib/mocks.
+// FakeAuthClient is a hand-written test double for the unexported
+// authServiceClient interface. The interface is unexported, so a
+// mockery-generated mock would need to be defined inside package authclient
+// (which then collides with the lib/mocks → lib import-cycle). This file
+// (export_test.go) is the canonical home for cross-package test helpers
+// requiring access to unexported types.
+//
+// UT-0020 waiver: hand-written double justified by the unexported-interface
+// constraint above. Reconsider if authServiceClient is ever exported.
 type FakeAuthClient struct {
 	ValidateFunc  func(ctx context.Context, in *auth_v1.ValidateTokenRequest, opts ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error)
 	ValidateCalls int

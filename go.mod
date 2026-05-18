@@ -3,6 +3,7 @@ module github.com/webdelo/auth-client-go
 go 1.24.0
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/stretchr/testify v1.11.1
 	github.com/webdelo/auth-proto/go v0.1.0
 	golang.org/x/sync v0.19.0
