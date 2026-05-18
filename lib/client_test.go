@@ -9,6 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// recordingLogger and stubCache are hand-written stubs for the Logger and
+// Cache interfaces. They live in client_test.go (package authclient) rather
+// than using the mockery-generated lib/mocks.* mocks because the mocks
+// package imports lib, which would create a circular import for tests
+// that live inside package authclient itself. For tests in
+// package authclient_test (validate_test.go, middleware_http_test.go,
+// interceptor_grpc_test.go), the mockery mocks are used directly — see
+// export_test.go for the FakeAuthClient counterpart.
 type recordingLogger struct {
 	infos int
 }
@@ -19,8 +27,8 @@ func (r *recordingLogger) Error(_ context.Context, _ string, _ error, _ ...any) 
 
 type stubCache struct{}
 
-func (*stubCache) Get(_ context.Context, _ string) (any, bool)              { return nil, false }
-func (*stubCache) Set(_ context.Context, _ string, _ any, _ time.Duration)  {}
+func (*stubCache) Get(_ context.Context, _ string) (User, bool)             { return User{}, false }
+func (*stubCache) Set(_ context.Context, _ string, _ User, _ time.Duration) {}
 func (*stubCache) Delete(_ context.Context, _ string)                       {}
 
 func TestNew(t *testing.T) {
@@ -160,8 +168,8 @@ func TestNew(t *testing.T) {
 						t.Logf("close error: %v", cerr)
 					}
 				})
-				_, ok := c.cfg.Cache.(*stubCache)
-				assert.True(t, ok, "WithCache should set cfg.Cache")
+				_, ok := c.cache.(*stubCache)
+				assert.True(t, ok, "WithCache should set c.cache")
 			},
 		},
 		"positive_ttl_preserved": {

@@ -97,10 +97,10 @@ func mapGRPCError(err error) error {
 }
 
 // retryAfterFromStatus best-effort extracts the Retry-After hint from gRPC
-// status details. AUTH v0.1.0 does not include this field — returns 0 today;
-// kept as a future-compat placeholder for google.rpc.RetryInfo.
-func retryAfterFromStatus(st *status.Status) time.Duration {
-	_ = st
+// status details. AUTH v0.1.0 does not include this field — returns 0 today.
+// TODO: parse google.rpc.RetryInfo from status details once AUTH server
+// starts populating it.
+func retryAfterFromStatus(_ *status.Status) time.Duration {
 	return 0
 }
 
@@ -120,13 +120,15 @@ func statusFromWrapped(err error) (*status.Status, bool) {
 // mapErrorReason converts ValidateTokenResponse.error_reason (returned when
 // is_valid=false) into a sentinel. Unknown values map to ErrInvalidToken
 // (conservative default — the caller should re-authenticate).
+// "invalid_token_version" maps to ErrExpired (token rotation due to LogoutAll
+// / password change — the token is structurally valid but superseded).
 func mapErrorReason(reason string) error {
 	switch reason {
-	case "expired":
+	case "expired", "invalid_token_version":
 		return ErrExpired
 	case "blocked":
 		return ErrBlocked
-	default: // "invalid", "", any unknown
+	default: // "invalid", "invalid_signature", "user_not_found", "internal_error", "empty_token", "", any unknown
 		return ErrInvalidToken
 	}
 }

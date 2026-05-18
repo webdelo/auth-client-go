@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+
+	cachepkg "github.com/webdelo/auth-client-go/lib/internal/cache"
 )
 
 const (
@@ -18,6 +20,7 @@ const (
 	defaultValidateTimeout  = 2 * time.Second
 	defaultLoginTimeout     = 5 * time.Second
 	defaultRefreshTimeout   = 5 * time.Second
+	defaultDialOptionsCount = 3
 
 	keepaliveTime    = 30 * time.Second
 	keepaliveTimeout = 10 * time.Second
@@ -57,14 +60,15 @@ const (
 )
 
 // Cache is the interface for ValidateToken result caching. The default
-// implementation is created by New when Config.Cache is nil; supply a custom
-// implementation via WithCache to override TTL or storage backend.
+// implementation is created by New when Config.Cache is nil and WithCache
+// is not applied; supply a custom implementation via WithCache to override
+// TTL semantics or storage backend.
 type Cache interface {
 	// Get returns the cached User and ok=true on hit.
-	Get(ctx context.Context, key string) (user any, ok bool)
-	// Set stores user with the given TTL.
-	Set(ctx context.Context, key string, user any, ttl time.Duration)
-	// Delete removes the key.
+	Get(ctx context.Context, key string) (user User, ok bool)
+	// Set stores user with the given TTL. ttl <= 0 must be a no-op.
+	Set(ctx context.Context, key string, user User, ttl time.Duration)
+	// Delete removes the key. Idempotent.
 	Delete(ctx context.Context, key string)
 }
 
@@ -126,9 +130,15 @@ func WithLogger(l Logger) Option {
 	}
 }
 
-// WithCache overrides the ValidateToken result cache. Pass nil to disable caching.
+// WithCache sets a custom ValidateToken result cache, replacing the SDK
+// default MemoryCache. Resolution priority inside New: WithCache option
+// (this function) > Config.Cache field > built-in MemoryCache with a
+// cleanup goroutine bound to Client.Close. Passing nil here is a no-op
+// for the option; the resolution then falls through to Config.Cache or
+// the built-in default. Custom caches do NOT receive a background cleanup
+// goroutine — the implementation is fully responsible for its own lifecycle.
 func WithCache(cache Cache) Option {
-	return func(c *Client) { c.cfg.Cache = cache }
+	return func(c *Client) { c.cache = cache }
 }
 
 // WithOpenMethods registers gRPC methods (FullMethod, e.g.
@@ -143,21 +153,35 @@ func WithOpenMethods(methods ...string) Option {
 	}
 }
 
+// authServiceClient is the consumer-side mockable subset of
+// auth_v1.AuthServiceClient. The generated *auth_v1.AuthServiceClient stub
+// satisfies this interface implicitly because Go interfaces are structurally
+// typed. New methods are added here as future tasks require them (Login,
+// Refresh, etc.).
+type authServiceClient interface {
+	ValidateToken(
+		ctx context.Context,
+		in *auth_v1.ValidateTokenRequest,
+		opts ...grpc.CallOption,
+	) (*auth_v1.ValidateTokenResponse, error)
+}
+
 // Client is the SDK entry point. Create with New, dispose with Close.
 // Safe for concurrent use by multiple goroutines (the underlying
 // *grpc.ClientConn is goroutine-safe per gRPC concurrency guarantees).
 type Client struct {
 	cfg         Config
 	grpcConn    *grpc.ClientConn
-	authClient  auth_v1.AuthServiceClient
+	authClient  authServiceClient
+	cache       Cache // token validation cache (default = cacheAdapter wrapping cache.MemoryCache)
 	logger      Logger
 	failMode    FailMode
 	openMethods map[string]struct{}
 
 	// bgCtx is the owner-lifetime context for background goroutines (cache
 	// cleaner, etc.). It is NOT a request context. Cancelled by Close.
-	// Storing it in the struct is intentional — this is a lifecycle context,
-	// not a per-request context (EC-0051 exception).
+	// Storing this lifecycle context in the struct is intentional — it
+	// scopes to Client itself, not to a single inbound request.
 	bgCtx    context.Context
 	cancelBG context.CancelFunc
 
@@ -176,7 +200,7 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 
 	cfg = applyDefaults(cfg)
 
-	dialOpts := make([]grpc.DialOption, 0, 3+len(cfg.DialOptions))
+	dialOpts := make([]grpc.DialOption, 0, defaultDialOptionsCount+len(cfg.DialOptions))
 	dialOpts = append(dialOpts,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
@@ -208,6 +232,15 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 
 	for _, opt := range opts {
 		opt(c)
+	}
+
+	// Resolve cache: WithCache option > Config.Cache > default MemoryCache.
+	if c.cache == nil && cfg.Cache != nil {
+		c.cache = cfg.Cache
+	}
+	if c.cache == nil {
+		cleanupInterval := cfg.ValidateCacheTTL / 2
+		c.cache = newCacheAdapter(cachepkg.NewMemoryCache(bgCtx, cleanupInterval))
 	}
 
 	return c, nil
@@ -262,3 +295,43 @@ func (c *Client) Close() error {
 	})
 	return c.closeErr
 }
+
+// cacheAdapter wraps *cache.MemoryCache to satisfy the Cache interface
+// without forcing the internal cache package to depend on authclient.User
+// (which would create an import cycle).
+type cacheAdapter struct {
+	inner *cachepkg.MemoryCache
+}
+
+// newCacheAdapter constructs a cacheAdapter around an existing MemoryCache.
+func newCacheAdapter(inner *cachepkg.MemoryCache) *cacheAdapter {
+	return &cacheAdapter{inner: inner}
+}
+
+// Get implements Cache. Type-asserts the opaque payload back to User.
+// If the assertion fails (should not happen — only this adapter writes
+// to the underlying MemoryCache), it is treated as a miss.
+func (a *cacheAdapter) Get(ctx context.Context, key string) (User, bool) {
+	v, ok := a.inner.Get(ctx, key)
+	if !ok {
+		return User{}, false
+	}
+	user, ok := v.(User)
+	if !ok {
+		return User{}, false
+	}
+	return user, true
+}
+
+// Set implements Cache.
+func (a *cacheAdapter) Set(ctx context.Context, key string, user User, ttl time.Duration) {
+	a.inner.Set(ctx, key, user, ttl)
+}
+
+// Delete implements Cache.
+func (a *cacheAdapter) Delete(ctx context.Context, key string) {
+	a.inner.Delete(ctx, key)
+}
+
+// Compile-time assertion that cacheAdapter implements Cache.
+var _ Cache = (*cacheAdapter)(nil)

@@ -1,0 +1,356 @@
+review_id: REQ-001-TASK-003-CR-lib
+date: '2026-05-18'
+reviewer: code-reviewer
+package: lib / lib/internal/cache
+verdict: APPROVED_WITH_COMMENTS
+
+files_reviewed:
+  - lib/context.go
+  - lib/internal/cache/memory.go
+  - lib/validate.go
+  - lib/middleware_http.go
+  - lib/interceptor_grpc.go
+  - lib/client.go
+  - lib/errors.go
+  - mockery.yaml
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+  tests:
+    status: pass
+    failed: []
+    coverage: "lib=92.8%, lib/internal/cache=100.0%"
+    race_detector: pass
+
+summary: >
+  The implementation is of high quality with correct security-critical behaviours: the cache key is
+  always hex(sha256(token)) — raw tokens never appear in keys, logs, or heap dumps; all HTTP and gRPC
+  error branches return before calling next/handler; panic recovery in the gRPC interceptor correctly
+  uses a named return so the deferred assignment propagates; the cleanupLoop goroutine exits reliably
+  on ctx.Done (EC-0010/EC-0012 satisfied); FailClosed is the default fail-mode (OWASP A07);
+  mapErrorReason correctly maps "invalid_token_version" to ErrExpired. Three warnings are raised:
+  internal rule codes (EC-0010, EC-0012, ES-0051, EC-0051) embedded in godoc comments violate
+  CS-0110; a compile-time interface assertion is missing for cacheAdapter → Cache (ES-0053); and the
+  WithCache(nil) godoc makes a claim that is inaccurate when cfg.Cache is also non-nil. These are
+  all fixable without touching any logic.
+
+critical: []
+
+warnings:
+  - id: CR-001
+    severity: warning
+    category: STYLE
+    file: lib/client.go
+    line: 153
+    rule_id: CS-0110
+    title: "Internal rule codes in godoc comments (ES-0051, EC-0051)"
+    description: |
+      Two comments embed internal coding-standard rule identifiers:
+        - Line 153: "auth_v1.AuthServiceClient (ES-0051 — interfaces live where they are used)."
+        - Line 180: "not a per-request context (EC-0051 exception)."
+      CS-0110 prohibits references to internal rules/standards inside production code comments.
+      These comments should explain the "why" in plain language without coupling the code to an
+      internal rule numbering scheme.
+    recommended_fix: |
+      // Line 153 — replace:
+      // auth_v1.AuthServiceClient (ES-0051 — interfaces live where they are used).
+      // with:
+      // auth_v1.AuthServiceClient. Defined here so the SDK can mock it in tests without
+      // depending on the generated stub package in test binaries.
+
+      // Line 180 — replace:
+      // not a per-request context (EC-0051 exception).
+      // with:
+      // not a per-request context — it is a lifecycle context that drives background
+      // goroutines (cache cleanup, etc.) and is cancelled by Close.
+
+  - id: CR-002
+    severity: warning
+    category: STYLE
+    file: lib/internal/cache/memory.go
+    line: 24
+    rule_id: CS-0110
+    title: "Internal rule codes in godoc comment (EC-0010, EC-0012)"
+    description: |
+      Line 24 contains "(EC-0010, EC-0012)" inside a godoc comment:
+        "passed to NewMemoryCache is cancelled (EC-0010, EC-0012)."
+      Same CS-0110 violation as CR-001 — production code must not reference internal rule codes.
+    recommended_fix: |
+      // Replace:
+      // passed to NewMemoryCache is cancelled (EC-0010, EC-0012).
+      // with:
+      // passed to NewMemoryCache is cancelled, ensuring no goroutine leak.
+
+  - id: CR-003
+    severity: warning
+    category: LOGIC
+    file: lib/client.go
+    line: 132
+    rule_id: ES-0053
+    title: "Missing compile-time interface assertion for cacheAdapter → Cache"
+    description: |
+      The cacheAdapter type is the only concrete value assigned to Client.cache when no custom cache
+      is provided. There is no compile-time check asserting it satisfies Cache. If a future refactor
+      changes the Cache interface (e.g. adds a method) the compiler will not catch the mismatch at
+      declaration — only at the assignment in New(), which is less obvious and further from the type.
+      ES-0053 requires: var _ Interface = (*Impl)(nil) for all non-trivial implementations.
+    recommended_fix: |
+      // Add immediately after the cacheAdapter struct declaration in client.go:
+      var _ Cache = (*cacheAdapter)(nil)
+
+  - id: CR-004
+    severity: warning
+    category: LOGIC
+    file: lib/client.go
+    line: 132
+    rule_id: CS-0060
+    title: "WithCache(nil) godoc claim is inaccurate when cfg.Cache is non-nil"
+    description: |
+      The godoc for WithCache states:
+        "Pass nil to use the default MemoryCache (semantically equivalent to not calling WithCache)."
+      This is only true when cfg.Cache is also nil. The resolution logic in New() is:
+        1. Apply options (WithCache(nil) → c.cache = nil).
+        2. if c.cache == nil && cfg.Cache != nil → c.cache = cfg.Cache.
+        3. if c.cache == nil → create default MemoryCache.
+      So if a consumer passes cfg.Cache = myCache and then WithCache(nil), they get cfg.Cache, not
+      the default MemoryCache. The documented and actual behaviours diverge in this edge case.
+    recommended_fix: |
+      // Replace the WithCache godoc:
+      // WithCache overrides the ValidateToken result cache. Pass nil to use the
+      // default MemoryCache (semantically equivalent to not calling WithCache).
+      // A non-nil custom cache replaces the SDK default entirely — the SDK will
+      // not start its own cleanup goroutine in that case.
+
+      // With:
+      // WithCache overrides the ValidateToken result cache. A non-nil value replaces
+      // both Config.Cache and the SDK default MemoryCache; the SDK will not start its
+      // own cleanup goroutine. Passing nil is a no-op: the priority falls through to
+      // Config.Cache, then to the built-in MemoryCache.
+
+suggestions:
+  - id: CR-S001
+    severity: suggestion
+    category: STYLE
+    file: lib/context.go
+    line: 26
+    rule_id: CS-0110
+    title: "ADR §R10 cross-reference in godoc"
+    description: |
+      Line 26 references "REQ-001-ADR §R10" in a public godoc comment visible to SDK consumers.
+      This is an internal project artefact — external consumers cannot look it up.
+      A similar reference appears in validate.go:37 ("see ADR §R10").
+    recommended_fix: |
+      // context.go line 24-27 — replace:
+      // Email is populated only by Login and GetCurrentUser. After ValidateAccessToken
+      // the Email is always empty because the gRPC ValidateTokenResponse does not
+      // carry it (proto v0.1.0 limitation — see REQ-001-ADR §R10).
+      // with:
+      // Email is populated only by Login and GetCurrentUser. After ValidateAccessToken
+      // the Email is always empty because the gRPC ValidateTokenResponse does not
+      // carry it (proto v0.1.0 limitation). Use GetCurrentUser to fetch email.
+
+      // validate.go line 37 — replace:
+      // ValidateTokenResponse does not carry it (proto v0.1.0 — see ADR §R10).
+      // with:
+      // ValidateTokenResponse does not carry it (proto v0.1.0 limitation).
+
+  - id: CR-S002
+    severity: suggestion
+    category: LOGIC
+    file: lib/client.go
+    line: 199
+    rule_id: ES-0033
+    title: "Pre-allocate dialOpts slice with exact capacity"
+    description: |
+      The slice is allocated with capacity 3+len(cfg.DialOptions) and exactly 3 base options are
+      appended before cfg.DialOptions, which is correct. No change is strictly required, but the
+      comment in the code could note the deliberate capacity to prevent future drift when a fourth
+      default option is added without updating the constant.
+    recommended_fix: |
+      // Consider naming the constant:
+      const defaultDialOptsCount = 3
+      dialOpts := make([]grpc.DialOption, 0, defaultDialOptsCount+len(cfg.DialOptions))
+      // This makes the capacity maintenance explicit.
+
+  - id: CR-S003
+    severity: suggestion
+    category: LOGIC
+    file: lib/errors.go
+    line: 102
+    rule_id: CS-0021
+    title: "retryAfterFromStatus is a no-op placeholder with a dead parameter"
+    description: |
+      retryAfterFromStatus takes *status.Status but immediately discards it with "_ = st".
+      While the comment explains this is a future-compat placeholder, the "_ = st" idiom avoids
+      an "unused parameter" compile error without adding real functionality. If this placeholder
+      is intentional it should be documented with a TODO, or the function body can be simplified
+      to make the intent clearer.
+    recommended_fix: |
+      // Replace the function body:
+      func retryAfterFromStatus(_ *status.Status) time.Duration {
+          // TODO: parse google.rpc.RetryInfo from status details when AUTH v1 adds it.
+          return 0
+      }
+      // Using a blank identifier in the signature instead of "_ = st" inside the body
+      // is idiomatic Go for intentionally unused parameters.
+
+positives:
+  - "Security-critical: cache key is exclusively hex(sha256(token)) — raw token never touches the cache store, log calls, or error messages."
+  - "Security-critical: every non-2xx branch in HTTPMiddleware and UnaryInterceptor returns before invoking next/handler — no auth-bypass path exists."
+  - "Panic recovery in UnaryInterceptor correctly uses named return parameters (resp, err), ensuring the deferred recover assignment propagates to the gRPC framework."
+  - "cleanupLoop goroutine exits reliably via ctx.Done select case (EC-0010/EC-0012 fully satisfied); cleanupInterval=0 skips goroutine launch entirely."
+  - "FailClosed is the default fail mode (FailClosed FailMode = iota) per OWASP A07; FailOpen requires explicit opt-in and carries a security warning in its godoc."
+  - "mapErrorReason correctly maps 'invalid_token_version' to ErrExpired, matching the proto contract for token rotation via LogoutAll/password change."
+  - "Cache interface is typed on User (not any), preventing leakage of internal opaque payload through the public API boundary."
+  - "userCtxKey is an unexported struct type (EC-0056), guaranteeing collision-free context key namespacing across packages."
+  - "bgCtx stored in struct is explicitly documented as a lifecycle context, not a request context, with a clear rationale for the EC-0051 exception."
+  - "applyDefaults treats negative TTL as 'use default' but preserves zero TTL as 'cache disabled' — a subtle but correct semantic distinction."
+  - "cancelBG() is called before grpcConn.Close() in Close(), ensuring background goroutines stop before the underlying connection is torn down."
+  - "All exported identifiers have godoc comments that start with the identifier name (ES-0080/ES-0081)."
+  - "No //nolint annotations anywhere in the reviewed files (ES-0171 satisfied)."
+  - "Functional options pattern is used correctly for all optional Client configuration (ES-0120)."
+  - "gofmt, go vet, golangci-lint all pass with 0 issues; 132 tests pass with race detector enabled."
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt — pass
+      - "ES-0002"  # tabs for indentation — pass
+      - "ES-0003"  # brace placement — pass
+      - "ES-0010"  # package names — pass (authclient, cache)
+      - "ES-0011"  # exported vs unexported — pass
+      - "ES-0012"  # getter naming — pass (IsZero, IsAdmin, HasRole are not prefixed Get)
+      - "ES-0014"  # -er suffix interfaces — pass (Logger, Cache)
+      - "ES-0015"  # MixedCaps — pass
+      - "ES-0020"  # initialization in conditions — pass
+      - "ES-0021"  # early return / guard clauses — pass
+      - "ES-0022"  # minimal scope — pass
+      - "ES-0030"  # prefer slices — pass
+      - "ES-0031"  # zero values — pass
+      - "ES-0032"  # composite literals with field names — pass
+      - "ES-0033"  # pre-allocate slices — pass (dialOpts)
+      - "ES-0040"  # value+error returns — pass
+      - "ES-0041"  # named returns for panic recovery — pass (UnaryInterceptor)
+      - "ES-0042"  # defer for cleanup — pass (defer cancel(), defer t.Stop())
+      - "ES-0043"  # no defer in loops — pass
+      - "ES-0050"  # small focused interfaces — pass
+      - "ES-0051"  # consumer-side interfaces — pass (authServiceClient in client.go)
+      - "ES-0052"  # comma-ok type assertions — pass
+      - "ES-0053"  # compile-time interface check — WARNING CR-003 (missing for cacheAdapter)
+      - "ES-0054"  # no pointer to interface — pass
+      - "ES-0055"  # no generalized interfaces in provider — pass
+      - "ES-0056"  # unexported interfaces — pass (authServiceClient is unexported)
+      - "ES-0060"  # explicit error handling — pass
+      - "ES-0061"  # wrap errors with context — pass (fmt.Errorf("authclient: %w", ...))
+      - "ES-0062"  # sentinel errors — pass
+      - "ES-0063"  # no panic in production — pass (recover in gRPC interceptor is correct)
+      - "ES-0064"  # recover only for crash prevention — pass
+      - "ES-0070"  # consistent receiver types — pass
+      - "ES-0071"  # pointer receiver for modification — pass
+      - "ES-0080"  # doc comments precede declaration — pass
+      - "ES-0081"  # comments start with declaration name — pass
+      - "ES-0110"  # strconv over fmt — pass
+      - "ES-0120"  # functional options — pass
+      - "ES-0130"  # import order — pass
+      - "ES-0131"  # import aliases — pass (auth_v1 alias is necessary)
+      - "ES-0140"  # constructor named New — pass
+      - "ES-0141"  # Dependencies struct for 3+ deps — pass (Config struct)
+      - "ES-0142"  # validate deps in constructor — pass (Endpoint check)
+    critical_rules_checked:
+      - "ES-0051"  # Consumer-side interfaces — PASS
+      - "ES-0055"  # No generalized interfaces in provider — PASS
+      - "ES-0060"  # Handle errors explicitly — PASS
+      - "ES-0063"  # No panic — PASS
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "go func" # cleanupLoop goroutine in memory.go
+      - "sync.Once" # closeOnce in client.go
+      - "sync.Map" # MemoryCache backing store
+      - "context.WithCancel" # bgCtx lifecycle
+      - "select {" # cleanupLoop select in memory.go
+    rules_applied:
+      - "EC-0010"  # goroutine lifecycle — PASS
+      - "EC-0011"  # defer cancel — PASS (cancelBG in Close)
+      - "EC-0012"  # no goroutine leaks — PASS (ctx.Done exit path)
+      - "EC-0013"  # ctx.Done in long-running ops — PASS (cleanupLoop select)
+      - "EC-0033"  # defer Unlock — N/A (sync.Map used, no manual mutex unlock needed)
+      - "EC-0050"  # ctx as first param — PASS
+      - "EC-0051"  # no ctx in struct — PASS with documented exception for bgCtx
+      - "EC-0052"  # context.Background() as root — PASS
+      - "EC-0053"  # timeouts for external calls — PASS (ValidateAccessToken uses WithTimeout)
+      - "EC-0055"  # always call cancel — PASS (defer cancel() in ValidateAccessToken)
+      - "EC-0056"  # unexported ctx key types — PASS (userCtxKey struct{})
+      - "EC-0062"  # Swap for entry guards — N/A (no atomic bool entry guard)
+      - "EC-0063"  # don't mix atomic and mutex — N/A (sync.Map only, no mutex)
+      - "EC-0080"  # cancel for shutdown — PASS (cancelBG in Close)
+      - "EC-0081"  # wait for goroutines — NOTE: no WaitGroup for cleanupLoop; acceptable because
+                  #   the goroutine exits non-blocking on ctx.Done, and gRPC conn close follows.
+      - "EC-0091"  # capture loop variables — PASS (Go 1.24 loop semantics, no goroutines in loops)
+      - "EC-0092"  # shared state synchronization — PASS (sync.Map, sync.Once)
+    critical_rules_checked:
+      - "EC-0010"  # Goroutine lifecycle — PASS
+      - "EC-0012"  # No goroutine leaks — PASS
+      - "EC-0051"  # No ctx in struct — PASS (documented exception)
+      - "EC-0055"  # Always call cancel — PASS
+      - "EC-0081"  # Wait for goroutines — ACCEPTABLE (see note above)
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # 120-char line limit — PASS (no violations found)
+      - "CS-0002"  # explicit returns — PASS
+      - "CS-0003"  # no magic numbers — PASS (all constants named)
+      - "CS-0004"  # no global state — PASS
+      - "CS-0010"  # block spacing — PASS
+      - "CS-0020"  # top-to-bottom readability — PASS
+      - "CS-0021"  # clear names — PASS
+      - "CS-0022"  # extract meaningful functions — PASS
+      - "CS-0023"  # low cyclomatic complexity — PASS
+      - "CS-0024"  # no over-engineering — PASS
+      - "CS-0030"  # no linter config changes — PASS
+      - "CS-0031"  # nolint with justification — PASS (no nolint directives)
+      - "CS-0050"  # entity in separate package — PASS
+      - "CS-0051"  # public methods in separate files — PASS
+      - "CS-0052"  # element order — PASS
+      - "CS-0053"  # no god files — PASS (largest file client.go = 330 lines)
+      - "CS-0060"  # godoc for public methods — WARNING CR-004 (WithCache godoc inaccurate)
+      - "CS-0070"  # English-only naming — PASS
+      - "CS-0071"  # meaningful variable names — PASS
+      - "CS-0072"  # idiomatic casing — PASS
+      - "CS-0080"  # typed IDs — N/A
+      - "CS-0082"  # function length < 80 lines — PASS
+      - "CS-0090"  # nil checks — PASS
+      - "CS-0110"  # no internal standard refs — WARNING CR-001, CR-002; SUGGESTION CR-S001
+      - "CS-0111"  # minimal inline comments — PASS
+      - "CS-0112"  # no decorative separators — PASS
+      - "CS-0113"  # DTO vs domain model — PASS (User has all exported fields; predicate methods
+                  #   IsZero/IsAdmin/HasRole are not getters/setters for specific fields)
+      - "CS-0119"  # one primary exported struct per file — PASS
+      - "CS-0120"  # uniform field visibility — PASS
+      - "CS-0121"  # single constructor — PASS
+
+  dba_rules:
+    checked: false
+    reason: "No database layer in reviewed files."
+
+  devops_rules:
+    checked: false
+    reason: "No Docker/K8s files in scope."

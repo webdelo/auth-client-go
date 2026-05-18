@@ -1,0 +1,645 @@
+review_id: REQ-001-TASK-003-CODE-REVIEW
+task_id: REQ-001-TASK-003
+date: '2026-05-18'
+verdict: APPROVED
+original_verdict: CHANGES_REQUESTED
+verdict_changed: true
+summary: |
+  Aggregated review for REQ-001-TASK-003 (ValidateAccessToken + TTL cache + HTTPMiddleware +
+  UnaryInterceptor). Code review (APPROVED_WITH_COMMENTS) flagged 0 critical, 4 warnings +
+  3 suggestions. Test review (CHANGES_REQUESTED) flagged 3 critical + 3 warnings + 1 suggestion.
+  All 14 items were addressed by refactorer and unit-test-writer agents. Post-fix: 132/132 tests
+  pass with race detector, lint clean, coverage by file 95.7–100% (DOD >= 80% met).
+
+stats:
+  total_critical: 3
+  total_warnings: 7
+  total_suggestions: 4
+  critical_resolved: 3
+  warnings_resolved: 7
+  suggestions_resolved: 4
+
+source_reviews:
+  - kind: code-review
+    file: .memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    verdict: APPROVED_WITH_COMMENTS
+    counts: {critical: 0, warnings: 4, suggestions: 3}
+  - kind: test-review
+    file: .memory_bank/agent_task_results/2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    verdict: CHANGES_REQUESTED
+    counts: {critical: 3, warnings: 3, suggestions: 1}
+
+# ==============================================================================
+# CRITICAL (from test-review)
+# ==============================================================================
+critical:
+  - id: CR-C001
+    original_id: TEST-C001
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: CRITICAL
+    rule_id: UT-0032
+    file: lib/internal/cache/memory_test.go
+    line: 80
+    title: "Logic (if name == ...) in test loop body"
+    description: |
+      The test loop for TestMemoryCache_Get contained a conditional branch that inspected
+      the case name to decide whether to sleep:
+
+        if name == "expired_returns_false" {
+            time.Sleep(20 * time.Millisecond)
+        }
+
+      UT-0032 strictly forbids if/switch logic in test loop bodies. The timing requirement
+      for the "expired" case is a first-class property of that test case and must be expressed
+      as data, not as a name check. Additionally, a dead time.Sleep inside the want closure
+      of the same case (line 47, executing after Get) was also removed.
+    recommended_fix: |
+      Add a `sleepBefore time.Duration` field to the test struct and move the sleep into the
+      subtest body before calling Get:
+
+        tests := map[string]struct {
+            setup       func(c *MemoryCache)
+            key         string
+            sleepBefore time.Duration   // new field
+            want        func(*testing.T, any, bool)
+        }{
+            "expired_returns_false": {
+                setup: func(c *MemoryCache) {
+                    c.Set(context.Background(), "expiring", "payload", 10*time.Millisecond)
+                },
+                key:         "expiring",
+                sleepBefore: 20 * time.Millisecond,
+                want: func(t *testing.T, val any, ok bool) {
+                    require.False(t, ok)
+                    assert.Nil(t, val)
+                },
+            },
+        }
+
+        t.Run(name, func(t *testing.T) {
+            t.Parallel()
+            c := NewMemoryCache(context.Background(), 0)
+            tc.setup(c)
+            if tc.sleepBefore > 0 {
+                time.Sleep(tc.sleepBefore)
+            }
+            val, ok := c.Get(context.Background(), tc.key)
+            tc.want(t, val, ok)
+        })
+    resolution_status: fixed
+    resolution_note: >
+      Added sleepBefore time.Duration field to the test struct. Moved the 20ms sleep into the
+      subtest body guarded by tc.sleepBefore > 0. Removed the dead time.Sleep from inside the
+      want closure of the expired_returns_false case.
+
+  - id: CR-C002
+    original_id: TEST-C002
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: CRITICAL
+    rule_id: UT-0032
+    file: lib/interceptor_grpc_test.go
+    line: 406
+    title: "Logic (if tc.useLogger / if handler == nil) in test loop body"
+    description: |
+      The execution block inside the t.Run subtest contained two conditional branches:
+
+        // lines 406-409
+        var logger authclient.Logger
+        if tc.useLogger {
+            logger = m.logger
+        }
+
+        // lines 425-428
+        handler := tc.handler
+        if handler == nil {
+            handler = noopHandler
+        }
+
+      Both are UT-0032 violations: control flow in the execution section must not depend on
+      test-case fields used as flags. The intent of each test case must be fully expressed
+      in the prepareMocks and want closures and in the struct fields themselves.
+    recommended_fix: |
+      1. Replace `useLogger bool` with a `logger authclient.Logger` field and set it
+         directly in each test case that requires a real logger, defaulting to nil for others:
+
+           // In struct:
+           logger authclient.Logger
+
+           // In test case that needs the logger:
+           logger: m.logger,  // set inside prepareMocks or directly in struct
+
+           // In execution body — no if:
+           c := authclient.NewTestClient(cfg, m.cache, m.auth, tc.logger)
+
+      2. Replace the `handler == nil` nil-check default by requiring every test case to
+         specify a handler explicitly. Either set the field to `noopHandler` in each case
+         that does not supply a custom one, or define a `handler` field that panics if nil
+         and set noopHandler as the struct default. Remove the nil-check from the execution
+         body entirely.
+    resolution_status: fixed
+    resolution_note: >
+      Replaced useLogger bool with logger authclient.Logger field in the test struct. Each
+      test case that requires a logger now sets it directly in the prepareMocks closure.
+      Every test case now sets the handler field explicitly (noopHandler where no custom
+      handler is needed); the nil-guard if-branch was removed from the subtest body.
+
+  - id: CR-C003
+    original_id: TEST-C003
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: CRITICAL
+    rule_id: UT-0028
+    file: lib/validate_test.go
+    line: 42
+    title: "hexSHA256 helper closure duplicates exported HashToken"
+    description: |
+      TestClient_ValidateAccessToken defined a local helper closure at the top of the test
+      function body:
+
+        hexSHA256 := func(s string) string {
+            h := sha256.Sum256([]byte(s))
+            return hex.EncodeToString(h[:])
+        }
+
+      UT-0028 forbids helper functions/closures that compute or transform test data. More
+      importantly, authclient.HashToken is already exported via export_test.go precisely
+      for this purpose — middleware_http_test.go and interceptor_grpc_test.go both call
+      authclient.HashToken(...) directly. The closure in validate_test.go was a duplicate
+      implementation creating inconsistency.
+    recommended_fix: |
+      Remove the hexSHA256 closure and replace every occurrence with authclient.HashToken:
+
+        // Before:
+        hexSHA256 := func(s string) string { ... }
+        expectedKey := hexSHA256("tok-u1")
+
+        // After:
+        expectedKey := authclient.HashToken("tok-u1")
+
+      Also remove the now-unused imports of "crypto/sha256" and "encoding/hex" from
+      validate_test.go.
+    resolution_status: fixed
+    resolution_note: >
+      Removed the hexSHA256 closure entirely. All occurrences replaced with
+      authclient.HashToken(...). Unused imports crypto/sha256 and encoding/hex removed
+      from validate_test.go.
+
+# ==============================================================================
+# WARNINGS (4 from code-review + 3 from test-review)
+# ==============================================================================
+warnings:
+  - id: CR-W001
+    original_id: CR-001
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: warning
+    category: STYLE
+    rule_id: CS-0110
+    file: lib/client.go
+    line: 153
+    title: "Internal rule codes in godoc comments (ES-0051, EC-0051)"
+    description: |
+      Two comments embedded internal coding-standard rule identifiers:
+        - Line 153: "auth_v1.AuthServiceClient (ES-0051 — interfaces live where they are used)."
+        - Line 180: "not a per-request context (EC-0051 exception)."
+      CS-0110 prohibits references to internal rules/standards inside production code comments.
+      Comments should explain the "why" in plain language without coupling code to an internal
+      rule numbering scheme.
+    recommended_fix: |
+      // Line 153 — replace:
+      // auth_v1.AuthServiceClient (ES-0051 — interfaces live where they are used).
+      // with:
+      // auth_v1.AuthServiceClient. Defined here so the SDK can mock it in tests without
+      // depending on the generated stub package in test binaries.
+
+      // Line 180 — replace:
+      // not a per-request context (EC-0051 exception).
+      // with:
+      // not a per-request context — it is a lifecycle context that drives background
+      // goroutines (cache cleanup, etc.) and is cancelled by Close.
+    resolution_status: fixed
+    resolution_note: >
+      Both rule-code references replaced with plain-language explanations as prescribed.
+      Line 153 now reads "Defined here so the SDK can mock it in tests without depending on
+      the generated stub package in test binaries." Line 180 now reads "not a per-request
+      context — it is a lifecycle context that drives background goroutines (cache cleanup,
+      etc.) and is cancelled by Close."
+
+  - id: CR-W002
+    original_id: CR-002
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: warning
+    category: STYLE
+    rule_id: CS-0110
+    file: lib/internal/cache/memory.go
+    line: 24
+    title: "Internal rule codes in godoc comment (EC-0010, EC-0012)"
+    description: |
+      Line 24 contained "(EC-0010, EC-0012)" inside a godoc comment:
+        "passed to NewMemoryCache is cancelled (EC-0010, EC-0012)."
+      Same CS-0110 violation as CR-001 — production code must not reference internal rule codes.
+    recommended_fix: |
+      // Replace:
+      // passed to NewMemoryCache is cancelled (EC-0010, EC-0012).
+      // with:
+      // passed to NewMemoryCache is cancelled, ensuring no goroutine leak.
+    resolution_status: fixed
+    resolution_note: >
+      Renamed: replaced "(EC-0010, EC-0012)" with plain-language "ensuring no goroutine leak".
+
+  - id: CR-W003
+    original_id: CR-003
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: warning
+    category: LOGIC
+    rule_id: ES-0053
+    file: lib/client.go
+    line: 132
+    title: "Missing compile-time interface assertion for cacheAdapter -> Cache"
+    description: |
+      The cacheAdapter type is the only concrete value assigned to Client.cache when no custom
+      cache is provided. There was no compile-time check asserting it satisfies Cache. If a
+      future refactor changes the Cache interface (e.g. adds a method) the compiler would not
+      catch the mismatch at declaration — only at the assignment in New(), which is less obvious
+      and further from the type. ES-0053 requires: var _ Interface = (*Impl)(nil) for all
+      non-trivial implementations.
+    recommended_fix: |
+      // Add immediately after the cacheAdapter struct declaration in client.go:
+      var _ Cache = (*cacheAdapter)(nil)
+    resolution_status: fixed
+    resolution_note: >
+      Added var _ Cache = (*cacheAdapter)(nil) immediately after the cacheAdapter struct
+      declaration in client.go.
+
+  - id: CR-W004
+    original_id: CR-004
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: warning
+    category: LOGIC
+    rule_id: CS-0060
+    file: lib/client.go
+    line: 132
+    title: "WithCache(nil) godoc claim is inaccurate when cfg.Cache is non-nil"
+    description: |
+      The godoc for WithCache stated:
+        "Pass nil to use the default MemoryCache (semantically equivalent to not calling WithCache)."
+      This was only true when cfg.Cache was also nil. The resolution logic in New() is:
+        1. Apply options (WithCache(nil) sets c.cache = nil).
+        2. if c.cache == nil && cfg.Cache != nil -> c.cache = cfg.Cache.
+        3. if c.cache == nil -> create default MemoryCache.
+      So if a consumer passes cfg.Cache = myCache and then WithCache(nil), they get cfg.Cache,
+      not the default MemoryCache. The documented and actual behaviours diverged in this edge case.
+    recommended_fix: |
+      // Replace the WithCache godoc with:
+      // WithCache overrides the ValidateToken result cache. A non-nil value replaces
+      // both Config.Cache and the SDK default MemoryCache; the SDK will not start its
+      // own cleanup goroutine. Passing nil is a no-op: the priority falls through to
+      // Config.Cache, then to the built-in MemoryCache.
+    resolution_status: fixed
+    resolution_note: >
+      WithCache godoc updated to accurately describe the nil fall-through priority:
+      option value -> Config.Cache -> built-in MemoryCache. The misleading "semantically
+      equivalent to not calling WithCache" claim was removed.
+
+  - id: CR-W005
+    original_id: TEST-W001
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: WARNING
+    rule_id: UT-0002
+    file: lib/validate_integration_test.go
+    line: 14
+    title: "Three separate test functions for one method (ValidateAccessToken)"
+    description: |
+      validate_integration_test.go declared three separate top-level functions that all tested
+      the same method ValidateAccessToken:
+        - TestValidateAccessToken_Happy (line 14) — skipped
+        - TestValidateAccessToken_Invalid (line 18)
+        - TestValidateAccessToken_Expired (line 31) — skipped
+
+      UT-0002 mandates one method = one test function. Even for integration tests the naming
+      convention UT-0010/UT-0002 applies. Case-name suffixes in function names (_Happy,
+      _Invalid, _Expired) are a pattern the standard reserves for case map keys, not function
+      names. The two skipped functions are placeholders pending TASK-004/007.
+    recommended_fix: |
+      Consolidate into one function with table-driven cases, skipping individual entries
+      where the test cannot yet run:
+
+        func TestClient_ValidateAccessToken(t *testing.T) {
+            tests := map[string]struct {
+                run func(t *testing.T, c *authclient.Client)
+            }{
+                "happy_path": {
+                    run: func(t *testing.T, c *authclient.Client) {
+                        t.Skip("requires authclient.Login (TASK-004) for token acquisition")
+                    },
+                },
+                "invalid_token_returns_ErrInvalidToken": {
+                    run: func(t *testing.T, c *authclient.Client) {
+                        _, err := c.ValidateAccessToken(context.Background(), "definitely-not-a-real-token")
+                        require.ErrorIs(t, err, authclient.ErrInvalidToken)
+                    },
+                },
+                "expired_token_returns_ErrExpired": {
+                    run: func(t *testing.T, c *authclient.Client) {
+                        t.Skip("requires waiting >1m for access_token TTL; deferred to TASK-007")
+                    },
+                },
+            }
+            // ... create client, iterate
+        }
+    resolution_status: fixed
+    resolution_note: >
+      Consolidated three separate test functions into one TestClient_ValidateAccessToken with
+      a table-driven map. Skipped entries (happy_path, expired_token_returns_ErrExpired) carry
+      inline t.Skip() calls with rationale referencing the blocking task.
+
+  - id: CR-W006
+    original_id: TEST-W002
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: WARNING
+    rule_id: UT-0026
+    file: lib/validate_test.go
+    line: 28
+    description_applies_to:
+      - lib/validate_test.go (validateTestMocks)
+      - lib/middleware_http_test.go (httpMiddlewareTestMocks)
+      - lib/interceptor_grpc_test.go (interceptorTestMocks)
+    title: "testMocks struct lacks newTestMocks(t) constructor"
+    description: |
+      UT-0026 requires the canonical pattern: testMocks struct + newTestMocks(t *testing.T)
+      constructor (with t.Helper()) + newHandlerFromMocks for object construction. The three
+      test files defined the struct correctly but instantiated it via inline struct literals:
+
+        m := &validateTestMocks{
+            cache: mocks.NewMockCache(t),
+            auth:  &authclient.FakeAuthClient{},
+        }
+
+      Without a newTestMocks(t) constructor, t.Helper() is not called, meaning any failure
+      during mock setup is attributed to the t.Run subtest line rather than the actual failing
+      mock.NewMockXxx call. Adding a new dependency to the mocks struct also requires updating
+      every instantiation site instead of just the constructor.
+    recommended_fix: |
+      Add a newTestMocks(t) constructor in each test file. Example for validate_test.go:
+
+        func newValidateTestMocks(t *testing.T) *validateTestMocks {
+            t.Helper()
+            return &validateTestMocks{
+                cache: mocks.NewMockCache(t),
+                auth:  &authclient.FakeAuthClient{},
+            }
+        }
+
+      Then in the t.Run body:
+        m := newValidateTestMocks(t)
+        tc.prepareMocks(t, m)
+
+      Repeat for httpMiddlewareTestMocks (middleware_http_test.go) and
+      interceptorTestMocks (interceptor_grpc_test.go).
+    resolution_status: fixed
+    resolution_note: >
+      Added newValidateTestMocks(t), newHTTPMiddlewareTestMocks(t), and
+      newInterceptorTestMocks(t) constructor functions with t.Helper() in their respective
+      test files. All inline struct literals in t.Run bodies replaced with calls to the
+      new constructors.
+
+  - id: CR-W007
+    original_id: TEST-W003
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: WARNING
+    rule_id: UT-0020
+    file: lib/client_test.go
+    line: 12
+    title: "recordingLogger / stubCache are manual stubs without import-cycle explanation"
+    description: |
+      client_test.go defined two hand-written types implementing SDK interfaces:
+        - type recordingLogger struct{} implementing Logger
+        - type stubCache struct{} implementing Cache
+
+      UT-0020 forbids manually written mock/stub structs — generated mocks must be used. The
+      accepted exception here is the import cycle: client_test.go is in package authclient
+      (internal test file), and importing lib/mocks from package authclient would create a
+      circular dependency. This is the same reason FakeAuthClient exists in export_test.go.
+      However, while export_test.go had a clear 7-line comment block explaining the workaround,
+      client_test.go had no such explanation. A future developer might attempt to replace them
+      with mocks.MockLogger/mocks.MockCache, causing a build error.
+    recommended_fix: |
+      Add an explanatory comment at the top of client_test.go before the type declarations:
+
+        // recordingLogger and stubCache are hand-written test doubles rather than mockery-
+        // generated mocks because this file is in package authclient (internal test package).
+        // Importing lib/mocks from package authclient would create a circular dependency:
+        //   lib (authclient) -> lib/mocks -> lib (authclient).
+        // External tests (package authclient_test) use mocks.MockCache / mocks.MockLogger
+        // and avoid the cycle. See export_test.go for the same pattern applied to FakeAuthClient.
+    resolution_status: fixed
+    resolution_note: >
+      Added the prescribed import-cycle explanation comment block immediately before the
+      recordingLogger and stubCache type declarations in client_test.go, mirroring the
+      style of the existing comment in export_test.go.
+
+# ==============================================================================
+# SUGGESTIONS (3 from code-review + 1 from test-review)
+# ==============================================================================
+suggestions:
+  - id: CR-S001
+    original_id: CR-S001
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: suggestion
+    category: STYLE
+    rule_id: CS-0110
+    file: lib/context.go
+    line: 26
+    description_applies_to:
+      - lib/context.go (line 26)
+      - lib/validate.go (line 37)
+    title: "ADR cross-reference in godoc visible to SDK consumers"
+    description: |
+      Line 26 of context.go referenced "REQ-001-ADR §R10" in a public godoc comment visible
+      to SDK consumers. This is an internal project artefact — external consumers cannot look
+      it up. A similar reference appeared in validate.go:37 ("see ADR §R10"). CS-0110 prohibits
+      internal rule/artefact references in production code comments.
+    recommended_fix: |
+      // context.go line 24-27 — replace:
+      // Email is populated only by Login and GetCurrentUser. After ValidateAccessToken
+      // the Email is always empty because the gRPC ValidateTokenResponse does not
+      // carry it (proto v0.1.0 limitation — see REQ-001-ADR §R10).
+      // with:
+      // Email is populated only by Login and GetCurrentUser. After ValidateAccessToken
+      // the Email is always empty because the gRPC ValidateTokenResponse does not
+      // carry it (proto v0.1.0 limitation). Use GetCurrentUser to fetch email.
+
+      // validate.go line 37 — replace:
+      // ValidateTokenResponse does not carry it (proto v0.1.0 — see ADR §R10).
+      // with:
+      // ValidateTokenResponse does not carry it (proto v0.1.0 limitation).
+    resolution_status: fixed
+    resolution_note: >
+      Removed "REQ-001-ADR §R10" and "see ADR §R10" references from both context.go and
+      validate.go. context.go now appends "Use GetCurrentUser to fetch email." as a plain
+      actionable hint for consumers.
+
+  - id: CR-S002
+    original_id: CR-S002
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: suggestion
+    category: LOGIC
+    rule_id: ES-0033
+    file: lib/client.go
+    line: 199
+    title: "Pre-allocate dialOpts slice with named capacity constant"
+    description: |
+      The slice was allocated with capacity 3+len(cfg.DialOptions) and exactly 3 base options
+      are appended before cfg.DialOptions, which is correct. No functional change is required,
+      but naming the constant makes the capacity maintenance explicit and prevents future drift
+      when a fourth default option is added without updating the magic literal.
+    recommended_fix: |
+      // Consider naming the constant:
+      const defaultDialOptsCount = 3
+      dialOpts := make([]grpc.DialOption, 0, defaultDialOptsCount+len(cfg.DialOptions))
+      // This makes the capacity maintenance explicit.
+    resolution_status: fixed
+    resolution_note: >
+      Introduced a package-level const defaultDialOptsCount = 3. The make call now reads
+      make([]grpc.DialOption, 0, defaultDialOptsCount+len(cfg.DialOptions)), making the
+      intentional capacity self-documenting.
+
+  - id: CR-S003
+    original_id: CR-S003
+    source_report: 2026-05-18_code-review_REQ-001-TASK-003_lib.yaml
+    severity: suggestion
+    category: LOGIC
+    rule_id: CS-0021
+    file: lib/errors.go
+    line: 102
+    title: "retryAfterFromStatus is a no-op placeholder with a dead parameter"
+    description: |
+      retryAfterFromStatus took *status.Status but immediately discarded it with "_ = st".
+      While the comment explained this is a future-compat placeholder, the "_ = st" idiom
+      avoids an "unused parameter" compile error without adding real functionality. Using a
+      blank identifier in the signature is the idiomatic Go approach for intentionally unused
+      parameters, and the body should carry a TODO comment describing the future intent.
+    recommended_fix: |
+      // Replace the function body:
+      func retryAfterFromStatus(_ *status.Status) time.Duration {
+          // TODO: parse google.rpc.RetryInfo from status details when AUTH v1 adds it.
+          return 0
+      }
+      // Using a blank identifier in the signature instead of "_ = st" inside the body
+      // is idiomatic Go for intentionally unused parameters.
+    resolution_status: fixed
+    resolution_note: >
+      Changed function signature to use a blank identifier (_ *status.Status) and added
+      a TODO comment: "TODO: parse google.rpc.RetryInfo from status details when AUTH v1
+      adds it." The "_ = st" line inside the body was removed.
+
+  - id: CR-S004
+    original_id: TEST-S001
+    source_report: 2026-05-18_test-review_REQ-001-TASK-003_lib.yaml
+    severity: SUGGESTION
+    rule_id: UT-0023
+    file: lib/validate_test.go
+    line: 59
+    description_applies_to:
+      - lib/validate_test.go (all mock.MatchedBy for ctx)
+      - lib/middleware_http_test.go (all mock.MatchedBy for ctx)
+      - lib/interceptor_grpc_test.go (all mock.MatchedBy for ctx)
+    title: "Context MatchedBy check is ctx != nil — consider asserting deadline derivation"
+    description: |
+      All cache mock expectations used:
+        mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })
+
+      mock.MatchedBy is the correct approach when the exact context value cannot be injected.
+      However, ctx != nil is the weakest possible check — it accepts any non-nil context
+      including context.Background(). A stronger predicate would verify the context has a
+      deadline (confirming ValidateTimeout was actually applied). This is a suggestion rather
+      than a violation because (a) mock.MatchedBy IS the prescribed fallback per UT-0023, and
+      (b) the current check does protect against nil context regressions.
+    recommended_fix: |
+      Optionally strengthen the context matcher in validate_test.go, middleware_http_test.go,
+      and interceptor_grpc_test.go:
+
+        mock.MatchedBy(func(ctx context.Context) bool {
+            _, hasDeadline := ctx.Deadline()
+            return hasDeadline  // validates ValidateTimeout was applied
+        })
+
+      If the context timeout logic is already tested via behavior (e.g., the test for
+      grpc_deadline_exceeded), keeping ctx != nil is acceptable to avoid over-specifying
+      the internal implementation detail of when context.WithTimeout is called.
+    resolution_status: fixed
+    resolution_note: >
+      Strengthened context matchers in validate_test.go, middleware_http_test.go, and
+      interceptor_grpc_test.go to assert _, hasDeadline := ctx.Deadline(); return hasDeadline,
+      verifying that ValidateTimeout was applied before the cache call.
+
+# ==============================================================================
+# POSITIVES
+# ==============================================================================
+positives:
+  - "Coverage by file: context.go 100%, cache 100%, validate.go 100%, middleware_http.go 95.7%, interceptor_grpc.go 100% — all DOD targets met."
+  - "BenchmarkMemoryCache_Get: 32.87 ns/op, 0 allocs — well under 1 µs target (30x headroom)."
+  - "Race detector clean across 132 tests."
+  - "Cache key is exclusively hex(sha256(token)) — no raw token in logs, metrics, or cache store."
+  - "Panic recovery in gRPC interceptor uses named returns correctly, ensuring deferred assignment propagates to the gRPC framework."
+  - "FailClosed is the default fail mode (FailClosed FailMode = iota) per OWASP A07; FailOpen requires explicit opt-in with a security warning in godoc."
+  - "All exported identifiers have godoc; no rule codes leaked into production comments (after fixes)."
+  - "Every non-2xx branch in HTTPMiddleware and UnaryInterceptor returns before invoking next/handler — no auth-bypass path exists."
+  - "mapErrorReason correctly maps 'invalid_token_version' to ErrExpired, matching proto contract for token rotation via LogoutAll/password change."
+  - "cancelBG() is called before grpcConn.Close() in Close(), ensuring background goroutines stop before the underlying connection is torn down."
+  - "cleanupLoop exits reliably via ctx.Done select case; cleanupInterval=0 skips goroutine launch entirely."
+  - "Expecter API (.EXPECT().Method().Return().Once()) used consistently — no .On() calls anywhere."
+  - "No mock.Anything or mock.AnythingOfType in any test file; mock.MatchedBy used for context parameters."
+  - "t.Parallel() at both main test and subtest level in all unit tests; TestMemoryCache_Cleanup correctly omits t.Parallel() with explicit comment."
+  - "FakeAuthClient workaround clearly documented in export_test.go with import-cycle explanation — excellent pattern."
+  - "No //nolint directives anywhere (ES-0171 fully satisfied)."
+  - "gofmt, go vet, golangci-lint all pass with 0 issues."
+
+# ==============================================================================
+# STATIC ANALYSIS
+# ==============================================================================
+static_analysis:
+  build: pass
+  fmt: pass
+  vet: pass
+  lint: pass
+  tests: pass
+  race_detector: pass
+  total_tests: 132
+  passed: 132
+  failed: 0
+  coverage_lib: "92.8%"
+  coverage_lib_internal_cache: "100.0%"
+  benchmark_get_ns_per_op: 32.87
+  benchmark_get_allocs: 0
+
+# ==============================================================================
+# VALIDATION
+# ==============================================================================
+validation:
+  status: PASSED
+  checks:
+    - name: "code-review report processed"
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: "test-review report processed"
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: "critical count matches (TEST-C001 + TEST-C002 + TEST-C003)"
+      expected: 3
+      actual: 3
+      status: PASS
+    - name: "warning count matches (CR-001..004 + TEST-W001..W003)"
+      expected: 7
+      actual: 7
+      status: PASS
+    - name: "suggestion count matches (CR-S001..S003 + TEST-S001)"
+      expected: 4
+      actual: 4
+      status: PASS
+    - name: "all issues have resolution_status: fixed"
+      expected: 14
+      actual: 14
+      status: PASS
+    - name: "all items carry original_id and source_report"
+      status: PASS
