@@ -1,0 +1,88 @@
+# dev/deployments/compose.test.yaml
+#
+# Integration test environment for auth-client-go SDK.
+# Brings up real webdelo/auth server (local build from sibling repo) + PostgreSQL.
+#
+# Usage:
+#   make env-up          # bring up + wait for healthy
+#   make env-down        # tear down + delete volumes
+#   make test-integration # full cycle: up -> tests -> down (guaranteed)
+#
+# Requires:
+#   - Docker + docker-compose plugin
+#   - webdelo/auth repo cloned at $AUTH_REPO_PATH (default: ../../../auth)
+#
+# CAVEAT: image ghcr.io/webdelo/auth not yet published. We build locally.
+# When GHCR is set up (separate DevOps REQ), replace `build:` with `image:`.
+
+name: auth-client-go-test
+
+services:
+  auth-postgres:
+    image: postgres:16-alpine
+    container_name: auth-client-go-test-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-auth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auth}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-auth}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    # No host port binding — auth-migrate and auth-app talk to postgres over the
+    # compose project network (service hostname `auth-postgres:5432`). Avoid
+    # colliding with local Postgres on :5432 or other docker-compose stacks
+    # (signal-analyzer, funding-bot). Set DEBUG_POSTGRES_PORT externally if you
+    # need host access for ad-hoc debugging.
+    volumes:
+      - auth-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-auth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    profiles: [test]
+
+  auth-migrate:
+    image: migrate/migrate:v4.17.0
+    container_name: auth-client-go-test-migrate
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    volumes:
+      - ${AUTH_REPO_PATH:-../../../auth}/migrations:/migrations:ro
+    command:
+      - -path
+      - /migrations/
+      - -database
+      - postgres://${POSTGRES_USER:-auth}:${POSTGRES_PASSWORD:-auth}@auth-postgres:5432/${POSTGRES_DATABASE:-auth}?sslmode=disable
+      - up
+    profiles: [test]
+
+  auth-app:
+    build:
+      context: ${AUTH_REPO_PATH:-../../../auth}
+      target: production
+    container_name: auth-client-go-test-auth
+    # test.env mixes AUTH server config and SDK-test harness vars
+    # (AUTH_REPO_PATH, AUTH_ENDPOINT, RUN_INTEGRATION_TESTS). The server ignores
+    # unknown vars — but be aware these bleed into the container env. A split
+    # into auth-server.env + sdk-test.env is tracked for v0.2.0.
+    env_file:
+      - test.env
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "50051:50051"
+    volumes:
+      - auth-jwt-keys:/keys
+    # HEALTHCHECK inherited from Dockerfile production stage:
+    #   ./auth healthcheck --http http://localhost:53000/healthcheck --grpc localhost:50051
+    profiles: [test]
+
+volumes:
+  auth-postgres-data:
+    name: auth-client-go-test-postgres-data
+  auth-jwt-keys:
+    name: auth-client-go-test-jwt-keys
