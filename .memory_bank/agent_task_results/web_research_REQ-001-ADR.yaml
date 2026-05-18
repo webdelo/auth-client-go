@@ -1,0 +1,967 @@
+metadata:
+  date: "2026-05-15"
+  researcher: "web-searcher"
+  query: "Go gRPC SDK design patterns: connection lifecycle, TTL cache, singleflight, HTTP middleware, gRPC interceptor, fingerprint, fail-closed, functional options"
+  topic_slug: "auth-client-go-adr-research"
+  scope: "REQ-001 ADR architectural decisions for auth-client-go v0.1.0"
+
+sources:
+  - id: "SRC-001"
+    url: "https://github.com/grpc/grpc-go/blob/master/Documentation/concurrency.md"
+    title: "grpc-go: Concurrency Documentation (official)"
+    type: "official_docs"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-002"
+    url: "https://pkg.go.dev/google.golang.org/grpc"
+    title: "grpc package — pkg.go.dev"
+    type: "official_docs"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-003"
+    url: "https://pkg.go.dev/google.golang.org/grpc/keepalive"
+    title: "keepalive package — pkg.go.dev"
+    type: "official_docs"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-004"
+    url: "https://pkg.go.dev/google.golang.org/grpc/examples/features/retry"
+    title: "gRPC retry feature example — pkg.go.dev"
+    type: "official_docs"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-005"
+    url: "https://pkg.go.dev/golang.org/x/sync/singleflight"
+    title: "singleflight package — pkg.go.dev (official)"
+    type: "official_docs"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-006"
+    url: "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+    title: "OWASP Session Management Cheat Sheet"
+    type: "security_standard"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-007"
+    url: "https://www.cgisecurity.com/owasp/html/ch04s02.html"
+    title: "Fail Securely (Closed) — CGISecurity / OWASP"
+    type: "security_standard"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-008"
+    url: "https://owasp.org/Top10/2025/A07_2025-Authentication_Failures/"
+    title: "OWASP Top 10 2025: A07 Authentication Failures"
+    type: "security_standard"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-009"
+    url: "https://github.com/auth0/go-jwt-middleware"
+    title: "Auth0 go-jwt-middleware — GitHub"
+    type: "github"
+    relevance: "medium"
+    accessed: "2026-05-15"
+
+  - id: "SRC-010"
+    url: "https://pkg.go.dev/github.com/grpc-ecosystem/go-grpc-middleware/auth"
+    title: "go-grpc-middleware/auth — pkg.go.dev"
+    type: "library_docs"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+  - id: "SRC-011"
+    url: "https://nulpointerexception.com/2023/03/19/design-a-ttl-based-in-memory-cache-in-golang/"
+    title: "Design a TTL based in-memory cache in golang"
+    type: "blog"
+    relevance: "medium"
+    accessed: "2026-05-15"
+
+  - id: "SRC-012"
+    url: "https://binarymusings.org/posts/golang/programming-pattern-3/"
+    title: "Go Functional Options Pattern Guide: Clean API Design"
+    type: "blog"
+    relevance: "medium"
+    accessed: "2026-05-15"
+
+  - id: "SRC-013"
+    url: "https://mtardy.com/posts/grpc-go-client-retry/"
+    title: "gRPC-Go: Built-in Client Retry Mechanism"
+    type: "blog"
+    relevance: "high"
+    accessed: "2026-05-15"
+
+findings:
+  - id: "FIND-001"
+    topic: "gRPC ClientConn — goroutine safety (официальная гарантия)"
+    summary: "ClientConn и сгенерированные stubs полностью goroutine-safe; один ClientConn можно шарить между любым числом goroutine."
+    source_id: "SRC-001"
+    details: |
+      Прямая цитата из официальной документации grpc-go (concurrency.md):
+
+      «A ClientConn can safely be accessed concurrently. Using helloworld as an example,
+      one could share the ClientConn across multiple goroutines to create multiple
+      GreeterClient types. In this case, RPCs would be sent in parallel. GreeterClient,
+      generated from the proto definitions and wrapping ClientConn, is also concurrency
+      safe, and may be directly shared in the same way.»
+
+      Ограничение только для стримов: нельзя вызывать SendMsg из нескольких goroutine
+      одновременно для одного stream-объекта, и RecvMsg из нескольких goroutine для
+      одного stream. Но SendMsg и RecvMsg одновременно из разных goroutine — допустимо.
+
+      Вывод для SDK: один `grpc.ClientConn` на всё время жизни Client — правильное решение.
+    confidence: "high"
+    tags:
+      - "grpc"
+      - "concurrency"
+      - "client-conn"
+
+  - id: "FIND-002"
+    topic: "grpc.NewClient vs grpc.Dial — различие семантики"
+    summary: "grpc.Dial deprecated; grpc.NewClient не выполняет I/O при создании — соединение устанавливается lazy при первом RPC."
+    source_id: "SRC-002"
+    details: |
+      grpc.Dial помечен deprecated. grpc.NewClient — актуальный API.
+      Ключевое отличие: NewClient выполняет только валидацию параметров, никакого
+      dial при вызове. Соединение устанавливается при первом RPC-вызове (lazy connect).
+
+      Важные DialOptions для SDK:
+        - grpc.WithKeepaliveParams(keepalive.ClientParameters{...}) — поддержание соединения
+        - grpc.WithDefaultServiceConfig(`{"methodConfig": [...]}`) — политика retry/backoff
+        - grpc.WithBlock() — НЕ рекомендуется для NewClient, меняет семантику
+
+      Retry policy через JSON service config (WithDefaultServiceConfig):
+        maxAttempts, initialBackoff, maxBackoff, backoffMultiplier, retryableStatusCodes.
+      Дополнительно: grpc.WithMaxCallAttempts(n) для переопределения дефолтного лимита 5.
+    confidence: "high"
+    tags:
+      - "grpc"
+      - "connection"
+      - "dial"
+      - "retry"
+
+  - id: "FIND-003"
+    topic: "gRPC Keepalive параметры"
+    summary: "keepalive.ClientParameters: Time (ping interval), Timeout (ждать ответ), PermitWithoutStream (пинговать даже без активных RPC)."
+    source_id: "SRC-003"
+    details: |
+      Цитата из pkg.go.dev/google.golang.org/grpc/keepalive:
+      «WithKeepaliveParams returns a DialOption that specifies keepalive parameters for
+      the client transport. Keepalive is disabled by default.»
+
+      Поля ClientParameters:
+        Time     time.Duration  — если нет активности, через это время слать PING. Минимум 10s.
+        Timeout  time.Duration  — сколько ждать PING-ответа перед закрытием соединения.
+        PermitWithoutStream bool — разрешить PING даже без активных RPC (нужно для долгоживущих клиентов).
+
+      Рекомендуемые значения для SDK (долгоживущий клиент в сервисе):
+        Time: 30s, Timeout: 10s, PermitWithoutStream: true.
+
+      Важно: если сервер не настроен на keepalive — сервер может закрыть соединение.
+      Следует согласовать с AUTH сервером (или ставить консервативные значения).
+    confidence: "high"
+    tags:
+      - "grpc"
+      - "keepalive"
+      - "connection"
+
+  - id: "FIND-004"
+    topic: "gRPC graceful shutdown ClientConn"
+    summary: "conn.Close() закрывает соединение и все pending RPC завершаются с ошибкой; для graceful нужно дождаться завершения inflight RPC перед вызовом Close."
+    source_id: "SRC-002"
+    details: |
+      ClientConn.Close() немедленно закрывает transport. Для graceful shutdown:
+      1. Перестать принимать новые запросы (на уровне HTTP/gRPC сервера)
+      2. Дождаться завершения inflight RPC (через WaitGroup или context с deadline)
+      3. Вызвать conn.Close()
+
+      Типичный паттерн в SDK:
+        defer client.conn.Close()
+      Или с таймаутом при shutdown:
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+        // ... дождаться inflight ...
+        client.conn.Close()
+    confidence: "high"
+    tags:
+      - "grpc"
+      - "shutdown"
+      - "lifecycle"
+
+  - id: "FIND-005"
+    topic: "TTL in-memory cache — lazy expire vs background eviction"
+    summary: "Lazy expire (проверка при чтении) экономит CPU при idle, но expired-записи остаются в памяти. Background goroutine-уборщик — стандартный паттерн для предотвращения memory leak."
+    source_id: "SRC-011"
+    details: |
+      Два подхода:
+
+      1. Lazy expire: при каждом Get() проверяем time.Now() > entry.expireAt.
+         Плюс: нет лишних goroutine, нет накладных расходов при idle.
+         Минус: expired entries не удаляются до следующего обращения к тому же ключу.
+         Для ValidateToken-кэша (ключ = token string, TTL 30s) — memory leak невелик
+         (токен сам по себе небольшой), но при большом трафике можно накопить мусор.
+
+      2. Background cleanup goroutine: тикер каждые N секунд сканирует и удаляет expired.
+         sync.Map.Range() + Delete() — стандартный паттерн.
+         Плюс: предсказуемое потребление памяти.
+         Минус: надо контролировать goroutine lifecycle (Stop через context или stopCh).
+
+      Вывод для SDK: гибридный подход — lazy expire при Get (никогда не вернуть протухший
+      токен) + background goroutine с интервалом равным TTL для очистки памяти.
+      Goroutine останавливается через context отмену (Client.Close()).
+
+      Сравнение с популярными lib:
+        - github.com/patrickmn/go-cache: mutex + map + background cleanup (старый, не generic)
+        - github.com/jellydator/ttlcache: generic, lazy + background, sharded mutex — хороший
+          reference, но для SDK лучше своя минималистичная реализация (меньше deps).
+    confidence: "high"
+    tags:
+      - "cache"
+      - "ttl"
+      - "memory"
+      - "goroutine"
+
+  - id: "FIND-006"
+    topic: "sync.Map для кэша — когда подходит"
+    summary: "sync.Map оптимален при read-dominated паттерне (много чтений, редкие записи) — именно ValidateToken cache."
+    source_id: "SRC-011"
+    details: |
+      «sync.Map works best when entries are written once and read many times,
+      or when different goroutines access different keys.»
+
+      ValidateToken cache: один токен пишется один раз при первой валидации, затем
+      многократно читается до истечения TTL. Идеальный кейс для sync.Map.
+
+      Альтернатива: RWMutex + map[string]cacheEntry — более контролируема,
+      лучше для sharded кэша, но сложнее. Для SDK с умеренным трафиком sync.Map достаточно.
+    confidence: "high"
+    tags:
+      - "cache"
+      - "sync"
+
+  - id: "FIND-007"
+    topic: "singleflight.Group — гарантии и канонический пример"
+    summary: "Только одна функция выполняется для данного ключа; все параллельные вызовы с тем же ключом получают одинаковый результат (включая ошибку)."
+    source_id: "SRC-005"
+    details: |
+      Прямая цитата из pkg.go.dev/golang.org/x/sync/singleflight:
+
+      «Do executes and returns the results of the given function, making sure that only
+      one execution is in-flight for a given key at a time. If a duplicate comes in,
+      the duplicate caller waits for the original to complete and receives the same results.
+      The return value shared indicates whether v was given to multiple callers.»
+
+      Канонический пример (из официальной документации):
+        g := new(singleflight.Group)
+        res1c := g.DoChan("key", func() (any, error) { ... return "func 1", nil })
+        res2c := g.DoChan("key", func() (any, error) { ... return "func 2", nil })
+        // res1.Val == res2.Val == "func 1"; res2.Shared == true
+
+      Для Refresh race: ключ = userID (или refresh token prefix), fn = вызов AUTH Refresh RPC.
+      Результат shared означает, что все ждущие goroutine получат один и тот же новый токен.
+
+      Важно: error тоже shared — если AUTH вернул ошибку, все ждущие получат ту же ошибку.
+    confidence: "high"
+    tags:
+      - "singleflight"
+      - "concurrency"
+      - "refresh"
+
+  - id: "FIND-008"
+    topic: "singleflight — подводные камни (context, Forget)"
+    summary: "Отмена context одного caller не отменяет общий in-flight вызов; Forget() позволяет форсировать новый вызов для ключа."
+    source_id: "SRC-005"
+    details: |
+      Критичные подводные камни:
+
+      1. Context cancellation не прерывает fn:
+         Если один из 10 горутин отменил свой context, fn продолжает выполняться.
+         Остальные 9 по-прежнему ждут результата.
+         Для Refresh это ОК: мы хотим завершить Refresh даже если один запрос был отменён.
+         НО: нужно проверять ctx.Err() внутри fn перед отправкой RPC.
+
+      2. Forget(key): убирает запись из group, следующий Do() для этого ключа запустит новую fn.
+         Используется когда нужно принудительно инвалидировать (например, после успешного logout).
+         В Refresh контексте: вызвать Forget(userID) после завершения Refresh, чтобы следующий
+         Refresh не ждал завтрашнего кэша.
+
+      3. Error sharing: если fn вернула ошибку rate-limit (HTTP 429), все ждущие получат её.
+         Нужно явно проверять тип ошибки в caller'е и применять backoff.
+
+      4. DoChan vs Do: DoChan позволяет не блокировать goroutine (select с ctx.Done()).
+    confidence: "high"
+    tags:
+      - "singleflight"
+      - "context"
+      - "pitfalls"
+
+  - id: "FIND-009"
+    topic: "HTTP middleware — Bearer token extraction и статус-коды"
+    summary: "Authorization: Bearer <token> — стандартный заголовок; 401 при отсутствии/невалидном токене с WWW-Authenticate: Bearer; 403 при недостаточных правах."
+    source_id: "SRC-009"
+    details: |
+      Стандартный паттерн извлечения (Auth0 go-jwt-middleware):
+        parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+        if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+            http.Error(w, "Missing or malformed token", http.StatusUnauthorized)
+            return
+        }
+        token := parts[1]
+
+      Заголовки ответа при 401:
+        WWW-Authenticate: Bearer realm="api", error="invalid_token"
+
+      401 vs 403:
+        401 — токен отсутствует или невалиден (нужна аутентификация)
+        403 — токен валиден, но прав недостаточно (авторизация отказана)
+
+      Timing attacks:
+        При сравнении секретов использовать subtle.ConstantTimeCompare() вместо ==.
+        Для Bearer токенов: обычно достаточно передать токен на проверку в AUTH
+        и анализировать только типизированную ошибку ответа (не сравнивать строки).
+    confidence: "high"
+    tags:
+      - "http"
+      - "middleware"
+      - "bearer"
+      - "security"
+
+  - id: "FIND-010"
+    topic: "Cookie security атрибуты"
+    summary: "HttpOnly, Secure, SameSite=Strict — обязательная тройка для refresh token cookie."
+    source_id: "SRC-006"
+    details: |
+      Рекомендации OWASP и стандартная практика для refresh token в HttpOnly cookie:
+        - HttpOnly: запрещает доступ из JavaScript (защита от XSS)
+        - Secure: только HTTPS (защита от перехвата)
+        - SameSite=Strict: защита от CSRF (cookie не отправляется при cross-site запросах)
+        - Path=/auth (или /api/auth/refresh): ограничение области действия cookie
+        - Max-Age / Expires: явно ограничить время жизни
+
+      Пример в Go:
+        http.SetCookie(w, &http.Cookie{
+            Name:     "refresh_token",
+            Value:    token,
+            HttpOnly: true,
+            Secure:   true,
+            SameSite: http.SameSiteStrictMode,
+            Path:     "/",
+            MaxAge:   int((7 * 24 * time.Hour).Seconds()),
+        })
+
+      Важно: токены не должны попадать в логи. Маскировать или не логировать Authorization header.
+    confidence: "high"
+    tags:
+      - "cookies"
+      - "security"
+      - "httponly"
+
+  - id: "FIND-011"
+    topic: "gRPC unary interceptor — паттерн аутентификации"
+    summary: "metadata.FromIncomingContext → извлечь authorization → проверить токен → прокинуть user в context или вернуть codes.Unauthenticated."
+    source_id: "SRC-010"
+    details: |
+      Канонический паттерн (go-grpc-middleware/auth):
+
+        func authInterceptor(ctx context.Context, req interface{},
+            info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+
+            // Пропускаем open методы
+            if isPublicMethod(info.FullMethod) {
+                return handler(ctx, req)
+            }
+
+            // Извлекаем токен из gRPC metadata
+            md, ok := metadata.FromIncomingContext(ctx)
+            if !ok {
+                return nil, status.Error(codes.Unauthenticated, "missing metadata")
+            }
+            authHeader := md.Get("authorization") // возвращает []string
+            if len(authHeader) == 0 {
+                return nil, status.Error(codes.Unauthenticated, "missing authorization")
+            }
+            token := strings.TrimPrefix(authHeader[0], "Bearer ")
+
+            // Валидируем через AUTH SDK
+            user, err := authClient.ValidateToken(ctx, token)
+            if err != nil {
+                return nil, status.Error(codes.Unauthenticated, err.Error())
+            }
+
+            // Прокидываем user в context
+            ctx = WithUser(ctx, user)
+            return handler(ctx, req)
+        }
+
+      Пропуск open RPC (auth.Login, health.Check):
+        Вариант 1: registry — map[string]bool{"auth.v1.AuthService/Login": true}
+        Вариант 2: prefix check — strings.HasPrefix(info.FullMethod, "/grpc.health")
+        Вариант 3: аннотации в proto (нестандартно, сложнее)
+        Рекомендация для SDK: registry через опцию WithPublicMethods([]string{...}).
+    confidence: "high"
+    tags:
+      - "grpc"
+      - "interceptor"
+      - "authentication"
+
+  - id: "FIND-012"
+    topic: "Fingerprint binding — IP и User-Agent"
+    summary: "OWASP рекомендует binding, но IP-binding ненадёжен (NAT, VPN); User-Agent легко подделать. Оба используются как индикаторы аномалий, не как жёсткая защита."
+    source_id: "SRC-006"
+    details: |
+      Прямая цитата из OWASP Session Management Cheat Sheet:
+
+      «It is highly recommended to bind the session ID to other user or client properties,
+      such as the client IP address, User-Agent, or client-based digital certificate.
+      If the web application detects any change or anomaly between these different properties
+      in the middle of an established session, this is a very good indicator of session
+      manipulation and hijacking attempts.»
+
+      Однако OWASP сам предупреждает:
+      «However, a skilled attacker can bypass these controls by reusing the same IP address
+      assigned to the victim user by sharing the same network (very common in NAT environments,
+      like Wi-Fi hotspots) or by using the same outbound web proxy (very common in corporate
+      environments), or by manually modifying the User-Agent to look exactly like the victim user's.»
+
+      Практические выводы:
+        - IP: передавать как метаданные для detection (AUTH логирует). Жёсткую блокировку
+          по смене IP не делать — убьёт мобильных пользователей (смена Wi-Fi → LTE).
+        - /24 subnet binding: компромисс, но всё равно ломается в крупных NAT.
+        - User-Agent: полезен в комбинации с IP для scoring аномалий.
+        - Правильная архитектура: fingerprint идёт от клиента через SDK helper (X-Real-IP,
+          X-Forwarded-For для IP; User-Agent header), передаётся в AUTH RPC как поля запроса.
+          Сам AUTH решает политику. SDK не должен применять политику — только пробрасывать данные.
+    confidence: "high"
+    tags:
+      - "fingerprint"
+      - "security"
+      - "ip-binding"
+
+  - id: "FIND-013"
+    topic: "Fail-closed — принцип и обоснование"
+    summary: "OWASP: при сбое AUTH-сервиса middleware должен отказать в доступе (fail-closed), не пропускать (fail-open). Fail-open — уязвимость, атакуемая намеренно."
+    source_id: "SRC-007"
+    details: |
+      Цитата из CGISecurity / OWASP (Fail Securely):
+
+      «Any security mechanism should be designed in such a way that when it fails, it
+      fails closed — meaning it should fail to a state that rejects all subsequent
+      security requests rather than allows them.»
+
+      OWASP Top 10 2025 A10 — Mishandling of Exceptional Conditions:
+      «Fail-open conditions occur when a security check or critical process fails
+      unexpectedly and the system falls back to allowing access, which an attacker can
+      deliberately trigger to bypass protections.»
+
+      Принцип «deny by default»:
+      «If something goes wrong — a timeout, an external service not responding, an
+      unexpected value — the default should be to halt or deny access, not continue
+      in a potentially insecure state.»
+
+      Для SDK: FailOpen — опциональная настройка только для конкретных сценариев
+      (public beta без критичных данных, graceful degradation non-sensitive endpoints).
+      Default: fail-closed. Документировать явно в комментарии к WithFailOpen().
+    confidence: "high"
+    tags:
+      - "fail-closed"
+      - "security"
+      - "middleware"
+
+  - id: "FIND-014"
+    topic: "Go SDK API design — functional options vs Config struct"
+    summary: "Functional options (WithXxx) — доминирующий паттерн в крупных Go SDK 2024-2025; Config struct хуже для эволюции публичного API."
+    source_id: "SRC-012"
+    details: |
+      «The Functional Options pattern is a functional programming technique and arguably
+      the most popular such pattern in Go today.»
+
+      Преимущества functional options перед Config struct:
+        1. Backward compatible: новые опции не ломают существующий код (нет breaking change)
+        2. Документируемость: каждый WithXxx — отдельная функция с godoc
+        3. Валидация: каждая option func может валидировать своё значение при применении
+        4. Нулевые значения по умолчанию: не нужно помнить что заполнять в Config
+
+      Когда Config struct оправдан:
+        - Конфиг, читаемый из файла/env (десериализация)
+        - Внутренние структуры, не exposed в публичном API
+        - Большое число обязательных параметров (> 5–7)
+
+      Для SDK: NewClient(addr string, opts ...Option) — addr обязателен (строка),
+      всё остальное — functional options. Именно так делают крупные Go SDK (gRPC, AWS SDK v2).
+    confidence: "high"
+    tags:
+      - "sdk-design"
+      - "functional-options"
+      - "api"
+
+  - id: "FIND-015"
+    topic: "Sentinel errors в Go — построение и errors.Is"
+    summary: "var ErrXxx = errors.New(...) — стандарт; для добавления контекста — кастомный тип с Unwrap; errors.Is проверяет цепочку."
+    source_id: "SRC-012"
+    details: |
+      Стандарт для публичных sentinel errors:
+        var (
+            ErrInvalidToken = errors.New("auth: invalid token")
+            ErrExpired      = errors.New("auth: token expired")
+            ErrBlocked      = errors.New("auth: user blocked")
+            ErrRateLimited  = errors.New("auth: rate limited")
+            ErrUnavailable  = errors.New("auth: service unavailable")
+        )
+
+      Для добавления контекста без потери идентичности — обёртка с Unwrap:
+        type AuthError struct {
+            Code    string
+            Message string
+            Err     error  // sentinel
+        }
+        func (e *AuthError) Unwrap() error { return e.Err }
+        func (e *AuthError) Error() string { return e.Message }
+
+        // Создание:
+        return &AuthError{Code: "token_expired", Message: "token has expired", Err: ErrExpired}
+        // Проверка в caller:
+        if errors.Is(err, auth.ErrExpired) { ... }
+
+      Важно: НЕ делать sentinel errors через переменные типа не-error интерфейса —
+      errors.Is не сработает корректно. Только var Err = errors.New(...) или тип с Unwrap().
+    confidence: "high"
+    tags:
+      - "errors"
+      - "sentinel"
+      - "errors-is"
+
+  - id: "FIND-016"
+    topic: "Go semver и модульное версионирование SDK"
+    summary: "Go modules: major version > 1 требует /vN suffix в module path; до v1.0.0 breaking changes допустимы; CHANGELOG.md — конвенция keepachangelog.com."
+    source_id: "SRC-002"
+    details: |
+      Go module semver правила:
+        - v0.x.y: pre-stable, breaking changes допустимы без /vN suffix
+        - v1.0.0: стабильный API, начало semver-дисциплины
+        - v2+: требует module path с /v2 suffix (github.com/foo/bar/v2)
+
+      Для auth-client-go:
+        - Текущий тег: v0.1.0 — в рамках v0.x.y можно ломать API
+        - При релизе v1.0.0: зафиксировать все публичные интерфейсы, breaking changes → v2
+        - go.mod: module github.com/webdelo/auth-client-go (без /v2 пока < v2)
+
+      CHANGELOG conventions (keepachangelog.com):
+        Секции: Added / Changed / Deprecated / Removed / Fixed / Security
+        Версии: ## [0.1.0] - 2026-05-15
+
+      godoc: комментарии к экспортируемым типам/функциям — единственная документация SDK.
+      Deprecated функции помечать: // Deprecated: Use NewXxx instead.
+    confidence: "high"
+    tags:
+      - "semver"
+      - "versioning"
+      - "module"
+
+best_practices:
+  - id: "BP-001"
+    name: "Один grpc.ClientConn на весь lifecycle Client"
+    description: |
+      Создать один ClientConn в конструкторе NewClient(), шарить между всеми методами.
+      Все сгенерированные stubs (AuthServiceClient) thread-safe и могут создаваться
+      из одного ClientConn параллельно.
+    when_to_use: "Всегда для unary RPC клиентов"
+    source_id: "SRC-001"
+    code_example: |
+      type Client struct {
+          conn   *grpc.ClientConn
+          auth   auth_v1.AuthServiceClient
+      }
+
+      func NewClient(addr string, opts ...Option) (*Client, error) {
+          cfg := defaultConfig()
+          for _, o := range opts {
+              o(cfg)
+          }
+          conn, err := grpc.NewClient(addr,
+              grpc.WithTransportCredentials(...),
+              grpc.WithKeepaliveParams(keepalive.ClientParameters{
+                  Time:                30 * time.Second,
+                  Timeout:             10 * time.Second,
+                  PermitWithoutStream: true,
+              }),
+          )
+          if err != nil {
+              return nil, err
+          }
+          return &Client{conn: conn, auth: auth_v1.NewAuthServiceClient(conn)}, nil
+      }
+
+      func (c *Client) Close() error {
+          return c.conn.Close()
+      }
+
+  - id: "BP-002"
+    name: "Гибридный TTL cache: lazy expire + background cleanup"
+    description: |
+      При Get(): проверять expiration и возвращать (nil, false) если истёк — никогда
+      не отдавать протухший токен. Background goroutine каждые TTL/2 секунд
+      чистит expired entries для контроля памяти.
+    when_to_use: "ValidateToken cache с TTL 30s"
+    source_id: "SRC-011"
+    code_example: |
+      type entry struct {
+          value    *auth_v1.ValidateTokenResponse
+          expireAt time.Time
+      }
+
+      type Cache struct {
+          m       sync.Map
+          ttl     time.Duration
+          stopCh  chan struct{}
+      }
+
+      func (c *Cache) Get(key string) (*auth_v1.ValidateTokenResponse, bool) {
+          v, ok := c.m.Load(key)
+          if !ok {
+              return nil, false
+          }
+          e := v.(entry)
+          if time.Now().After(e.expireAt) {
+              c.m.Delete(key) // lazy cleanup
+              return nil, false
+          }
+          return e.value, true
+      }
+
+      func (c *Cache) startCleanup(ctx context.Context) {
+          go func() {
+              ticker := time.NewTicker(c.ttl / 2)
+              defer ticker.Stop()
+              for {
+                  select {
+                  case <-ticker.C:
+                      now := time.Now()
+                      c.m.Range(func(k, v any) bool {
+                          if now.After(v.(entry).expireAt) {
+                              c.m.Delete(k)
+                          }
+                          return true
+                      })
+                  case <-ctx.Done():
+                      return
+                  }
+              }
+          }()
+      }
+
+  - id: "BP-003"
+    name: "singleflight для Refresh race serialization"
+    description: |
+      Использовать singleflight.Group с ключом = userID для дедупликации
+      параллельных Refresh-запросов от одного пользователя.
+    when_to_use: "Refresh token endpoint при высоком трафике или retry storms"
+    source_id: "SRC-005"
+    code_example: |
+      type RefreshGroup struct {
+          g singleflight.Group
+      }
+
+      func (r *RefreshGroup) Refresh(ctx context.Context, userID, refreshToken string,
+          fn func(context.Context, string) (*Tokens, error)) (*Tokens, error) {
+
+          v, err, _ := r.g.Do(userID, func() (any, error) {
+              // ctx.Err() проверяем внутри fn перед RPC
+              return fn(ctx, refreshToken)
+          })
+          if err != nil {
+              return nil, err
+          }
+          // Forget после успешного refresh — следующий вызов не ждёт старого
+          r.g.Forget(userID)
+          return v.(*Tokens), nil
+      }
+
+  - id: "BP-004"
+    name: "gRPC interceptor — registry для public methods"
+    description: |
+      Хранить список public (unauthenticated) FullMethod строк в map[string]struct{}.
+      Передавать через WithPublicMethods опцию при создании middleware.
+    when_to_use: "gRPC unary server interceptor"
+    source_id: "SRC-010"
+    code_example: |
+      func UnaryInterceptor(client *Client, publicMethods ...string) grpc.UnaryServerInterceptor {
+          pub := make(map[string]struct{}, len(publicMethods))
+          for _, m := range publicMethods {
+              pub[m] = struct{}{}
+          }
+          return func(ctx context.Context, req interface{},
+              info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+
+              if _, ok := pub[info.FullMethod]; ok {
+                  return handler(ctx, req)
+              }
+
+              md, _ := metadata.FromIncomingContext(ctx)
+              tokens := md.Get("authorization")
+              if len(tokens) == 0 {
+                  return nil, status.Error(codes.Unauthenticated, "missing token")
+              }
+              token := strings.TrimPrefix(tokens[0], "Bearer ")
+
+              user, err := client.ValidateToken(ctx, token)
+              if err != nil {
+                  return nil, status.Error(codes.Unauthenticated, err.Error())
+              }
+              return handler(WithUser(ctx, user), req)
+          }
+      }
+
+pitfalls:
+  - id: "PIT-001"
+    name: "grpc.Dial deprecated — использовать grpc.NewClient"
+    description: "grpc.Dial выполняет dial при вызове (blocking). grpc.NewClient — lazy, не блокирует. Смешивать нельзя."
+    solution: "Всегда использовать grpc.NewClient. Убрать grpc.WithBlock() из опций."
+    source_id: "SRC-002"
+
+  - id: "PIT-002"
+    name: "Keepalive Time < 10s — молча игнорируется gRPC"
+    description: "grpc-go принудительно устанавливает минимум 10s для Time в keepalive.ClientParameters. Меньшее значение заменяется без ошибки."
+    solution: "Ставить Time >= 10s. Рекомендуемо: 30s."
+    source_id: "SRC-003"
+
+  - id: "PIT-003"
+    name: "singleflight не отменяет fn при context cancellation"
+    description: "Если caller отменил свой context, fn продолжает выполняться. Другие waiting goroutine всё равно получат результат."
+    solution: "Проверять ctx.Err() внутри fn перед RPC вызовом. Использовать DoChan для non-blocking wait с select по ctx.Done()."
+    source_id: "SRC-005"
+
+  - id: "PIT-004"
+    name: "singleflight error sharing — rate limit ошибки"
+    description: "Если AUTH вернул 429 (rate limit), все ждущие goroutine получат ту же ошибку. При retry storm — все снова пойдут одновременно."
+    solution: "После получения ErrRateLimited добавить jitter перед retry. Использовать exponential backoff."
+    source_id: "SRC-005"
+
+  - id: "PIT-005"
+    name: "Expired cache entries не удаляются без cleanup"
+    description: "Lazy expire не освобождает память, если токен больше не запрашивается. При высоком трафике накапливается мусор."
+    solution: "Добавить background cleanup goroutine с тикером. Остановить через context при Client.Close()."
+    source_id: "SRC-011"
+
+  - id: "PIT-006"
+    name: "Fail-open при AUTH unavailable — критическая уязвимость"
+    description: "Если AUTH недоступен и middleware пропускает запросы (fail-open), атакующий может намеренно положить AUTH для обхода аутентификации."
+    solution: "Default: fail-closed (возвращать 503 при недоступности AUTH). FailOpen — только явная opt-in опция с предупреждением в документации."
+    source_id: "SRC-007"
+
+  - id: "PIT-007"
+    name: "BFF IP вместо клиентского IP в fingerprint"
+    description: "Если SDK извлекает IP из conn.RemoteAddr() или из неправильного заголовка — AUTH получает IP BFF, а не реального клиента. Fingerprint бесполезен."
+    solution: "Извлекать X-Real-IP или X-Forwarded-For из http.Request. Документировать что nginx/proxy должен выставлять эти заголовки. Функции IPFromRequest(), UserAgentFromRequest() в helpers.go."
+    source_id: "SRC-006"
+
+  - id: "PIT-008"
+    name: "Sentinel error как строка — несовместим с errors.Is"
+    description: "var ErrXxx = fmt.Errorf('...') создаёт новый error при каждом вызове. errors.Is не работает."
+    solution: "Использовать только errors.New() для sentinel errors. Для wrapping: fmt.Errorf('%w', ErrXxx)."
+    source_id: "SRC-012"
+
+code_examples:
+  - id: "EX-001"
+    title: "grpc.NewClient с keepalive и retry service config"
+    description: "Полный пример подключения с продакшн-опциями"
+    source_id: "SRC-002"
+    language: "go"
+    code: |
+      conn, err := grpc.NewClient(
+          addr,
+          grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+          grpc.WithKeepaliveParams(keepalive.ClientParameters{
+              Time:                30 * time.Second,
+              Timeout:             10 * time.Second,
+              PermitWithoutStream: true,
+          }),
+          grpc.WithDefaultServiceConfig(`{
+              "methodConfig": [{
+                  "name": [{"service": "auth.v1.AuthService"}],
+                  "retryPolicy": {
+                      "maxAttempts": 3,
+                      "initialBackoff": "0.1s",
+                      "maxBackoff": "1s",
+                      "backoffMultiplier": 2,
+                      "retryableStatusCodes": ["UNAVAILABLE"]
+                  }
+              }]
+          }`),
+      )
+    notes: "retryableStatusCodes: только UNAVAILABLE. UNAUTHENTICATED и INVALID_ARGUMENT не ретраить."
+
+  - id: "EX-002"
+    title: "HTTP middleware — Bearer extraction + fail-closed"
+    description: "Стандартный HTTP middleware с правильными статус-кодами"
+    source_id: "SRC-009"
+    language: "go"
+    code: |
+      func (c *Client) HTTPMiddleware(next http.Handler) http.Handler {
+          return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+              parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
+              if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+                  w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)
+                  http.Error(w, "missing or malformed token", http.StatusUnauthorized)
+                  return
+              }
+              token := parts[1]
+
+              user, err := c.ValidateToken(r.Context(), token)
+              if err != nil {
+                  switch {
+                  case errors.Is(err, ErrUnavailable):
+                      // fail-closed: AUTH недоступен → 503
+                      http.Error(w, "auth service unavailable", http.StatusServiceUnavailable)
+                  case errors.Is(err, ErrExpired), errors.Is(err, ErrInvalidToken):
+                      w.Header().Set("WWW-Authenticate", `Bearer realm="api", error="invalid_token"`)
+                      http.Error(w, err.Error(), http.StatusUnauthorized)
+                  case errors.Is(err, ErrBlocked):
+                      http.Error(w, "access denied", http.StatusForbidden)
+                  default:
+                      http.Error(w, "authentication failed", http.StatusUnauthorized)
+                  }
+                  return
+              }
+              next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
+          })
+      }
+    notes: "ErrUnavailable → 503 (не 401), иначе клиент будет ретраить с новым токеном впустую."
+
+versions:
+  - version: "google.golang.org/grpc v1.64+"
+    status: "current"
+    notes: "grpc.Dial deprecated, grpc.NewClient — актуальный API. Retry built-in (без middleware)."
+  - version: "golang.org/x/sync v0.x"
+    status: "current"
+    notes: "singleflight.Group стабилен, API не менялся годами."
+  - version: "Go 1.21+"
+    status: "recommended"
+    notes: "Generics зрелые, можно использовать в internal/cache для типизации."
+  - version: "Go 1.24"
+    status: "project-target"
+    notes: "Версия, используемая в auth-client-go (из CLAUDE.md)."
+
+recommendations:
+  - id: "REC-001"
+    priority: "high"
+    title: "grpc.NewClient с keepalive(30s/10s) и retry policy только для UNAVAILABLE"
+    description: |
+      Использовать grpc.NewClient (не Dial), настроить keepalive с Time=30s, Timeout=10s,
+      PermitWithoutStream=true. Retry policy через WithDefaultServiceConfig только для
+      UNAVAILABLE статуса. UNAUTHENTICATED и INVALID_ARGUMENT не ретраить.
+    rationale: "Официальная рекомендация grpc-go; retry на auth-ошибки создаёт нагрузку без смысла."
+
+  - id: "REC-002"
+    priority: "high"
+    title: "Гибридный TTL cache: sync.Map + lazy expire при Get + background cleanup"
+    description: |
+      Реализовать cache в lib/internal/cache/ с generic типом.
+      Get: проверка expireAt, lazy delete. Background goroutine: Range + Delete каждые TTL/2.
+      Goroutine lifecycle управляется через context, переданный в NewCache(ctx, ttl).
+    rationale: "Предотвращает возврат expired токенов и memory leak без лишних зависимостей."
+
+  - id: "REC-003"
+    priority: "high"
+    title: "singleflight для Refresh с Forget после успеха и DoChan для context-aware wait"
+    description: |
+      Ключ singleflight = userID (не refresh token — он меняется после refresh).
+      DoChan + select по ctx.Done() для non-blocking ожидания. Forget(userID) после
+      успешного refresh чтобы следующий вызов не ждал устаревшего результата.
+    rationale: "Предотвращает refresh storm; Forget нужен иначе следующий refresh ждёт бесконечно."
+
+  - id: "REC-004"
+    priority: "high"
+    title: "Fail-closed по умолчанию; FailOpen только через явную opt-in опцию"
+    description: |
+      Default поведение при ErrUnavailable: middleware возвращает 503.
+      WithFailOpen() опция — явный opt-in с предупреждением в godoc.
+      Задокументировать security implications прямо в комментарии к WithFailOpen.
+    rationale: "OWASP A10:2025 — fail-open намеренно эксплуатируется атакующими."
+
+  - id: "REC-005"
+    priority: "medium"
+    title: "WithPublicMethods registry для gRPC interceptor вместо string prefix matching"
+    description: |
+      Принимать []string FullMethod при создании interceptor.
+      map[string]struct{} lookup: O(1) и явная конфигурация.
+      Включить в дефолт: /grpc.health.v1.Health/Check.
+    rationale: "Prefix matching хрупок при изменении proto package; registry — явный контракт."
+
+  - id: "REC-006"
+    priority: "medium"
+    title: "Fingerprint helpers: IPFromRequest из X-Real-IP/X-Forwarded-For, UserAgentFromRequest"
+    description: |
+      В lib/helpers.go: IPFromRequest(*http.Request) string — проверять X-Real-IP,
+      затем X-Forwarded-For (первый IP), затем RemoteAddr.
+      Документировать требование к proxy конфигурации nginx.
+    rationale: "Передача BFF IP в AUTH делает fingerprint бесполезным (OWASP рекомендует client IP)."
+
+  - id: "REC-007"
+    priority: "medium"
+    title: "Sentinel errors через errors.New + wrapping type с Unwrap для контекста"
+    description: |
+      Публичные var ErrXxx = errors.New("auth: xxx").
+      Внутренний AuthError{Err: ErrXxx} с Unwrap() для передачи message/code.
+      Caller использует errors.Is(err, auth.ErrExpired).
+    rationale: "Стандарт Go; совместимость с errors.Is/As; расширяемо без breaking change."
+
+  - id: "REC-008"
+    priority: "low"
+    title: "Версионировать как v0.x.y до стабилизации API, затем v1.0.0"
+    description: |
+      В v0.x.y: breaking changes допустимы, фиксировать в CHANGELOG.md (keepachangelog.com).
+      При v1.0.0: заморозить все публичные интерфейсы.
+      При breaking change после v1.0.0: /v2 suffix в module path.
+    rationale: "Go module semver semantics; без дисциплины consumers получат сюрпризы."
+
+summary:
+  sources_count: 13
+  findings_count: 16
+  best_practices_count: 4
+  pitfalls_count: 8
+  recommendations_count: 8
+  key_insight: |
+    Все 8 исследуемых архитектурных решений имеют однозначно правильный ответ,
+    подкреплённый официальной документацией и OWASP: один ClientConn (goroutine-safe),
+    гибридный TTL cache (lazy + background), singleflight с Forget, fail-closed по умолчанию,
+    functional options, sentinel errors через errors.New. Все спорные решения (IP binding,
+    User-Agent fingerprint) правильно трактуются как «detection hints», а не жёсткая защита.
+  confidence_score: 9
+  confidence_reason: |
+    Основные источники — официальная документация grpc-go (concurrency.md, pkg.go.dev),
+    официальный pkg.go.dev/golang.org/x/sync/singleflight, OWASP Cheat Sheet.
+    Загружены и верифицированы страницы grpc-go concurrency doc и singleflight doc через curl.
+    Снижение на 1 балл: не нашли официального benchmark сравнения sync.Map vs RWMutex+map
+    для данного размера кэша; рекомендация основана на документации sync.Map use cases.
+
+additional_resources:
+  - title: "grpc-go Concurrency Documentation"
+    url: "https://github.com/grpc/grpc-go/blob/master/Documentation/concurrency.md"
+    description: "Официальная гарантия goroutine safety для ClientConn"
+  - title: "grpc-go Keepalive Documentation"
+    url: "https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md"
+    description: "Параметры keepalive клиента и сервера"
+  - title: "gRPC-Go Built-in Client Retry"
+    url: "https://mtardy.com/posts/grpc-go-client-retry/"
+    description: "Подробный разбор retry policy через WithDefaultServiceConfig"
+  - title: "singleflight package"
+    url: "https://pkg.go.dev/golang.org/x/sync/singleflight"
+    description: "Официальная документация с примерами"
+  - title: "OWASP Session Management Cheat Sheet"
+    url: "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+    description: "Fingerprint binding, cookie security, session anomaly detection"
+  - title: "OWASP Top 10 2025: A07 Authentication Failures"
+    url: "https://owasp.org/Top10/2025/A07_2025-Authentication_Failures/"
+    description: "Fail-open как эксплуатируемая уязвимость"
+  - title: "Auth0 go-jwt-middleware"
+    url: "https://github.com/auth0/go-jwt-middleware"
+    description: "Reference реализация HTTP middleware для Bearer токенов"
+  - title: "go-grpc-middleware/auth"
+    url: "https://pkg.go.dev/github.com/grpc-ecosystem/go-grpc-middleware/auth"
+    description: "AuthFromMD helper и паттерн gRPC auth interceptor"

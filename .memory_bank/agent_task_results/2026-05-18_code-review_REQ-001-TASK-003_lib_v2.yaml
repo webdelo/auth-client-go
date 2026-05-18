@@ -1,0 +1,465 @@
+agent: code-reviewer
+task_id: REQ-001-TASK-003
+package: lib
+date: 2026-05-18
+
+files_reviewed:
+  - lib/client.go
+  - lib/validate.go
+  - lib/middleware_http.go
+  - lib/interceptor_grpc.go
+  - lib/context.go
+  - lib/errors.go
+  - lib/logger.go
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+
+  fmt:
+    status: pass
+    files_need_formatting: []
+
+  vet:
+    status: pass
+    errors: []
+
+  lint:
+    status: pass
+    issues: []
+    note: "golangci-lint 0 issues (lll threshold=140, gosec excludes G306/G401/G501)"
+
+  tests:
+    status: pass
+    failed: []
+    coverage:
+      lib: "92.8%"
+      lib_internal_cache: "100.0%"
+    race_detector: pass
+    note: "132 tests, 0 failures. cacheAdapter.Get/Set/Delete at 0% (excluded by mock-only test strategy)."
+
+issues:
+  critical: []
+
+  warnings:
+    - id: CR-LIB-W001
+      severity: WARNING
+      category: LOGIC
+      rule_id: CS-0060
+      file: lib/client.go
+      line: 83
+      title: "Config.ValidateCacheTTL godoc claims 'skips creation' but code always creates MemoryCache"
+      description: |
+        The field comment states: "the cache layer skips creation when TTL is zero."
+        In practice, New() always reaches:
+          cleanupInterval := cfg.ValidateCacheTTL / 2  // = 0
+          c.cache = newCacheAdapter(cachepkg.NewMemoryCache(bgCtx, 0))
+        The MemoryCache object IS created (though with no cleanup goroutine). Caching is
+        effectively disabled because MemoryCache.Set is a no-op when ttl=0, and every
+        Get returns a miss. The behavior is functionally correct, but the documentation
+        is inaccurate and will mislead readers of Config or custom Cache implementors.
+      current_code: |
+        // ValidateCacheTTL is the TTL for ValidateToken results. Defaults to 30s
+        // when negative. Zero means "cache disabled" and is preserved as-is by
+        // New; the cache layer skips creation when TTL is zero.
+        ValidateCacheTTL time.Duration
+      recommendation: |
+        Replace the inaccurate sentence with the actual mechanism:
+
+        // ValidateCacheTTL is the TTL for ValidateToken results. Defaults to 30s
+        // when negative. Zero means "cache disabled": New still allocates an
+        // in-memory cache object, but Set is a no-op for TTL=0 so no entries are
+        // ever stored. Effectively every ValidateAccessToken call reaches gRPC.
+        ValidateCacheTTL time.Duration
+
+    - id: CR-LIB-W002
+      severity: WARNING
+      category: TESTS
+      rule_id: ES-0053
+      file: lib/client.go
+      line: 314
+      title: "cacheAdapter.Get/Set/Delete at 0% coverage — type assertion in Get is untested"
+      description: |
+        cacheAdapter wraps *cachepkg.MemoryCache to satisfy the Cache interface.
+        Its Get() method contains a type assertion:
+          user, ok := v.(User)
+        Because all validate.go tests inject a mock Cache (lib/mocks/cache.go), the
+        cacheAdapter code paths are never exercised in the test suite. The type assertion
+        in Get() would silently return (User{}, false) if cacheAdapter.Set were ever
+        called with a non-User value — a bug that tests would not catch.
+        Production coverage: cacheAdapter.Get=0%, cacheAdapter.Set=0%, cacheAdapter.Delete=0%.
+        DOD requires ≥ 80% coverage for lib/ files; overall lib coverage is 92.8% (passes),
+        but this specific adapter has zero direct test coverage.
+      recommendation: |
+        Add a test in client_test.go that creates a real Client (using FakeAuthClient
+        from export_test.go) and calls ValidateAccessToken end-to-end with the default
+        MemoryCache (no mock). This exercises the full cacheAdapter.Get/Set path:
+
+        func TestCacheAdapter_TypeAssertion(t *testing.T) {
+            // create client with real MemoryCache (no WithCache option)
+            c := newTestClientWithRealCache(t)
+            // call ValidateAccessToken twice — second hit exercises cacheAdapter.Get
+            user, err := c.ValidateAccessToken(ctx, validToken)
+            // assert user and err
+        }
+
+    - id: CR-LIB-W003
+      severity: WARNING
+      category: STYLE
+      rule_id: CS-0060
+      file: lib/errors.go
+      line: 1
+      title: "Package-level doc comment lives in errors.go instead of client.go"
+      description: |
+        Go convention (and godoc rendering) expects the package comment to be in
+        the package's primary entry-point file or in a dedicated doc.go.
+        Currently the package comment is on errors.go:
+          // Package authclient is the official Go SDK ...
+          package authclient
+        Meanwhile client.go (which defines Client, New, Config — the main public
+        surface) has no package comment. This is confusing for readers who open
+        client.go first and find no package-level explanation.
+      recommendation: |
+        Move the package comment to client.go (prepend it before `package authclient`)
+        or create a dedicated doc.go with only the package comment and no other
+        declarations. Remove the comment from errors.go (leave only `package authclient`).
+
+        // doc.go
+        // Package authclient is the official Go SDK for the webdelo/auth service.
+        //
+        // The SDK is a thin wrapper over the gRPC contract from
+        // github.com/webdelo/auth-proto with non-trivial concerns baked in: a
+        // ValidateToken TTL cache, an HTTP middleware, a gRPC unary interceptor,
+        // refresh-race serialization, and typed errors. Create a Client with New,
+        // dispose with Close.
+        package authclient
+
+    - id: CR-LIB-W004
+      severity: WARNING
+      category: STYLE
+      rule_id: ES-0080
+      file: lib/errors.go
+      line: 42
+      title: "AuthError exported fields Err and RetryAfter lack field-level godoc"
+      description: |
+        The AuthError struct type has a good type-level comment, but its two exported
+        fields have no individual documentation:
+          type AuthError struct {
+              Err        error
+              RetryAfter time.Duration
+          }
+        Per ES-0080, exported struct fields should have godoc comments so that
+        `go doc authclient.AuthError` shows the purpose of each field.
+        The field name RetryAfter also creates a naming ambiguity: there is a
+        package-level function RetryAfter(err error) time.Duration in the same file.
+        A consumer doing `errors.As(err, &ae)` and then calling ae.RetryAfter
+        (accessing the field) versus authclient.RetryAfter(err) (calling the function)
+        may be confused by the identical names.
+      recommendation: |
+        Add field-level comments and clarify the naming:
+
+        type AuthError struct {
+            // Err is the underlying sentinel error (ErrRateLimited, etc.).
+            // Use errors.Is(err, authclient.ErrXxx) instead of direct comparison.
+            Err error
+
+            // RetryAfterHint is the server-provided hint for when to retry.
+            // Use the RetryAfter helper to extract this value from any error chain.
+            // Zero when the server did not include a hint.
+            RetryAfterHint time.Duration
+        }
+
+        Rename RetryAfter field to RetryAfterHint to eliminate the name collision
+        with the RetryAfter() function. Update RetryAfter() and retryAfterFromStatus()
+        accordingly. This is a breaking change and must be flagged in CHANGELOG.
+
+  suggestions:
+    - id: CR-LIB-S001
+      severity: SUGGESTION
+      category: LOGIC
+      rule_id: EC-0054
+      file: lib/errors.go
+      line: 86
+      title: "codes.Canceled maps to ErrUnavailable — misleading for caller-cancelled contexts"
+      description: |
+        In mapGRPCError, the switch has no case for codes.Canceled:
+          default:
+              return fmt.Errorf("authclient: unexpected grpc code %s: %w", st.Code(), ErrUnavailable)
+        When a caller cancels their own context (e.g. request timeout on the consumer side),
+        the gRPC call to AUTH returns codes.Canceled. mapGRPCError wraps this as ErrUnavailable
+        with the message "unexpected grpc code Canceled".
+        This has two problems:
+          1. ErrUnavailable suggests "retry later" but context cancellation means the caller
+             already abandoned the request — retrying is pointless.
+          2. The error message "unexpected grpc code Canceled" is alarming in logs for a normal
+             client-cancellation event.
+        In practice, this is harmless because cancelled callers discard the response, but it
+        produces misleading log lines when logger is wired up.
+      recommendation: |
+        Add an explicit case for codes.Canceled that returns the original context error:
+
+        case codes.Canceled:
+            // Propagate the caller's cancellation directly rather than masking it
+            // as ErrUnavailable. The caller cancelled; there is nothing to retry.
+            return fmt.Errorf("authclient: %w", context.Canceled)
+
+        This requires importing "context". Alternatively, return ctx.Err() from
+        ValidateAccessToken when err is codes.Canceled, which preserves the original
+        cancellation context for the caller.
+
+    - id: CR-LIB-S002
+      severity: SUGGESTION
+      category: STYLE
+      rule_id: CS-0010
+      file: lib/client.go
+      line: 238
+      title: "CS-0010: Missing blank lines after if blocks in several locations"
+      description: |
+        CS-0010 requires an empty line after the closing brace of if/for/switch/select blocks.
+        Multiple violations found (golangci-lint does not enforce this rule; it is a project
+        coding style):
+
+        lib/client.go:238-244  — New(): two consecutive if-cache blocks without blank line between them
+        lib/client.go:262-276  — applyDefaults(): 5 consecutive guard-clause if blocks, no blank lines
+        lib/client.go:316-321  — cacheAdapter.Get(): no blank line after first if !ok return
+        lib/validate.go:55-62  — ValidateAccessToken(): no blank line after err check / after IsValid check
+        lib/middleware_http.go:25-27 — bearerToken(): no blank line after first if-return block
+        lib/interceptor_grpc.go:45-57 — UnaryInterceptor closure: 3 consecutive if-return blocks without blank lines
+      recommendation: |
+        Add blank lines after each if block. Example fix for validate.go:
+
+          if err != nil {
+              return User{}, mapGRPCError(err)
+          }
+                                              // ← add blank line
+          if !resp.IsValid {
+              return User{}, mapErrorReason(resp.ErrorReason)
+          }
+                                              // ← add blank line
+          user := User{...}
+
+        For applyDefaults(), the guard-clause pattern with 5 consecutive ifs is common in Go
+        and there is legitimate debate about whether blank lines add value there. Apply at the
+        team's discretion — but be consistent across all files.
+
+    - id: CR-LIB-S003
+      severity: SUGGESTION
+      category: LOGIC
+      rule_id: ES-0080
+      file: lib/client.go
+      line: 66
+      title: "Cache interface context parameter semantics undocumented for custom implementors"
+      description: |
+        The Cache interface passes ctx to Get/Set/Delete, but the built-in MemoryCache
+        ignores context (sync.Map is inherently non-blocking). A custom Cache implementor
+        connecting to Redis or Memcached would need to understand:
+          - Should Get return (User{}, false) or block on a cancelled ctx?
+          - Should Set be a no-op or return immediately on cancelled ctx?
+        The current godoc does not state the expected behavior.
+      recommendation: |
+        Extend the Cache interface godoc to clarify context contract:
+
+        // Cache is the interface for ValidateToken result caching.
+        // ...
+        //
+        // Context semantics: ctx is provided for telemetry (tracing spans, metrics)
+        // and cancellation. On a cancelled ctx, implementations should return the
+        // zero value immediately (treat as miss) rather than blocking. Implementations
+        // must not use ctx to bound the TTL of stored entries.
+        type Cache interface {
+            // Get returns the cached User and ok=true on hit.
+            // Returns (User{}, false) on miss or when ctx is cancelled.
+            Get(ctx context.Context, key string) (user User, ok bool)
+            ...
+        }
+
+    - id: CR-LIB-S004
+      severity: SUGGESTION
+      category: STYLE
+      rule_id: CS-0021
+      file: lib/errors.go
+      line: 42
+      title: "AuthError.RetryAfter field name is identical to package-level RetryAfter() function"
+      description: |
+        The struct field AuthError.RetryAfter and the package-level function RetryAfter()
+        share the same identifier. A consumer using errors.As to get the *AuthError and then
+        accessing ae.RetryAfter (the field) versus calling authclient.RetryAfter(err) (the
+        function) may confuse the two in code review and IDE autocomplete. This is a naming
+        symmetry concern, not a bug.
+        Severity kept at SUGGESTION because the pattern is intentional (the function wraps
+        the field for type-safe extraction) and the current API is pre-v1.0.0 so a rename
+        is still feasible.
+      recommendation: |
+        Consider renaming the field to RetryAfterHint to visually distinguish it from the
+        helper function. The function RetryAfter(err) remains the canonical API for consumers;
+        the field becomes an implementation detail of the *AuthError type.
+
+        type AuthError struct {
+            Err            error
+            RetryAfterHint time.Duration  // was: RetryAfter
+        }
+
+        Update retryAfterFromStatus to return AuthError{Err: ErrRateLimited, RetryAfterHint: d}
+        and update RetryAfter() helper accordingly. Flag in CHANGELOG as breaking if published.
+
+summary:
+  critical: 0
+  warning: 4
+  suggestion: 4
+
+positive:
+  - "EC-0051 intentional exception (bgCtx in Client struct) is properly documented in the struct godoc — Gotcha G10 fully handled."
+  - "EC-0056: userCtxKey is correctly unexported (type userCtxKey struct{}); no string/int key collision risk."
+  - "Positive-only caching is correct: negative results from mapErrorReason and mapGRPCError are never passed to cache.Set."
+  - "Cache key hashing: hashToken uses sha256 + hex encoding; raw token never stored in cache, logs, or metrics."
+  - "Bearer extraction (bearerToken): case-insensitive prefix match per RFC 7235, TrimSpace on value, inner-whitespace rejection, 8 KiB length cap — all four requirements from the task met."
+  - "Panic recovery in UnaryInterceptor uses named returns (resp, err) correctly; defer recover assigns to named err which propagates to the gRPC caller as codes.Internal. Pattern is sound."
+  - "WWW-Authenticate header sent on 401 (missing and invalid token cases) per RFC 6750."
+  - "Retry-After header sent on 503 (hardcoded '5') and conditionally on 429 (from RetryAfter helper) per task requirements."
+  - "FailMode FailClosed/FailOpen is consistent across HTTPMiddleware and UnaryInterceptor — both paths log a warning on FailOpen and inject empty User{}."
+  - "openMethods registry is correctly initialized in New (defaultOpenMethods) and merged by WithOpenMethods without risk of nil map panic."
+  - "EC-0010/EC-0012: cleanup goroutine in MemoryCache exits via bgCtx.Done(), cancelled by Close() via cancelBG(). No goroutine leak."
+  - "ES-0053 compile-time checks: var _ Cache = (*cacheAdapter)(nil) and var _ Logger = NoopLogger{} present."
+  - "authServiceClient interface is unexported (consumer-side, per ES-0051) and limited to ValidateToken only — correct mockable surface."
+  - "Cache and Logger interfaces are exported with explicit justification (public SDK API for consumer adapters). ES-0056 exception is appropriate."
+  - "All exported functions, types, and constants have godoc comments following the godoc name-first convention (ES-0080/ES-0081)."
+  - "Error wrapping: fmt.Errorf with %w used consistently for all wrapped errors (ES-0061). Sentinel chain preserved for errors.Is traversal."
+  - "No panic in production code path (ES-0063) — the recover in UnaryInterceptor is a deliberate server-safety pattern (ES-0064), not a production panic."
+  - "Static analysis: build passes, gofmt clean, go vet passes, golangci-lint 0 issues, go test -race passes. All DOD quality gates met."
+  - "Coverage: lib=92.8%, lib/internal/cache=100% — exceeds the 80% DOD threshold."
+
+verdict: APPROVED_WITH_COMMENTS
+verdict_reason: >
+  No critical issues. The code is functionally correct, security-compliant, and passes all
+  DOD quality gates (build, lint, race-detector, coverage ≥ 80%). The 4 warnings are
+  documentation inaccuracies and a coverage gap in cacheAdapter — they do not block merge
+  but should be addressed before v1.0.0 tag to maintain public API quality. The 4 suggestions
+  are optional improvements.
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - ES-0001  # gofmt — pass
+      - ES-0002  # tabs — pass
+      - ES-0003  # brace placement — pass
+      - ES-0010  # package names lowercase — pass (authclient)
+      - ES-0011  # exported vs unexported — pass
+      - ES-0012  # getter naming — N/A
+      - ES-0014  # -er interface suffix — N/A (multi-method interfaces)
+      - ES-0015  # MixedCaps — pass
+      - ES-0018  # avoid generic names — pass
+      - ES-0020  # init in conditions — pass
+      - ES-0021  # early returns — pass
+      - ES-0022  # minimize scope — pass
+      - ES-0030  # slices — pass
+      - ES-0032  # composite literals with field names — pass
+      - ES-0033  # pre-allocate slices — pass (defaultDialOptionsCount)
+      - ES-0040  # return (value, error) — pass
+      - ES-0041  # named returns for documentation — pass (interceptor)
+      - ES-0042  # defer for cleanup — pass (cancel, t.Stop in cleanup)
+      - ES-0043  # no defer in loops — pass
+      - ES-0050  # keep interfaces small — pass
+      - ES-0051  # interfaces at consumer — pass (authServiceClient unexported, in client.go)
+      - ES-0052  # type assertions with comma-ok — pass (cacheAdapter.Get)
+      - ES-0053  # compile-time interface checks — pass
+      - ES-0054  # no pointer to interface — pass
+      - ES-0055  # no generalized interfaces in provider — N/A (lib is SDK, exports intentional)
+      - ES-0056  # prefer unexported interfaces — pass (authServiceClient unexported; Cache/Logger exported with justification)
+      - ES-0060  # handle errors explicitly — pass
+      - ES-0061  # wrap errors with context — pass
+      - ES-0062  # sentinel errors — pass
+      - ES-0063  # no panic in production — pass
+      - ES-0064  # recover only for server crash prevention — pass (interceptor)
+      - ES-0070  # consistent receiver types — pass
+      - ES-0071  # pointer receiver for modification — pass
+      - ES-0080  # godoc comments — WARNING on AuthError fields (W004)
+      - ES-0081  # doc starts with declaration name — pass
+      - ES-0110  # strconv not fmt for numbers — pass (strconv.Itoa in middleware)
+      - ES-0120  # functional options — pass (WithFailMode, WithLogger, WithCache, WithOpenMethods)
+      - ES-0130  # import order — pass (stdlib / external / internal grouping)
+      - ES-0131  # import aliases only when necessary — pass
+      - ES-0140  # constructor name New — pass
+      - ES-0141  # Dependencies struct for 3+ deps — N/A (Config struct used)
+      - ES-0142  # validate in constructor — pass (Endpoint check)
+    critical_rules_checked:
+      - ES-0051  # interfaces at consumer — PASS
+      - ES-0060  # handle errors explicitly — PASS
+      - ES-0063  # no panic in production — PASS
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "sync.Once"
+      - "sync.Map"
+      - "context.WithCancel"
+      - "go c.cleanupLoop"
+    rules_applied:
+      - EC-0010  # goroutine lifecycle — pass (cleanupLoop exits via ctx.Done)
+      - EC-0011  # cancel contexts — pass (defer cancel() in ValidateAccessToken)
+      - EC-0012  # no goroutine leaks — pass (Close cancels bgCtx)
+      - EC-0013  # ctx.Done in long-running — pass (cleanupLoop select)
+      - EC-0021  # close channels on sender — N/A (no channels in reviewed files)
+      - EC-0033  # defer mu.Unlock — N/A (no mutex in reviewed files; sync.Map used)
+      - EC-0034  # RWMutex read-heavy — N/A (sync.Map used per ADR §A2)
+      - EC-0050  # ctx first parameter — pass
+      - EC-0051  # never store ctx in structs — NOTE: bgCtx is intentional exception, documented per G10
+      - EC-0052  # Background/TODO as root — pass (context.Background() in newBackgroundContext)
+      - EC-0053  # reasonable timeouts — pass (ValidateTimeout, LoginTimeout, RefreshTimeout)
+      - EC-0055  # always call cancel — pass (defer cancel() in ValidateAccessToken; cancelBG in Close)
+      - EC-0056  # custom types for ctx keys — pass (type userCtxKey struct{})
+      - EC-0060  # atomic for simple flags — N/A (sync.Once used)
+      - EC-0080  # shutdown via ctx cancellation — pass (cancelBG signals cleanup goroutine)
+      - EC-0081  # wait for goroutines — NOTE: Close does not wait for cleanupLoop to exit; MemoryCache cleanup goroutine exits asynchronously after ctx cancel. Acceptable because the goroutine holds no resources beyond sync.Map reference — no data corruption risk.
+      - EC-0091  # capture loop variables — pass (no range goroutines in reviewed files)
+      - EC-0092  # no unsynchronized shared state — pass (sync.Map is concurrent-safe)
+    critical_rules_checked:
+      - EC-0010  # goroutine lifecycle — PASS
+      - EC-0012  # no goroutine leaks — PASS
+      - EC-0051  # ctx in struct — DOCUMENTED EXCEPTION
+      - EC-0062  # Swap for entry guards — N/A (no atomic flags in reviewed files)
+      - EC-0063  # no mixing atomic + mutex — N/A
+      - EC-0064  # max 1 mutex per method — N/A (sync.Map, no explicit mutex)
+      - EC-0081  # wait for goroutines — ACCEPTABLE (no state-corruption risk)
+      - EC-0091  # capture loop variables — PASS
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - CS-0001  # line length 120 — pass (lint configured at 140, no violations)
+      - CS-0002  # explicit returns — pass (named returns in interceptor are documented exception)
+      - CS-0003  # no magic numbers — pass (maxBearerLen=8192, retryAfterUnav="5" are constants)
+      - CS-0004  # no global state — pass (only sentinel errors as package-level vars)
+      - CS-0010  # block spacing — SUGGESTION S002 (multiple guard-clause spacing gaps)
+      - CS-0020  # code reads top-to-bottom — pass
+      - CS-0021  # clear meaningful names — pass
+      - CS-0022  # extract actions into functions — pass (hashToken, bearerToken, mapGRPCError)
+      - CS-0023  # low cyclomatic complexity — pass
+      - CS-0030  # no linter config modification — pass
+      - CS-0031  # nolint requires justification — pass (no nolint directives)
+      - CS-0050  # each entity in package — N/A (SDK single package by design per ADR)
+      - CS-0060  # godoc for public methods — mostly pass; WARNING W004 on AuthError fields
+      - CS-0070  # English naming — pass
+      - CS-0080  # distinct types — pass (Role type string)
+      - CS-0082  # function length — pass (all functions < 80 lines)
+      - CS-0110  # no internal std references in comments — pass
+      - CS-0111  # minimal inline comments — pass (comments explain WHY not WHAT)
+      - CS-0112  # no decorative separators — pass
+
+  dba_rules:
+    checked: false
+    database: null
+    rules_applied: []
+
+  devops_rules:
+    checked: false
+    rules_applied: []
+
+execution_metrics:
+  duration_seconds: <fill>
+  tokens_used: <fill>

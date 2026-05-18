@@ -1,0 +1,402 @@
+agent: code-reviewer
+task_id: REQ-001-TASK-003
+package: lib/internal/cache
+date: 2026-05-18
+files_reviewed:
+  - lib/internal/cache/memory.go
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+  tests:
+    status: pass
+    failed: []
+    coverage: "measured via make test-race — all 13 cache tests pass"
+
+issues:
+  critical: []
+
+  warnings:
+    - id: CACHE-W001
+      category: CONCURRENCY
+      title: "No WaitGroup — goroutine exit is fire-and-forget after Close"
+      file: lib/internal/cache/memory.go
+      line: 41
+      standard: "EC-0081: Wait for all goroutines to complete"
+      description: |
+        NewMemoryCache launches cleanupLoop as a bare `go c.cleanupLoop(bgCtx, cleanupInterval)`
+        with no WaitGroup tracking. When Client.Close() calls cancelBG(), it signals the goroutine
+        to stop but returns immediately without waiting for cleanupLoop to exit.
+
+        The goroutine may still be mid-execution inside c.m.Range(func ...) at the moment
+        Close() returns. While it will exit on the next select iteration (ctx.Done is already
+        cancelled), the caller has no guarantee that the goroutine has actually finished.
+        This makes goroutine-count-based tests (runtime.NumGoroutine) inherently racy —
+        they must sleep after Close() to give the goroutine time to exit, which is an
+        anti-pattern.
+
+        DOD item: "Cleanup goroutine завершается при Close() (тест с runtime.NumGoroutine:
+        число goroutines до New == после Close)." This is hard to satisfy reliably without
+        a WaitGroup.
+      current_code: |
+        func NewMemoryCache(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
+            c := &MemoryCache{}
+
+            if cleanupInterval > 0 {
+                go c.cleanupLoop(bgCtx, cleanupInterval)  // no WaitGroup — fire-and-forget
+            }
+
+            return c
+        }
+      recommended_fix: |
+        type MemoryCache struct {
+            m  sync.Map
+            wg sync.WaitGroup // tracks the background cleanup goroutine
+        }
+
+        func NewMemoryCache(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
+            c := &MemoryCache{}
+
+            if cleanupInterval > 0 {
+                c.wg.Add(1)
+                go func() {
+                    defer c.wg.Done()
+                    c.cleanupLoop(bgCtx, cleanupInterval)
+                }()
+            }
+
+            return c
+        }
+
+        // Wait blocks until the background goroutine has fully exited.
+        // Call after cancelling bgCtx (i.e., after Client.Close cancels cancelBG).
+        func (c *MemoryCache) Wait() {
+            c.wg.Wait()
+        }
+
+        // In Client.Close():
+        // func (c *Client) Close() error {
+        //     c.closeOnce.Do(func() {
+        //         c.cancelBG()
+        //         c.memCache.Wait() // wait for goroutine exit before closing conn
+        //         c.closeErr = c.grpcConn.Close()
+        //     })
+        //     return c.closeErr
+        // }
+      reason: |
+        EC-0081 requires waiting for goroutines on shutdown. Without WaitGroup,
+        the DOD condition (goroutine count restores after Close) cannot be
+        deterministically verified in tests without artificial sleeps.
+
+    - id: CACHE-W002
+      category: RUNTIME
+      title: "Bare type assertion v.(entry) without comma-ok in Get and cleanupLoop"
+      file: lib/internal/cache/memory.go
+      line: 55
+      standard: "ES-0052: Use type assertions with comma-ok"
+      description: |
+        Line 55: `e := v.(entry)` — bare assertion, panics if the stored value is not entry.
+        Line 94: `v.(entry).expiresAt` — same issue inside Range callback.
+
+        The map is private and only written via Set (which stores entry values), so the
+        assertion is logically safe today. However:
+        1. ES-0052 mandates comma-ok form for all type assertions as a defensive measure.
+        2. Future callers who embed or extend MemoryCache could corrupt the map.
+        3. If something outside the package ever stored a non-entry value via a reflect
+           trick or through a test hack, the panic would surface in production.
+
+        Additionally, for the Range callback on line 94, a panic inside Range does not
+        stop the iteration gracefully — it propagates up to the goroutine and would crash
+        the cleanup goroutine silently (no recover), causing it to never exit until bgCtx
+        is cancelled separately.
+      current_code: |
+        // line 55 — in Get
+        e := v.(entry)
+
+        // line 94 — in cleanupLoop Range callback
+        if now.After(v.(entry).expiresAt) {
+      recommended_fix: |
+        // In Get (line 55):
+        e, ok := v.(entry)
+        if !ok {
+            // unexpected type in map — treat as miss and evict
+            c.m.Delete(key)
+            return nil, false
+        }
+
+        // In cleanupLoop Range callback (line 94):
+        e, ok := v.(entry)
+        if !ok {
+            c.m.Delete(k) // evict corrupt entry
+            return true
+        }
+        if now.After(e.expiresAt) {
+            c.m.Delete(k)
+        }
+      reason: |
+        ES-0052 requires comma-ok for type assertions. Defensive coding prevents
+        a panic from a corrupt map state from crashing the background goroutine.
+
+    - id: CACHE-W003
+      category: STYLE
+      title: "Constructor named NewMemoryCache violates ES-0140 (constructor must be New)"
+      file: lib/internal/cache/memory.go
+      line: 37
+      standard: "ES-0140: Constructor name is New"
+      description: |
+        ES-0140 mandates that the constructor function for a package's primary type
+        is named New(), not New<TypeName>(). Since cache is a single-entity package
+        (one primary exported type: MemoryCache), the constructor should be New().
+
+        The package-qualified call site (cachepkg.NewMemoryCache) would become
+        cachepkg.New, which is idiomatic Go.
+      current_code: |
+        func NewMemoryCache(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
+      recommended_fix: |
+        func New(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
+
+        // Call site in client.go:
+        // c.cache = newCacheAdapter(cachepkg.New(bgCtx, cleanupInterval))
+      reason: |
+        ES-0140 is a naming convention rule. Package-qualified call (cache.New) is
+        idiomatic; cache.NewMemoryCache is redundant — the package name already
+        provides the type context.
+
+    - id: CACHE-W004
+      category: STYLE
+      title: "Missing blank line after if-block in Get (CS-0010)"
+      file: lib/internal/cache/memory.go
+      line: 51
+      standard: "CS-0010: Empty line after if/switch/select blocks"
+      description: |
+        In Get(), the early-return if-block on lines 51-53 is not followed by a
+        blank line before the next statement on line 55. CS-0010 requires an empty
+        line after each if/for/switch/select block.
+      current_code: |
+        v, ok := c.m.Load(key)
+        if !ok {
+            return nil, false
+        }
+
+        e := v.(entry)   // ← already has blank line — this is actually fine
+      recommended_fix: |
+        # Re-examining: line 51-53 IS followed by a blank line (line 54 is blank).
+        # This warning is a false positive — no action needed. See CACHE-W004 retraction.
+        # The issue has been self-corrected upon closer review.
+        #
+        # However, the if-block on lines 56-59 (expired check) is also followed by
+        # a blank line (line 60 is blank before return e.user). Formatting is correct.
+        #
+        # CS-0010 is SATISFIED — no issue here.
+      reason: "Retracted: blank lines are present. No CS-0010 violation found."
+
+  suggestions:
+    - id: CACHE-S001
+      category: PERFORMANCE
+      title: "cleanupLoop Range callback allocates an entry copy on every iteration"
+      file: lib/internal/cache/memory.go
+      line: 93
+      description: |
+        Inside the Range callback, `v.(entry).expiresAt` triggers a copy of the
+        entry struct (user any + expiresAt time.Time). For large caches this is a
+        minor but measurable allocation per Range call. Storing only the expiry time
+        in the map (and separately storing user data) would avoid this, but changes
+        the data model significantly.
+
+        A simpler improvement: assign to a local variable to make the copy explicit
+        and re-use it (no double-assert). This pairs well with the CACHE-W002 fix.
+      recommended_fix: |
+        c.m.Range(func(k, v any) bool {
+            e, ok := v.(entry)
+            if !ok {
+                c.m.Delete(k)
+                return true
+            }
+            if now.After(e.expiresAt) {
+                c.m.Delete(k)
+            }
+            return true
+        })
+      reason: |
+        Single assignment + reuse is clearer and avoids a double type-assertion.
+        Pairs naturally with the CACHE-W002 defensive fix.
+
+    - id: CACHE-S002
+      category: LOGIC
+      title: "cleanupInterval derivation (TTL/2) is outside MemoryCache — consider documenting the contract"
+      file: lib/internal/cache/memory.go
+      line: 37
+      description: |
+        The recommended `cleanupInterval = ValidateCacheTTL / 2` is computed in
+        client.go (line 242). NewMemoryCache accepts any interval > 0 and treats it
+        as-is. If a caller passes an interval > TTL, tombstones will accumulate for
+        longer than the TTL; if interval << TTL, excessive CPU is spent scanning.
+
+        The godoc on NewMemoryCache currently says "A cleanupInterval of 0 or less
+        skips the goroutine entirely" but does not recommend a typical ratio relative
+        to the TTL. A brief note would make the API contract clearer for future
+        consumers of this internal package (e.g., integration tests, Redis-backed
+        cache that embeds this for local fallback).
+      recommended_fix: |
+        // NewMemoryCache constructs a MemoryCache and, when cleanupInterval > 0,
+        // launches a background cleanup goroutine.
+        //
+        // bgCtx controls the cleanup goroutine lifecycle. Cancel it to stop the
+        // goroutine and call Wait() to block until it exits.
+        //
+        // cleanupInterval controls how often the background scan removes expired
+        // tombstones. A value of TTL/2 is recommended: frequent enough to bound
+        // memory growth while keeping overhead low. A value of 0 or less skips
+        // the goroutine entirely — expired entries are still evicted lazily
+        // inside Get.
+        func NewMemoryCache(bgCtx context.Context, cleanupInterval time.Duration) *MemoryCache {
+      reason: |
+        Internal package but used by tests and potentially future swappable
+        implementations. The ratio guidance reduces mis-use risk.
+
+# Retraction note for CACHE-W004:
+# On re-inspection, lines 51-53 (if !ok block) ARE followed by a blank line (line 54).
+# The block-spacing rule CS-0010 is satisfied throughout memory.go.
+# CACHE-W004 is hereby retracted — it is excluded from the summary count below.
+
+summary:
+  critical: 0
+  warning: 3  # CACHE-W001, CACHE-W002, CACHE-W003 (CACHE-W004 retracted)
+  suggestion: 2
+
+positive:
+  - "Goroutine lifecycle is correct: cleanupLoop exits unconditionally on ctx.Done(), satisfying EC-0010 and EC-0012."
+  - "Guard `if cleanupInterval > 0` prevents time.NewTicker(0) panic (Gotcha G3) — correctly placed in constructor, not inside the goroutine."
+  - "Set no-op for ttl <= 0 is implemented (line 68-70), preserving the ValidateCacheTTL==0 disables-cache contract."
+  - "No import cycle: lib/internal/cache imports only stdlib (context, sync, time). Value type is `any` — cache.MemoryCache does not know about authclient.User."
+  - "Godoc comments are present on all exported types and methods (MemoryCache, NewMemoryCache, Get, Set, Delete)."
+  - "sync.Map is the right primitive: write-once-per-key + concurrent reads pattern with lazy eviction is idiomatic."
+  - "Lazy expire in Get correctly removes expired entries and returns miss (lines 56-59)."
+  - "Delete is idempotent and present (lines 77-79), fulfilling the DOD requirement."
+  - "All 13 cache tests pass under `go test -race` with zero race conditions detected."
+  - "cleanupLoop uses `defer t.Stop()` correctly — ticker resources are released on goroutine exit."
+
+verdict: APPROVED_WITH_COMMENTS
+verdict_reason: |
+  No critical bugs. Three warnings must be addressed before the next release tag:
+  CACHE-W001 (no WaitGroup makes the DOD goroutine-count test inherently racy),
+  CACHE-W002 (bare type assertions risk panic on corrupt map state),
+  CACHE-W003 (constructor naming violates ES-0140).
+  The core correctness and concurrency model are sound.
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - ES-0001  # gofmt — pass
+      - ES-0002  # tabs — pass
+      - ES-0010  # package name lowercase — pass (cache)
+      - ES-0011  # exported vs unexported — pass
+      - ES-0014  # -er suffix for 1-method interfaces — N/A
+      - ES-0021  # early return guard clauses — pass
+      - ES-0022  # minimize variable scope — pass
+      - ES-0031  # zero value usable — pass (sync.Map zero value is ready)
+      - ES-0042  # defer for cleanup — pass (defer t.Stop())
+      - ES-0043  # no defer in loops — pass
+      - ES-0050  # small focused interface — N/A (no interface defined here)
+      - ES-0051  # interface at consumer — pass (Cache interface is in lib/client.go, not here)
+      - ES-0052  # type assertions comma-ok — VIOLATION (CACHE-W002)
+      - ES-0053  # compile-time interface check — N/A
+      - ES-0055  # no generalized interfaces in provider — pass (no interfaces here)
+      - ES-0060  # handle errors explicitly — pass (no errors in this file)
+      - ES-0063  # no panic — pass
+      - ES-0070  # consistent receiver types — pass (all pointer receivers on *MemoryCache)
+      - ES-0071  # pointer receiver for modifications — pass
+      - ES-0080  # godoc present — pass
+      - ES-0081  # godoc starts with name — pass
+      - ES-0130  # import order stdlib only — pass
+      - ES-0140  # constructor named New — VIOLATION (CACHE-W003, named NewMemoryCache)
+    critical_rules_checked:
+      - ES-0051  # Interface at consumer — pass
+      - ES-0052  # Comma-ok assertions — violation (CACHE-W002)
+      - ES-0060  # Handle errors explicitly — pass
+      - ES-0063  # No panic — pass
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "go c.cleanupLoop"
+      - "sync.Map"
+      - "select {"
+      - "<-ctx.Done()"
+      - "<-t.C"
+    rules_applied:
+      - EC-0001  # share memory by communicating — sync.Map is appropriate here
+      - EC-0010  # goroutine lifecycle — pass (ctx.Done exit path)
+      - EC-0011  # cancel contexts — N/A (bgCtx is owned by caller/Client)
+      - EC-0012  # no goroutine leaks — pass (exit via ctx.Done)
+      - EC-0013  # ctx.Done in long-running — pass (select in cleanupLoop)
+      - EC-0033  # defer unlock — N/A (no mutex; sync.Map)
+      - EC-0050  # context as first param — pass
+      - EC-0051  # no context in struct — pass (no ctx stored)
+      - EC-0060  # atomic for simple flags — N/A
+      - EC-0062  # Swap for entry guards — N/A
+      - EC-0063  # no mix atomic/mutex — N/A
+      - EC-0064  # max 1 mutex per method — pass (no mutex at all)
+      - EC-0080  # shutdown via context cancellation — pass
+      - EC-0081  # wait for goroutines — VIOLATION (CACHE-W001, no WaitGroup)
+      - EC-0091  # capture loop variables — pass (no loop variable capture)
+      - EC-0092  # no unprotected shared state — pass (sync.Map)
+    critical_rules_checked:
+      - EC-0010  # Goroutine lifecycle — pass
+      - EC-0012  # No goroutine leak — pass (exit path exists)
+      - EC-0033  # defer unlock — N/A
+      - EC-0062  # Swap for entry guards — N/A
+      - EC-0063  # Don't mix atomic/mutex — N/A
+      - EC-0064  # Max 1 mutex per method — pass
+      - EC-0081  # Wait for goroutines — violation (CACHE-W001)
+      - EC-0091  # Capture loop variables — pass
+      - EC-0092  # No unprotected shared state — pass
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - CS-0001  # line length <= 120 — pass
+      - CS-0002  # explicit returns only — pass
+      - CS-0010  # block spacing — pass (blank lines present after all if-blocks)
+      - CS-0020  # code reads top-to-bottom — pass
+      - CS-0021  # clear meaningful names — pass
+      - CS-0023  # low cyclomatic complexity — pass
+      - CS-0040  # anonymous functions <= 5 lines — pass (Range callback is 5 lines)
+      - CS-0050  # each entity in separate package — pass
+      - CS-0053  # no God-files — pass (101 lines)
+      - CS-0060  # godoc for public methods — pass
+      - CS-0070  # English naming — pass
+      - CS-0082  # function length < 80 lines — pass
+      - CS-0111  # no restate-the-obvious comments — pass
+      - CS-0112  # no decorative separators — pass
+    rules_skipped:
+      - CS-0113  # DTO vs domain model — N/A (entry is unexported helper)
+      - CS-0119  # one primary exported struct per file — pass (MemoryCache is the only exported struct)
+      - CS-0120  # field visibility uniform — pass (MemoryCache has only unexported fields)
+
+  dba_rules:
+    checked: false
+    rules_applied: []
+
+  devops_rules:
+    checked: false
+    rules_applied: []
+
+execution_metrics:
+  duration_seconds: <fill>
+  tokens_used: <fill>

@@ -1,0 +1,350 @@
+package: lib
+task_id: REQ-001-TASK-002
+review_date: 2026-05-18
+reviewer_agent: code-reviewer
+files_reviewed:
+  - lib/client.go
+  - lib/errors.go
+  - lib/logger.go
+  - lib/examples/basic/main.go
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+  tests:
+    status: pass
+    failed: []
+    coverage: "98.7% (lib package), 97.4% total"
+  race_detector:
+    status: pass
+
+issues:
+  critical: []
+
+  warnings:
+    - id: 1
+      severity: WARNING
+      category: style
+      rule: CS-0110
+      file: lib/client.go
+      line: 44
+      title: Internal task identifiers (TASK-003, TASK-002) in exported godoc comments
+      description: |
+        Four exported godoc blocks reference internal task management identifiers
+        that mean nothing to SDK consumers and violate CS-0110 ("No internal standard
+        references in code comments"):
+          - line 44: "FailMode controls how HTTPMiddleware/UnaryInterceptor (TASK-003) react"
+          - line 60–61: "default implementation lives in lib/internal/cache (TASK-003); for
+            TASK-002 the type is declared here so Config compiles"
+          - line 107: "WithCache overrides Config.Cache. Used in TASK-003."
+          - line 113: "that bypass the UnaryInterceptor (TASK-003)."
+
+        CS-0110 forbids references to internal tracking artifacts (task IDs, rule IDs).
+        Comments should explain WHAT and WHY, not trace back to internal roadmap items.
+      suggestion: |
+        Replace TASK-003/TASK-002 references with functional descriptions:
+
+        // FailMode controls how the HTTP middleware and gRPC unary interceptor react
+        // when the AUTH service is unavailable. See WithFailMode.
+
+        // Cache is the interface for ValidateToken result caching. The default
+        // implementation is created by New when Config.Cache is nil; supply a custom
+        // implementation via WithCache to override TTL or storage backend.
+
+        // WithCache overrides the ValidateToken result cache. Pass nil to disable caching.
+
+        // "/myapp.v1.UserService/Login") that bypass the authentication interceptor.
+        // The health-check endpoints /grpc.health.v1.Health/Check and /Watch are
+        // always in the open set.
+
+    - id: 2
+      severity: WARNING
+      category: godoc
+      rule: CS-0060
+      file: lib/client.go
+      line: 74
+      title: Config struct fields lack per-field godoc comments
+      description: |
+        The Config struct exports 9 fields, none of which have field-level
+        documentation comments. The PRP Data Models pseudocode shows the intended
+        inline documentation (e.g., "default 30s; 0 disables cache (used by TASK-003)",
+        "default FailClosed", "appended after SDK defaults"). Without per-field
+        comments, consumers cannot discover defaults or semantics via `go doc
+        github.com/webdelo/auth-client-go/lib Config` — the output lists bare field
+        names with no descriptions.
+
+        CS-0060 requires godoc on all exported identifiers. In Go, struct field
+        comments appear in `go doc` output and are part of the public API surface.
+        This is particularly important for ValidateCacheTTL (zero has special meaning
+        in TASK-003) and DialOptions (ordering matters for credential override).
+      suggestion: |
+        Add per-field comments to the Config struct:
+
+        type Config struct {
+            // Endpoint is the AUTH service address ("host:port"). Required.
+            Endpoint string
+
+            // ValidateCacheTTL is the TTL for ValidateToken results. Defaults to 30s.
+            // Set to a negative value to use the default. Reserved: zero will disable
+            // caching once the cache implementation is wired (currently ignored).
+            ValidateCacheTTL time.Duration
+
+            // FailMode controls middleware behavior when AUTH is unreachable.
+            // Defaults to FailClosed (block the request with 503).
+            FailMode FailMode
+
+            // ValidateTimeout is the per-call timeout for ValidateToken. Defaults to 2s.
+            ValidateTimeout time.Duration
+
+            // LoginTimeout is the per-call timeout for Login. Defaults to 5s.
+            LoginTimeout time.Duration
+
+            // RefreshTimeout is the per-call timeout for Refresh. Defaults to 5s.
+            RefreshTimeout time.Duration
+
+            // DialOptions are appended to the SDK defaults, allowing the consumer
+            // to override transport credentials (TLS), interceptors, etc.
+            // The SDK insecure.NewCredentials() comes first; user options come after,
+            // so a user-supplied WithTransportCredentials wins.
+            DialOptions []grpc.DialOption
+
+            // Logger is the diagnostic logger. Defaults to NoopLogger if nil.
+            Logger Logger
+
+            // Cache is the ValidateToken result cache. Defaults to nil (no cache).
+            Cache Cache
+        }
+
+    - id: 3
+      severity: WARNING
+      category: correctness
+      rule: PRP
+      file: lib/client.go
+      line: 201
+      title: "applyDefaults: ValidateCacheTTL=0 is defaulted to 30s, making cache-disable impossible"
+      description: |
+        PRP Data Models document the contract:
+          "ValidateCacheTTL time.Duration  // default 30s; 0 disables cache (used by TASK-003)"
+
+        The current applyDefaults (lines 201–205):
+          if cfg.ValidateCacheTTL < 0 { cfg.ValidateCacheTTL = 0 }
+          if cfg.ValidateCacheTTL == 0 { cfg.ValidateCacheTTL = defaultValidateCacheTTL }
+
+        When a consumer sets Config{ValidateCacheTTL: 0}, the zero value is silently
+        promoted to 30s, making it impossible to opt out of the cache via the Config
+        struct. TASK-003 will rely on ValidateCacheTTL==0 as the "disable cache" signal.
+        This will cause a latent bug when TASK-003 wires the cache: the cache can never
+        be disabled by Config alone.
+
+        Note: the PRP Code Pattern pseudocode (line 759–763 of the PRP file) mirrors
+        the current implementation. This is an internal PRP inconsistency between the
+        Gotcha G10 prose and the pseudocode. The implementation follows the pseudocode,
+        which is incorrect with respect to the stated contract.
+      suggestion: |
+        Use a sentinel constant to distinguish "user set zero (disable)" from "user
+        omitted (use default)". The simplest fix without adding a new type is to treat
+        negative as "use default" and zero as "disable":
+
+        func applyDefaults(cfg Config) Config {
+            if cfg.ValidateCacheTTL < 0 {
+                // Negative has no sensible meaning; use default.
+                cfg.ValidateCacheTTL = defaultValidateCacheTTL
+            }
+            // ValidateCacheTTL == 0 means "disable cache" — preserved as-is.
+            // TASK-003 will skip creating the cache when TTL is 0.
+            if cfg.ValidateTimeout <= 0 {
+                cfg.ValidateTimeout = defaultValidateTimeout
+            }
+            // ... rest unchanged
+        }
+
+        Update the godoc for ValidateCacheTTL field accordingly (see issue #2).
+
+    - id: 4
+      severity: WARNING
+      category: style
+      rule: CS-0111
+      file: lib/logger.go
+      line: 19
+      title: Redundant phrase "at every logging call site" after "per-call-site" in NoopLogger godoc
+      description: |
+        Line 19 of logger.go reads:
+          "nil so that the SDK avoids per-call-site nil-checks at every logging call site."
+
+        "per-call-site" and "at every logging call site" express the same idea; "call site"
+        is repeated. CS-0111 requires comments to be minimal and non-redundant.
+      suggestion: |
+        // NoopLogger is the silent default Logger. It is used when Config.Logger is
+        // nil so that the SDK avoids nil-checks at every call site.
+
+  suggestions:
+    - id: 5
+      severity: SUGGESTION
+      category: style
+      rule: CS-0111
+      file: lib/logger.go
+      line: 22
+      title: "NoopLogger method godocs: 'No-op.' suffix restates the obvious empty body"
+      description: |
+        The godoc on each NoopLogger method follows the pattern "Info implements
+        Logger. No-op." The "No-op." suffix is redundant — the empty body `{}` already
+        communicates this to any reader. CS-0111 discourages restating what the code
+        already shows.
+
+        "Info implements Logger." alone is sufficient and useful (documents interface
+        satisfaction). The trailing "No-op." adds no information not already visible.
+      suggestion: |
+        // Info implements Logger.
+        func (NoopLogger) Info(context.Context, string, ...any) {}
+
+        // Warn implements Logger.
+        func (NoopLogger) Warn(context.Context, string, ...any) {}
+
+        // Error implements Logger.
+        func (NoopLogger) Error(context.Context, string, error, ...any) {}
+
+    - id: 6
+      severity: SUGGESTION
+      category: correctness
+      rule: EC-0051
+      file: lib/client.go
+      line: 135
+      title: "bgCtx context.Context stored in Client struct (EC-0051 acknowledged exception)"
+      description: |
+        EC-0051 states "Never store context in structs." The Client struct stores
+        bgCtx context.Context (line 135) for lifecycle management of future background
+        goroutines (cache cleaner, TASK-003).
+
+        This is an ACKNOWLEDGED exception: the PRP explicitly prescribes
+        "добавить поле bgCtx context.Context в Client struct" as the solution for
+        goroutine lifecycle tracking across Close(). The background context is not a
+        request-scoped context but an owner-lifetime context — semantically different
+        from what EC-0051 targets.
+
+        Flagged as SUGGESTION for documentation clarity, not as a defect.
+      suggestion: |
+        Add a comment to the bgCtx field to make the intentional exception visible:
+
+        // bgCtx is the owner-lifetime context for background goroutines (cache
+        // cleaner, etc.). It is NOT a request context. Cancelled by Close.
+        // Storing it in the struct is intentional — this is a lifecycle context,
+        // not a per-request context (EC-0051 exception).
+        bgCtx    context.Context
+        cancelBG context.CancelFunc
+
+summary:
+  critical: 0
+  warning: 4
+  suggestion: 2
+
+positive:
+  - "Correct use of grpc.NewClient (not deprecated grpc.Dial) with keepalive {30s, 10s, true} per ADR §R11/A6."
+  - "Retry policy scoped ONLY to /auth.v1.AuthService/ValidateToken — RefreshToken correctly excluded (family detection risk documented in comments)."
+  - "sync.Once idempotent Close with cancelBG invocation — satisfies EC-0010/EC-0012 lifecycle guarantee."
+  - "statusFromWrapped correctly walks errors.Unwrap chain and filters codes.Unknown — handles fmt.Errorf('%w', grpcErr) wrapping properly."
+  - "mapGRPCError nil guard and correct switch: all 5 gRPC codes from mapping table implemented, default branch wraps ErrUnavailable."
+  - "AuthError nil-receiver guard in both Error() and Unwrap() — defensive, correct."
+  - "NoopLogger value-receiver, compile-time interface check var _ Logger = NoopLogger{} per ES-0143."
+  - "Package name is authclient throughout all three files — no package lib leftover."
+  - "insecure.NewCredentials() placed first in dialOpts; user cfg.DialOptions appended after — allows TLS override per ADR §A6."
+  - "All exported identifiers have godoc starting with the identifier name per ES-0081."
+  - "No nolint directives anywhere per ES-0171."
+  - "No deprecated grpc.Dial per ADR §A15."
+  - "100% tests pass (60 tests), 98.7% coverage in lib package — exceeds 85% DOD threshold."
+  - "make audit passes cleanly: vet + lint + test all green."
+  - "defaultOpenMethods() correctly returns both /grpc.health.v1.Health/Check and /grpc.health.v1.Health/Watch."
+  - "applyDefaults normalizes negative timeouts/TTLs defensively; Logger nil → NoopLogger{} applied in applyDefaults (ES-0143)."
+  - "WithLogger option nil-guards to NoopLogger{} at option application time."
+  - "examples/basic/main.go is a minimal stub, compiles cleanly, matches PRP code pattern exactly."
+  - "All 5 sentinel errors present with authclient: prefix — frozen API surface per ADR."
+  - "mapErrorReason correctly defaults unknown reasons to ErrInvalidToken (conservative)."
+
+verdict: APPROVED_WITH_COMMENTS
+verdict_reason: |
+  No critical issues. The implementation is functionally correct and satisfies all
+  DOD criteria: grpc.NewClient, keepalive, scoped retry policy, idempotent Close,
+  5 sentinels + AuthError, statusFromWrapped, mapGRPCError, mapErrorReason, Logger
+  interface + NoopLogger, and the examples stub all match the PRP specification.
+  Tests pass with 98.7% coverage and the race detector finds no issues.
+
+  Four warnings must be addressed before the next TASK build on top of this:
+  (1) TASK-003/TASK-002 task IDs in exported godoc — consumers will see these;
+  (2) Config struct fields lack per-field documentation — important for SDK usability;
+  (3) ValidateCacheTTL=0 is silently promoted to 30s, making cache-disable impossible
+      from Config (latent bug for TASK-003 which depends on TTL=0 as the disable signal);
+  (4) Minor wording redundancy in NoopLogger godoc.
+
+execution_metrics:
+  agent: code-reviewer
+  duration_seconds: unknown
+  tokens_used: unknown
+  cost_usd: unknown
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - ES-0021  # Early returns / guard clauses
+      - ES-0051  # Interface at consumer (Cache, Logger defined here as SDK owner)
+      - ES-0060  # Handle errors explicitly
+      - ES-0061  # Error wrapping with %w
+      - ES-0063  # No panic in production
+      - ES-0081  # Godoc starts with identifier name
+      - ES-0120  # Functional options pattern correctness
+      - ES-0140  # New() constructor naming
+      - ES-0143  # NoopLogger default (not nil)
+      - ES-0171  # No nolint directives
+    critical_rules_checked:
+      - "ES-0051: Cache/Logger interfaces defined as SDK types (SDK is producer+consumer — intentional ADR §A1 exception)"
+      - "ES-0060: All errors handled explicitly, mapGRPCError nil guard present"
+      - "ES-0063: No panic anywhere in production code"
+
+  effective_concurrency:
+    checked: true
+    concurrency_detected: true
+    trigger_found:
+      - "sync.Once"
+      - "context.WithCancel"
+      - "context.CancelFunc"
+    total_rules: 35
+    rules_applied:
+      - EC-0010  # Goroutine lifecycle (bgCtx + cancelBG in Close)
+      - EC-0011  # cancelBG called in Close — context cancel guaranteed
+      - EC-0012  # No goroutine leaks (no goroutines launched in TASK-002)
+      - EC-0051  # bgCtx in struct — intentional exception per PRP, flagged as SUGGESTION
+      - EC-0062  # Swap for entry guards — not applicable (sync.Once used instead)
+      - EC-0063  # Don't mix atomic and mutex — no atomics used
+      - EC-0064  # Max 1 mutex per method — closeOnce is the only sync primitive
+    critical_rules_checked:
+      - "EC-0010: bgCtx + cancelBG provide lifecycle for future goroutines"
+      - "EC-0012: No goroutines launched in TASK-002, no leak risk"
+      - "EC-0062: sync.Once used for idempotent Close — correct pattern"
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - CS-0001  # Line length <= 120 chars — all lines pass
+      - CS-0010  # Block spacing — no violations found
+      - CS-0060  # Godoc on all exported identifiers — warnings raised for Config fields
+      - CS-0070  # English comments — all comments in English
+      - CS-0110  # No internal standard references — warnings raised for TASK-003 refs
+      - CS-0111  # No restating-the-obvious comments — minor issue in NoopLogger
+      - CS-0112  # No decorative separators — none found
+
+  dba_rules:
+    checked: false
+
+  devops_rules:
+    checked: false
