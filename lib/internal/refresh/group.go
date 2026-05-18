@@ -29,9 +29,9 @@ type Group struct {
 // family detection on the next attempt).
 //
 // The underlying singleflight.Group.Do returns a `shared` bool indicating
-// whether more than one caller received the same result. v0.1.0 does not
-// surface it (TASK-004 contract is `(any, error)`); if needed for metrics,
-// expose via a future Stats() method.
+// whether more than one caller received the same result. This wrapper does
+// not surface it — the public contract is `(any, error)`. If deduplication
+// metrics are needed in the future, expose them via a Stats() method.
 func (g *Group) Do(key string, fn func() (any, error)) (any, error) {
 	v, err, _ := g.sf.Do(key, fn)
 	g.sf.Forget(key)

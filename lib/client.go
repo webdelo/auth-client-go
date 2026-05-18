@@ -118,7 +118,6 @@ type Config struct {
 	// SECURITY: the SDK default transport is insecure.NewCredentials()
 	// (plaintext). Production deployments to a remote AUTH server MUST
 	// supply grpc.WithTransportCredentials(...) here to enable TLS.
-	// Caller-supplied options come after SDK defaults so they win.
 	DialOptions []grpc.DialOption
 
 	// Logger is the diagnostic logger. Defaults to NoopLogger if nil.

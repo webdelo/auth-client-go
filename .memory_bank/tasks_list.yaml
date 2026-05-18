@@ -1,6 +1,6 @@
 metadata:
   template_version: '1.0'
-  updated_at: '2026-05-18T14:38:50Z'
+  updated_at: '2026-05-18T17:12:23Z'
   total_pending: 3
   total_active: 0
   total_completed: 4
@@ -149,15 +149,19 @@ completed_tasks:
     code_review:
       completed: true
       completed_at: '2026-05-18'
-      verdict: APPROVED_WITH_COMMENTS
+      verdict: ALL_FIXED
       original_verdict: APPROVED_WITH_COMMENTS
       critical_issues: 0
-      warning_issues: 4
-      suggestion_issues: 6
+      warning_issues: 2
+      suggestion_issues: 1
+      debug_completed_at: '2026-05-18'
     bug_fixing:
       has_bugs: false
-      bugs_fixed: false
+      bugs_fixed: true
+      debug_verdict: ALL_FIXED
   result_report: /Users/a.popov/Development/TRADING/bots/auth-client-go/task_management/results/REQ-001-TASK-004-result-report.md
+  debug_report_files:
+  - task_management/debug_reports/REQ-001-TASK-004-DEBUG-REPORT.yaml
 blocked_tasks: []
 status_reference:
   feature_tasks:

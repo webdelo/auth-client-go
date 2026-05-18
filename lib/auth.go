@@ -137,6 +137,10 @@ func (c *Client) Login(ctx context.Context, in LoginInput) (LoginOutput, error) 
 func (c *Client) Refresh(ctx context.Context, refreshToken, clientIP, userAgent string) (RefreshOutput, error) {
 	callCtx, cancel := context.WithTimeout(ctx, c.cfg.RefreshTimeout)
 	defer cancel()
+	// callCtx bounds this caller's wait on the singleflight. If this goroutine
+	// is a follower (a leader is already in flight for the same refresh token),
+	// the gRPC call runs under the leader's callCtx; this callCtx is then only
+	// consumed by the leader.
 
 	key := hashToken(refreshToken)
 	v, err := c.sf.Do(key, func() (result any, fnErr error) {
