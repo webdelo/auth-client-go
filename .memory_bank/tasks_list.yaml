@@ -1,6 +1,6 @@
 metadata:
   template_version: '1.0'
-  updated_at: '2026-05-18T09:41:39Z'
+  updated_at: '2026-05-18T10:21:51Z'
   total_pending: 5
   total_active: 0
   total_completed: 2
@@ -100,16 +100,20 @@ completed_tasks:
       completed_at: '2026-05-18T11:41:35Z'
     code_review:
       completed: true
-      completed_at: '2026-05-18'
-      verdict: APPROVED
-      original_verdict: APPROVED
+      completed_at: null
+      verdict: ALL_FIXED
+      original_verdict: APPROVED_WITH_COMMENTS
       critical_issues: 0
-      warning_issues: 0
-      suggestion_issues: 0
+      warning_issues: 6
+      suggestion_issues: 5
+      debug_completed_at: '2026-05-18'
     bug_fixing:
       has_bugs: false
-      bugs_fixed: false
+      bugs_fixed: true
+      debug_verdict: ALL_FIXED
   result_report: task_management/results/REQ-001-TASK-002-result-report.md
+  debug_report_files:
+  - task_management/debug_reports/REQ-001-TASK-002-DEBUG-REPORT.yaml
 blocked_tasks: []
 status_reference:
   feature_tasks:

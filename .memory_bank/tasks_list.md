@@ -1,6 +1,6 @@
 # Tasks List
 
-**Generated:** 2026-05-18 09:41:39 UTC
+**Generated:** 2026-05-18 10:21:51 UTC
 
 ## Summary
 
@@ -45,5 +45,5 @@
 | Request | Task ID | Jira | Description | Status | PRP | Execution | Review | Issues | Debug | Files |
 |---------|---------|------|-------------|--------|-----|-----------|--------|--------|-------|-------|
 | [REQ-001](../task_management/tasks/REQ-001.md) | [REQ-001-TASK-001](../task_management/tasks/REQ-001-TASK-001.md) |  | Bootstrap зависимостей и integration test infra (auth-proto, grpc, docker-compose с AUTH, test.env, make test-integration) | ✅ | ✅ | ✅ | ✅ | ⚠️ 2/2 💡 5/5 | - | 📄 [task](../task_management/tasks/REQ-001-TASK-001.md) 📋 [prp](../task_management/plans/REQ-001-TASK-001-PRP.md) ✅ [result](../task_management/results/REQ-001-TASK-001-result-report.md) 🔍 [review](../task_management/reviews/REQ-001-TASK-001-CODE-REVIEW.yaml) |
-| [REQ-001](../task_management/tasks/REQ-001.md) | [REQ-001-TASK-002](../task_management/tasks/REQ-001-TASK-002.md) |  | Core Client + типизированные ошибки + Logger adapter | ✅ | ✅ | ✅ | ✅ | - | - | 📄 [task](../task_management/tasks/REQ-001-TASK-002.md) 📋 [prp](../task_management/plans/REQ-001-TASK-002-PRP.md) ✅ [result](../task_management/results/REQ-001-TASK-002-result-report.md) 🔍 [review](../task_management/reviews/REQ-001-TASK-002-CODE-REVIEW.yaml) |
+| [REQ-001](../task_management/tasks/REQ-001.md) | [REQ-001-TASK-002](../task_management/tasks/REQ-001-TASK-002.md) |  | Core Client + типизированные ошибки + Logger adapter | ✅ | ✅ | ✅ | ✅ | ⚠️ 6/6 💡 5/5 | ✅ | 📄 [task](../task_management/tasks/REQ-001-TASK-002.md) 📋 [prp](../task_management/plans/REQ-001-TASK-002-PRP.md) ✅ [result](../task_management/results/REQ-001-TASK-002-result-report.md) 🔍 [review](../task_management/reviews/REQ-001-TASK-002-CODE-REVIEW.yaml) 🐛 [debug](../task_management/debug_reports/REQ-001-TASK-002-DEBUG-REPORT.yaml) |
 

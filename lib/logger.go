@@ -16,16 +16,16 @@ type Logger interface {
 }
 
 // NoopLogger is the silent default Logger. It is used when Config.Logger is
-// nil so that the SDK avoids per-call-site nil-checks at every logging call site.
+// nil so that the SDK avoids nil-checks at every call site.
 type NoopLogger struct{}
 
-// Info implements Logger. No-op.
+// Info implements Logger.
 func (NoopLogger) Info(context.Context, string, ...any) {}
 
-// Warn implements Logger. No-op.
+// Warn implements Logger.
 func (NoopLogger) Warn(context.Context, string, ...any) {}
 
-// Error implements Logger. No-op.
+// Error implements Logger.
 func (NoopLogger) Error(context.Context, string, error, ...any) {}
 
 var _ Logger = NoopLogger{}

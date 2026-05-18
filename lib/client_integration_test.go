@@ -7,11 +7,6 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	// Blank import keeps the singleflight dependency pinned until TASK-004
-	// wires it into the refresh flow. auth_v1 and grpc are direct imports of
-	// the SDK now (TASK-002).
-	_ "golang.org/x/sync/singleflight"
 )
 
 func TestMain(m *testing.M) {

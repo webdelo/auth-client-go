@@ -1,0 +1,252 @@
+metadata:
+  task_id: REQ-001-TASK-002
+  report_type: DEBUG-REPORT
+  date: "2026-05-18"
+  source_report: task_management/reviews/REQ-001-TASK-002-CODE-REVIEW.yaml
+  source_verdict: APPROVED_WITH_COMMENTS
+  fixer: orchestrator+agents
+  branch: feature/req-001-task-002
+
+pre_validation:
+  performed: true
+  results:
+    build: PASS
+    test: "PASS (60/60)"
+    lint: "PASS (0 issues)"
+    test_race: "PASS (60/60, no races)"
+  notes: |
+    Baseline was already green from the prior CODE-REVIEW iteration (60 tests,
+    98.7% coverage). No baseline fixes required before issue resolution.
+
+fixes:
+  # WARNING-level issues (6)
+  - id: CR-001
+    severity: WARNING
+    category: style
+    rule: CS-0110
+    file: lib/client.go
+    agent: code-writer
+    model: sonnet
+    description: |
+      Removed 4 godoc blocks containing internal task IDs (TASK-002/TASK-003):
+      FailMode type (l.44), Cache interface (l.59-62), WithCache option (l.107),
+      WithOpenMethods option (l.112-115). Replaced with functional descriptions
+      that explain WHAT and WHY without referencing the internal roadmap.
+    status: FIXED
+
+  - id: CR-002
+    severity: WARNING
+    category: godoc
+    rule: CS-0060
+    file: lib/client.go
+    agent: code-writer
+    model: sonnet
+    description: |
+      Added per-field godoc to every Config struct field (Endpoint,
+      ValidateCacheTTL, FailMode, ValidateTimeout, LoginTimeout, RefreshTimeout,
+      DialOptions, Logger, Cache). Each comment documents default value and
+      semantics. Verified visible via `go doc github.com/webdelo/auth-client-go/lib Config`.
+    status: FIXED
+
+  - id: CR-003
+    severity: WARNING
+    category: correctness
+    rule: PRP
+    file: lib/client.go
+    agent: code-writer
+    model: sonnet
+    description: |
+      Fixed applyDefaults so that ValidateCacheTTL=0 is preserved as "cache
+      disabled" (not silently promoted to 30s). Now: negative -> 30s default,
+      zero -> preserved, positive -> as-is. Removed the now-incorrect
+      `< 0 -> 0` step. PRP contract restored; TASK-003 cache layer can use
+      TTL==0 as the disable signal.
+    status: FIXED
+
+  - id: CR-004
+    severity: WARNING
+    category: style
+    rule: CS-0111
+    file: lib/logger.go
+    agent: code-writer
+    model: sonnet
+    description: |
+      Removed redundant phrase "per-call-site ... at every logging call site"
+      in NoopLogger godoc. Now reads "avoids nil-checks at every call site".
+    status: FIXED
+
+  - id: CR-005
+    severity: WARNING
+    category: missing_case
+    rule: "DOD + PRP Task 8"
+    file: lib/client_test.go
+    agent: unit-test-writer
+    model: sonnet
+    description: |
+      Added test case `endpoint_invalid_format_returns_error` exercising
+      `Config{Endpoint: "bad host with spaces"}`. The case tolerates both eager
+      (grpc.NewClient returns error) and lazy (deferred to first RPC) target
+      validation behaviors required by the PRP.
+    status: FIXED
+
+  - id: CR-006
+    severity: WARNING
+    category: structure
+    rule: "UT-0002 (PRP override)"
+    file: lib/logger_test.go
+    agent: unit-test-writer
+    model: sonnet
+    description: |
+      Consolidated TestNoopLogger_Info / _Warn / _Error into a single
+      table-driven TestNoopLogger function with 9 cases covering all three
+      methods (happy_path, no_panic_with_nil_ctx, no_panic_with_empty_fields /
+      _with_nil_err / _with_nil_ctx_and_nil_err) per PRP Task 7 spec.
+    status: FIXED
+
+  # SUGGESTION-level issues (5)
+  - id: CR-007
+    severity: SUGGESTION
+    category: style
+    rule: CS-0111
+    file: lib/logger.go
+    agent: code-writer
+    model: sonnet
+    description: |
+      Removed redundant ". No-op." suffix from NoopLogger.Info/Warn/Error
+      godocs. Empty function bodies already communicate the no-op nature.
+    status: FIXED
+
+  - id: CR-008
+    severity: SUGGESTION
+    category: correctness
+    rule: EC-0051
+    file: lib/client.go
+    agent: code-writer
+    model: sonnet
+    description: |
+      Added an explicit godoc block on the Client.bgCtx / cancelBG fields
+      documenting the deliberate EC-0051 exception (owner-lifetime context,
+      not request-scoped).
+    status: FIXED
+
+  - id: CR-009
+    severity: SUGGESTION
+    category: missing_case
+    rule: "PRP Task 8 (TestNew)"
+    file: lib/client_test.go
+    agent: unit-test-writer
+    model: sonnet
+    description: |
+      Updated test cases to align with CR-003 semantics:
+        - happy_path: now asserts ValidateCacheTTL == 0 (cache-disabled) when
+          zero Config is provided.
+        - defaults_applied_for_timeouts: added ValidateCacheTTL == 0 assertion
+          documenting that zero TTL is preserved alongside timeout defaults.
+        - positive_ttl_preserved (new case): explicitly verifies a positive
+          TTL (5s) passes through applyDefaults unchanged.
+      negative_ttl_normalized_to_default kept as-is (negative still -> 30s).
+    status: FIXED
+
+  - id: CR-010
+    severity: SUGGESTION
+    category: structure
+    rule: "UT-0001, IT-0010"
+    files:
+      - lib/client_integration_test.go
+      - lib/internal/tools/tools.go (new)
+    agent: unit-test-writer
+    model: sonnet
+    description: |
+      Moved the blank import of golang.org/x/sync/singleflight out of the
+      integration test file into a new lib/internal/tools/tools.go guarded
+      by `//go:build tools`. This is the idiomatic Go dep-pinning pattern.
+      Removed the corresponding multi-line comment from the integration test.
+      Note: orchestrator also cleaned a stray TASK-004 reference in the new
+      tools.go to maintain CS-0110 consistency.
+    status: FIXED
+
+  - id: CR-011
+    severity: SUGGESTION
+    category: style
+    rule: "PRP Task 8 (recordingLogger note)"
+    file: lib/client_test.go
+    agent: unit-test-writer
+    model: sonnet
+    description: |
+      Added the `infos int` counter field to recordingLogger and updated Info
+      method to increment it. Forward-compatible with future tests that verify
+      logger invocation counts. Other method signatures use blank identifiers
+      per the PRP code pattern.
+    status: FIXED
+
+skipped: []
+
+summary:
+  total_issues: 11
+  by_severity:
+    critical: 0
+    warning: 6
+    suggestion: 5
+  fixed: 11
+  skipped: 0
+  user_consent_records: []
+
+final_validation:
+  performed: true
+  results:
+    build: PASS
+    build_with_integration_tag: PASS
+    vet: PASS
+    test: "PASS (60/60)"
+    lint: "PASS (0 issues)"
+    test_race: "PASS (60/60, no races)"
+    coverage:
+      lib_package: "98.6%"
+      total: "97.3%"
+      dod_threshold: "85%"
+      dod_met: true
+    go_mod_tidy: clean
+
+dod_validation:
+  performed: true
+  criteria:
+    - criterion: "lib/client.go contains public Config, FailMode, Option, Client, New, WithFailMode, WithLogger, WithCache, WithOpenMethods, (*Client).Close"
+      status: MET
+    - criterion: "New(Config{Endpoint: 'auth:50051'}) returns working *Client; New(Config{}) returns Endpoint error"
+      status: MET
+    - criterion: "(*Client).Close() is idempotent (returns same first error)"
+      status: MET
+    - criterion: "lib/errors.go exports 5 sentinel errors + AuthError + RetryAfter; errors.Is works for all gRPC codes"
+      status: MET
+    - criterion: "statusFromWrapped extracts gRPC status from fmt.Errorf('...: %w', grpcErr) wrap"
+      status: MET
+    - criterion: "lib/logger.go has Logger interface and NoopLogger; NoopLogger does not panic on nil args"
+      status: MET
+    - criterion: "gRPC dial uses grpc.NewClient with keepalive(30s,10s,true) and retry policy only on ValidateToken"
+      status: MET
+    - criterion: "Unit tests cover >= 85% of client.go and errors.go"
+      status: "MET (lib package 98.6%)"
+    - criterion: "make audit (vet + lint + test) passes cleanly"
+      status: MET
+    - criterion: "go doc github.com/webdelo/auth-client-go/lib shows all exported types without TODO"
+      status: "MET (no TODO/TASK references in production lib/*.go)"
+  overall: PASSED
+
+verdict: ALL_FIXED
+
+execution_metrics:
+  sub_agents:
+    - agent: code-writer
+      role: "lib/client.go + lib/logger.go fixes (CR-001..004, 007, 008)"
+      duration_ms: 77137
+      tokens_used: 30778
+      tool_uses: 13
+    - agent: unit-test-writer
+      role: "test files + tools.go (CR-005, 006, 009, 010, 011)"
+      duration_ms: 98130
+      tokens_used: 39399
+      tool_uses: 20
+  totals:
+    waves: 1
+    parallel_agents: 2
+    duration_ms_max: 98130

@@ -9,11 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type recordingLogger struct{}
+type recordingLogger struct {
+	infos int
+}
 
-func (*recordingLogger) Info(context.Context, string, ...any)         {}
-func (*recordingLogger) Warn(context.Context, string, ...any)         {}
-func (*recordingLogger) Error(context.Context, string, error, ...any) {}
+func (r *recordingLogger) Info(_ context.Context, _ string, _ ...any)           { r.infos++ }
+func (r *recordingLogger) Warn(_ context.Context, _ string, _ ...any)           {}
+func (r *recordingLogger) Error(_ context.Context, _ string, _ error, _ ...any) {}
 
 type stubCache struct{}
 
@@ -41,7 +43,7 @@ func TestNew(t *testing.T) {
 						t.Logf("close error: %v", cerr)
 					}
 				})
-				assert.Equal(t, 30*time.Second, c.cfg.ValidateCacheTTL)
+				assert.Equal(t, time.Duration(0), c.cfg.ValidateCacheTTL, "zero TTL preserved as cache-disabled")
 				assert.Equal(t, FailClosed, c.failMode)
 				_, ok := c.logger.(NoopLogger)
 				assert.True(t, ok, "default logger should be NoopLogger")
@@ -144,6 +146,7 @@ func TestNew(t *testing.T) {
 				assert.Equal(t, 2*time.Second, c.cfg.ValidateTimeout)
 				assert.Equal(t, 5*time.Second, c.cfg.LoginTimeout)
 				assert.Equal(t, 5*time.Second, c.cfg.RefreshTimeout)
+				assert.Equal(t, time.Duration(0), c.cfg.ValidateCacheTTL, "zero TTL preserved as cache-disabled (no default override)")
 			},
 		},
 		"with_cache_custom": {
@@ -159,6 +162,37 @@ func TestNew(t *testing.T) {
 				})
 				_, ok := c.cfg.Cache.(*stubCache)
 				assert.True(t, ok, "WithCache should set cfg.Cache")
+			},
+		},
+		"positive_ttl_preserved": {
+			cfg: Config{Endpoint: "x:1", ValidateCacheTTL: 5 * time.Second},
+			want: func(t *testing.T, c *Client, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, c)
+				t.Cleanup(func() {
+					if cerr := c.Close(); cerr != nil {
+						t.Logf("close error: %v", cerr)
+					}
+				})
+				assert.Equal(t, 5*time.Second, c.cfg.ValidateCacheTTL)
+			},
+		},
+		"endpoint_invalid_format_returns_error": {
+			cfg: Config{Endpoint: "bad host with spaces"},
+			want: func(t *testing.T, c *Client, err error) {
+				// grpc.NewClient may validate the target eagerly (returning error)
+				// or lazily (deferring validation to the first RPC). Both are valid.
+				if err != nil {
+					require.Error(t, err)
+					assert.Nil(t, c)
+					return
+				}
+				require.NotNil(t, c)
+				t.Cleanup(func() {
+					if cerr := c.Close(); cerr != nil {
+						t.Logf("close error: %v", cerr)
+					}
+				})
 			},
 		},
 	}

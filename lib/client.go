@@ -41,8 +41,8 @@ const retryServiceConfig = `{
   }]
 }`
 
-// FailMode controls how HTTPMiddleware/UnaryInterceptor (TASK-003) react
-// when the AUTH service is unavailable.
+// FailMode controls how the HTTP middleware and gRPC unary interceptor react
+// when the AUTH service is unavailable. See WithFailMode.
 type FailMode uint8
 
 const (
@@ -56,10 +56,9 @@ const (
 	FailOpen
 )
 
-// Cache is the interface for ValidateToken result caching. The actual
-// default implementation lives in lib/internal/cache (TASK-003); for
-// TASK-002 the type is declared here so Config compiles, and the field
-// defaults to nil.
+// Cache is the interface for ValidateToken result caching. The default
+// implementation is created by New when Config.Cache is nil; supply a custom
+// implementation via WithCache to override TTL or storage backend.
 type Cache interface {
 	// Get returns the cached User and ok=true on hit.
 	Get(ctx context.Context, key string) (user any, ok bool)
@@ -72,15 +71,38 @@ type Cache interface {
 // Config bundles the constructor parameters. Endpoint is the only required
 // field; all others have sensible defaults applied by New.
 type Config struct {
-	Endpoint         string
+	// Endpoint is the AUTH service address ("host:port"). Required.
+	Endpoint string
+
+	// ValidateCacheTTL is the TTL for ValidateToken results. Defaults to 30s
+	// when negative. Zero means "cache disabled" and is preserved as-is by
+	// New; the cache layer skips creation when TTL is zero.
 	ValidateCacheTTL time.Duration
-	FailMode         FailMode
-	ValidateTimeout  time.Duration
-	LoginTimeout     time.Duration
-	RefreshTimeout   time.Duration
-	DialOptions      []grpc.DialOption
-	Logger           Logger
-	Cache            Cache
+
+	// FailMode controls middleware behavior when AUTH is unreachable.
+	// Defaults to FailClosed (block the request with 503).
+	FailMode FailMode
+
+	// ValidateTimeout is the per-call timeout for ValidateToken. Defaults to 2s.
+	ValidateTimeout time.Duration
+
+	// LoginTimeout is the per-call timeout for Login. Defaults to 5s.
+	LoginTimeout time.Duration
+
+	// RefreshTimeout is the per-call timeout for Refresh. Defaults to 5s.
+	RefreshTimeout time.Duration
+
+	// DialOptions are appended to the SDK defaults, allowing the consumer
+	// to override transport credentials (TLS), interceptors, etc. The SDK
+	// insecure.NewCredentials() comes first; user options come after, so a
+	// user-supplied WithTransportCredentials wins.
+	DialOptions []grpc.DialOption
+
+	// Logger is the diagnostic logger. Defaults to NoopLogger if nil.
+	Logger Logger
+
+	// Cache is the ValidateToken result cache. Defaults to nil (no cache).
+	Cache Cache
 }
 
 // Option is a functional option for New.
@@ -104,15 +126,15 @@ func WithLogger(l Logger) Option {
 	}
 }
 
-// WithCache overrides Config.Cache. Used in TASK-003.
+// WithCache overrides the ValidateToken result cache. Pass nil to disable caching.
 func WithCache(cache Cache) Option {
 	return func(c *Client) { c.cfg.Cache = cache }
 }
 
 // WithOpenMethods registers gRPC methods (FullMethod, e.g.
-// "/myapp.v1.UserService/Login") that bypass the UnaryInterceptor (TASK-003).
-// The default whitelist always includes /grpc.health.v1.Health/Check and
-// /grpc.health.v1.Health/Watch.
+// "/myapp.v1.UserService/Login") that bypass the authentication interceptor.
+// The health-check endpoints /grpc.health.v1.Health/Check and /Watch are
+// always in the open set.
 func WithOpenMethods(methods ...string) Option {
 	return func(c *Client) {
 		for _, m := range methods {
@@ -132,8 +154,13 @@ type Client struct {
 	failMode    FailMode
 	openMethods map[string]struct{}
 
-	bgCtx     context.Context
-	cancelBG  context.CancelFunc
+	// bgCtx is the owner-lifetime context for background goroutines (cache
+	// cleaner, etc.). It is NOT a request context. Cancelled by Close.
+	// Storing it in the struct is intentional — this is a lifecycle context,
+	// not a per-request context (EC-0051 exception).
+	bgCtx    context.Context
+	cancelBG context.CancelFunc
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -195,13 +222,11 @@ func newBackgroundContext() (context.Context, context.CancelFunc) {
 }
 
 // applyDefaults fills in zero-value Config fields with SDK defaults.
-// Negative timeouts/TTLs are treated as zero (i.e. defaulted), since
-// negative values have no sensible interpretation.
+// Negative timeouts are treated as "use default" since negative values have
+// no sensible interpretation. ValidateCacheTTL is special: negative defaults
+// to 30s, but zero is preserved (means "cache disabled").
 func applyDefaults(cfg Config) Config {
 	if cfg.ValidateCacheTTL < 0 {
-		cfg.ValidateCacheTTL = 0
-	}
-	if cfg.ValidateCacheTTL == 0 {
 		cfg.ValidateCacheTTL = defaultValidateCacheTTL
 	}
 	if cfg.ValidateTimeout <= 0 {
