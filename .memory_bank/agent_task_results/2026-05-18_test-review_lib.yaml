@@ -1,225 +1,87 @@
-# Test Review Report
-# Package: lib (integration test placeholder)
-# Task: TASK-001 — Bootstrap zavisimostey i integration test infra
-# File reviewed: lib/client_integration_test.go
+review_date: "2026-05-18"
+task_id: "REQ-001-TASK-005"
+files_reviewed:
+  - lib/cookies_test.go
+  - lib/helpers_test.go
+verdict: APPROVED
+test_count:
+  cookies_test_go:
+    TestSetRefreshCookie: 9 cases
+    TestClearRefreshCookie: 5 cases
+  helpers_test_go:
+    TestIPFromRequest: 11 cases
+    TestUserAgentFromRequest: 3 cases
+test_run_result: PASS
+rules_compliance:
+  UT-0001: pass  # map[string]struct{} table-driven pattern used in all 4 test functions
+  UT-0002: pass  # Exactly one test function per public method
+  UT-0011: pass  # "happy_path" is the first declared case in every test map
+  UT-0012: pass  # All case names are snake_case throughout both files
+  UT-0027: pass  # No decorative // ───── separators found
+  UT-0028: pass  # No helper functions for test data construction
+  UT-0029: pass  # No package-level shared test variables
+  UT-0030: pass  # require.Len used as critical guard before cookies[0] dereference in both cookie tests
+  UT-0040: pass  # t.Parallel() called at top of every outer Test* function AND every subtest
+coverage_check:
+  TestSetRefreshCookie:
+    required: 9
+    present: 9
+    cases:
+      - happy_path
+      - with_domain
+      - with_path
+      - with_max_age
+      - with_same_site_lax
+      - all_options_combined
+      - multiple_path_options_last_wins
+      - empty_token_value
+      - negative_max_age
+  TestClearRefreshCookie:
+    required: 5
+    present: 5
+    cases:
+      - happy_path
+      - with_domain_preserved
+      - with_path_preserved
+      - with_max_age_overridden_by_clear
+      - expires_is_epoch_for_legacy_compat
+  TestIPFromRequest:
+    required: 11
+    present: 11
+    cases:
+      - happy_path
+      - xff_single_ip
+      - xff_multi_ip_first_wins
+      - xff_with_whitespace_trimmed
+      - xff_multi_with_whitespace
+      - remote_addr_ipv4_with_port
+      - remote_addr_ipv6_with_port
+      - remote_addr_without_port
+      - all_sources_empty
+      - x_real_ip_takes_priority_over_xff
+      - xff_takes_priority_over_remote_addr
+  TestUserAgentFromRequest:
+    required: 3
+    present: 3
+    cases:
+      - happy_path
+      - empty_user_agent
+      - unicode_user_agent
+critical_issues: []
+warning_issues: []
+suggestion_issues: []
+notes: |
+  Both files are clean and fully compliant with all checked standards.
 
-# === METADATA ===
-metadata:
-  date: "2026-05-18"
-  reviewer: "test-reviewer"
-  package: "github.com/webdelo/auth-client-go/lib"
-  files_reviewed: 1
-  total_tests: 1
-  coverage_percent: 0.0  # N/A — integration placeholder; no production code added in TASK-001
+  cookies_test.go (209 lines): All 14 cases across TestSetRefreshCookie and TestClearRefreshCookie
+  pass. require.Len is correctly placed before cookies[0] dereference in both loops, acting as the
+  critical guard. The RFC 6265 leading-dot-stripping comment is a useful callout for readers.
+  tc := tc capture is present on lines 125 and 196.
 
-# === TEST RESULTS ===
-test_results:
-  status: "pass"
-  passed: 1       # unit tests (make test, no integration tag)
-  failed: 0
-  skipped: 0
-  duration_seconds: 0.0
-  notes: |
-    - `make test` (no integration tag): 1 test PASS (TestVersion in lib_test.go).
-      client_integration_test.go is correctly excluded by build tag — not compiled.
-    - `go test -tags=integration` with RUN_INTEGRATION_TESTS=false: exits 0 (TestMain gate works).
-    - `go test -tags=integration` with RUN_INTEGRATION_TESTS=true AUTH_ENDPOINT=localhost:59999:
-      TestAuthEndpointReachable FAIL — correct behavior (connection refused on unreachable port).
-  failed_tests: []
+  helpers_test.go (97 lines): All 14 cases across TestIPFromRequest and TestUserAgentFromRequest
+  pass. Priority chain (X-Real-IP > X-Forwarded-For > RemoteAddr) is exercised by dedicated
+  priority cases. IPv6 bracket stripping, whitespace trimming, and empty-source fallback are all
+  explicitly covered. tc := tc capture is present on lines 70 and 111.
 
-# === STANDARDS COMPLIANCE ===
-# Scope note: this is an integration smoke test / dependency-pin placeholder, not a unit test.
-# UT-* rules for table-driven, mocks, parallelism are explicitly out-of-scope per task definition.
-# Applicable standards: IT-0001, IT-0008, ES-0060, ES-0171, and integration test general structure.
-
-standards_compliance:
-
-  build_tag:
-    status: "pass"
-    notes: "//go:build integration on line 1, no blank line before package declaration. Correct."
-    violations: []
-
-  external_test_package:
-    status: "pass"
-    notes: "package lib_test — correct external test package per IT-0001 spirit for SDK libs."
-    violations: []
-
-  testmain_gate:
-    standard: "IT-0008"
-    status: "pass"
-    notes: >
-      TestMain checks RUN_INTEGRATION_TESTS == "true" and exits with code 0 (skip semantics)
-      if the env var is absent or any other value. Verified empirically: build + run without env
-      exits cleanly. m.Run() return value is forwarded to os.Exit.
-    violations: []
-
-  error_handling:
-    standard: "ES-0060"
-    status: "pass"
-    notes: >
-      Two error-returning calls: net.DialTimeout and conn.Close.
-      Both errors are captured in named variables and cause t.Fatalf — no silent ignores,
-      no blank-identifier discards. Full compliance with ES-0060.
-    violations: []
-
-  nolint_annotations:
-    standard: "ES-0171"
-    status: "pass"
-    notes: "Zero //nolint: annotations in the file."
-    violations: []
-
-  blank_imports_rationale:
-    status: "pass"
-    notes: >
-      Three blank imports (auth_v1, singleflight, grpc) are documented with a block comment
-      explaining the purpose (pin deps as direct until TASK-002/004 wire them into real code)
-      and the removal condition. This is intentional design for TASK-001 scope.
-    violations: []
-
-  naming_convention:
-    test_type_method_format:
-      status: "na"
-      notes: >
-        UT-0010 format (Test<Type>_<Method>) applies to unit tests for a specific type/method.
-        TestMain is a stdlib-mandated name; TestAuthEndpointReachable is a smoke test for
-        infrastructure, not a method on a type. Naming is appropriate for integration smoke tests.
-      violations: []
-    happy_path_first:
-      status: "na"
-      notes: "UT-0011 applies to table-driven unit tests. N/A for this placeholder."
-      violations: []
-
-  table_driven_tests:
-    pattern_used:
-      status: "na"
-      notes: "UT-0001 explicitly out-of-scope per task definition for TASK-001 placeholder."
-      violations: []
-    parallel_execution:
-      status: "na"
-      notes: "IT-0010 prohibits parallel execution for integration tests. No t.Parallel() — correct."
-      violations: []
-
-  assertions:
-    require_vs_assert:
-      status: "pass"
-      notes: >
-        t.Fatalf is used for both the dial error and the close error — stops the test immediately
-        on failure, matching the semantics of require. testify is not imported (not needed for
-        this simple TCP dial test), which is acceptable.
-      violations: []
-    no_logic_in_tests:
-      status: "pass"
-      notes: "No if/switch branching in assertions. Default endpoint fallback is input setup, not assertion logic."
-      violations: []
-
-  mocks:
-    call_count_specified:
-      status: "na"
-      notes: "No mocks — TASK-001 has no interfaces."
-      violations: []
-    no_mock_anything_business:
-      status: "na"
-      notes: "No mocks."
-      violations: []
-    new_mocks_per_subtest:
-      status: "na"
-      notes: "No mocks."
-      violations: []
-    assert_expectations:
-      status: "na"
-      notes: "No mocks."
-      violations: []
-
-# === ISSUES ===
-issues:
-  critical: []
-
-  warnings: []
-
-  suggestions:
-    - id: "TEST-S001"
-      title: "conn.Close error could use errors.Join pattern in future real tests"
-      file: "lib/client_integration_test.go"
-      line: 36
-      standard: "ES-0060 (effective_standards.md)"
-      description: |
-        Currently `conn.Close` error is handled with a standalone `t.Fatalf`. For this TCP
-        smoke test that is perfectly fine. In future integration tests that do multiple cleanup
-        operations (e.g. gRPC connection close + context cancel), consider chaining errors
-        with errors.Join or defer-with-named-return to ensure all cleanup errors surface.
-        No action required for TASK-001.
-      current_code: |
-        if err := conn.Close(); err != nil {
-            t.Fatalf("close conn: %v", err)
-        }
-      recommended_fix: |
-        # No change needed for TASK-001. For multi-step cleanup in future tests:
-        # t.Cleanup(func() {
-        #     if err := conn.Close(); err != nil {
-        #         t.Errorf("close conn: %v", err)  // non-fatal cleanup error
-        #     }
-        # })
-      reason: "Informational only — pattern to keep in mind for TASK-003+ gRPC connection teardown."
-
-    - id: "TEST-S002"
-      title: "Consider t.Skip instead of os.Exit(0) in TestMain for skip semantics visibility"
-      file: "lib/client_integration_test.go"
-      line: 22
-      standard: "IT-0008 (integration_tests_standards.md)"
-      description: |
-        TestMain uses os.Exit(0) when RUN_INTEGRATION_TESTS != "true". This exits cleanly
-        and prevents test execution as intended. Some projects prefer os.Exit(0) (current)
-        while others call m.Run() after printing a skip message so the test binary reports
-        "no test files" rather than zero exit. Both approaches are valid; the current one
-        matches the pattern in IT-0060 runner.go reference implementation.
-        No change required.
-      current_code: |
-        if os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
-            os.Exit(0)
-        }
-      recommended_fix: |
-        # Alternative (informational only):
-        # if os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
-        #     fmt.Println("skipping integration tests: set RUN_INTEGRATION_TESTS=true")
-        #     os.Exit(0)
-        # }
-      reason: "Minor observability improvement for CI logs. Current form is compliant."
-
-# === COVERAGE ANALYSIS ===
-coverage:
-  overall_percent: 0.0
-  notes: >
-    Coverage is N/A for this review. TASK-001 adds no production code — lib/lib.go contains
-    only the Version constant. The integration test file is excluded from unit coverage by
-    build tag. Coverage measurement begins with TASK-002+ when real SDK code is introduced.
-  by_function: []
-  uncovered_lines: []
-
-# === SUMMARY ===
-summary:
-  critical_count: 0
-  warning_count: 0
-  suggestion_count: 2
-  standards_violations: 0
-  coverage_status: "na"  # no production code in TASK-001
-
-# === POSITIVE OBSERVATIONS ===
-positive:
-  - "Build tag //go:build integration correctly excludes file from regular make test — verified empirically."
-  - "External test package lib_test is correct for a library SDK."
-  - "TestMain gate (RUN_INTEGRATION_TESTS=true) verified working: exits 0 when absent, runs tests when set."
-  - "Both error-returning calls (DialTimeout, conn.Close) are explicitly checked — ES-0060 fully satisfied."
-  - "Zero //nolint: annotations — ES-0171 fully satisfied."
-  - "Blank imports are annotated with a clear block comment explaining purpose and removal condition."
-  - "Default endpoint fallback (localhost:50051) makes local development ergonomic without mandatory env var."
-  - "Test is a TCP dial only (not gRPC handshake) — correctly scoped for TASK-001 infra smoke test."
-  - "5-second dial timeout is reasonable for CI environments with slow Docker startup."
-
-# === VERDICT ===
-verdict: "APPROVED"
-verdict_reason: >
-  The file fully satisfies TASK-001 requirements: build tag, external test package,
-  TestMain env-var gate, TCP smoke test with explicit error handling, documented blank
-  imports, and no nolint annotations. All applicable standards (IT-0008, ES-0060, ES-0171)
-  pass without violations. Two suggestions are informational only and explicitly not required
-  for TASK-001 scope. The file is ready to be committed as-is.
+  Race detector run (go test -race) produced zero data-race warnings across all 28 subtests.
+  Total test runtime: ~1.3 s.

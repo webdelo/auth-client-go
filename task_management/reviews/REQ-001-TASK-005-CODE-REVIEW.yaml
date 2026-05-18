@@ -1,0 +1,229 @@
+task_id: REQ-001-TASK-005
+review_date: "2026-05-18"
+verdict: APPROVED
+
+# ────────────────────────────────────────────────────────────────────────────────
+# SOURCE REPORTS
+# ────────────────────────────────────────────────────────────────────────────────
+source_reviews:
+  code_review:
+    - ".memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-005_lib.yaml"
+  test_review:
+    - ".memory_bank/agent_task_results/2026-05-18_test-review_lib.yaml"
+
+# ────────────────────────────────────────────────────────────────────────────────
+# SCOPE
+# ────────────────────────────────────────────────────────────────────────────────
+scope:
+  packages:
+    - lib
+  files_reviewed:
+    - lib/cookies.go
+    - lib/helpers.go
+    - lib/cookies_test.go
+    - lib/helpers_test.go
+
+# ────────────────────────────────────────────────────────────────────────────────
+# SUMMARY
+# ────────────────────────────────────────────────────────────────────────────────
+summary:
+  total: 0
+  critical: 0
+  warning: 0
+  suggestion: 0
+  by_package:
+    lib:
+      critical: 0
+      warning: 0
+      suggestion: 0
+
+# ────────────────────────────────────────────────────────────────────────────────
+# ISSUES
+# ────────────────────────────────────────────────────────────────────────────────
+issues: []
+
+critical_issues: []
+warning_issues: []
+suggestion_issues: []
+
+# ────────────────────────────────────────────────────────────────────────────────
+# STATIC ANALYSIS
+# ────────────────────────────────────────────────────────────────────────────────
+validation_checks:
+  build:
+    status: PASS
+    details: "go build ./lib/... — no errors"
+  fmt:
+    status: PASS
+    details: "gofmt -l returned empty — all files correctly formatted"
+  vet:
+    status: PASS
+    details: "go vet ./lib/... — no issues"
+  lint:
+    status: PASS
+    details: "golangci-lint: 0 issues"
+  test:
+    status: PASS
+    details: "go test -count=1: 165 tests passed"
+  test_race:
+    status: PASS
+    details: "go test -race -count=1: 165 tests passed, 0 data-race warnings"
+
+# ────────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ────────────────────────────────────────────────────────────────────────────────
+coverage:
+  "lib/cookies.go": "100%"
+  "lib/helpers.go": "100%"
+  notes: >
+    Both production files reach 100% statement coverage.
+    cookies.go: WithCookieDomain, WithCookiePath, WithCookieMaxAge, WithCookieSameSite,
+    SetRefreshCookie, ClearRefreshCookie, newRefreshCookie — all 100%.
+    helpers.go: IPFromRequest (all fallback branches), UserAgentFromRequest — all 100%.
+
+# ────────────────────────────────────────────────────────────────────────────────
+# TEST RESULTS
+# ────────────────────────────────────────────────────────────────────────────────
+test_results:
+  total: 165
+  passed: 165
+  failed: 0
+  skipped: 0
+  breakdown:
+    TestSetRefreshCookie: 9
+    TestClearRefreshCookie: 5
+    TestIPFromRequest: 11
+    TestUserAgentFromRequest: 3
+
+# ────────────────────────────────────────────────────────────────────────────────
+# PRP DOD COMPLIANCE
+# ────────────────────────────────────────────────────────────────────────────────
+prp_dod_compliance:
+  cookies_security_regression_guard: pass
+  # HttpOnly=true and Secure=true re-asserted AFTER the opts loop (cookies.go:102-106)
+  cookies_no_insecure_options: pass
+  # Only 4 permitted option constructors exist: WithCookieDomain, WithCookiePath,
+  # WithCookieMaxAge, WithCookieSameSite — no security-disabling options
+  cookies_defaults_correct: pass
+  # defaultRefreshCookieName="refresh_token", defaultRefreshCookiePath="/auth/refresh",
+  # defaultRefreshCookieMaxAge=14*24*60*60 (1209600s), SameSite=StrictMode, Domain="" (host-only)
+  cookies_clear_expires_epoch: pass
+  # ClearRefreshCookie: MaxAge=-1 AND Expires=time.Unix(0,0) with RFC 6265 §5.3 comment
+  helpers_fallback_chain_order: pass
+  # IPFromRequest: X-Real-IP → XFF[0] (SplitN limit=2, TrimSpace) → SplitHostPort host → RemoteAddr
+  helpers_security_warning: pass
+  # SECURITY spoofing warning present in godoc with correct mitigation note
+  godoc_es0080_es0081: pass
+  # All 9 exported identifiers have godoc starting with the identifier name
+  no_nolint_es0171: pass
+  # No //nolint annotations in either file
+
+# ────────────────────────────────────────────────────────────────────────────────
+# TEST STANDARDS COMPLIANCE
+# ────────────────────────────────────────────────────────────────────────────────
+test_standards_compliance:
+  UT-0001: pass  # map[string]struct{} table-driven pattern used in all 4 test functions
+  UT-0002: pass  # Exactly one test function per public method
+  UT-0011: pass  # "happy_path" is the first declared case in every test map
+  UT-0012: pass  # All case names are snake_case throughout both files
+  UT-0027: pass  # No decorative // ───── separators found
+  UT-0028: pass  # No helper functions for test data construction
+  UT-0029: pass  # No package-level shared test variables
+  UT-0030: pass  # require.Len used as critical guard before cookies[0] dereference in both cookie tests
+  UT-0040: pass  # t.Parallel() called at top of every outer Test* function AND every subtest
+
+# ────────────────────────────────────────────────────────────────────────────────
+# POSITIVES
+# ────────────────────────────────────────────────────────────────────────────────
+positives:
+  # From code-reviewer
+  - "Functional options pattern (ES-0120) correctly applied — CookieOption is func(*http.Cookie), identical idiom to Option func(*Client) from TASK-002."
+  - "Security invariant (HttpOnly+Secure forcibly re-asserted AFTER opts loop) implemented in newRefreshCookie; ordering contract documented in CookieOption godoc."
+  - "Only 4 permitted options exported; no security-disabling options exist. Forbidden options named in unexported helper's godoc."
+  - "ClearRefreshCookie correctly sets MaxAge=-1 AND Expires=time.Unix(0,0) together, matching RFC 6265 §5.3 compat pattern from auth-service reference."
+  - "All exported identifiers start their godoc with the identifier name (ES-0080/0081) — verified for all 9 exported symbols."
+  - "Named constants for all defaults; no magic numbers (CS-0003)."
+  - "No lines exceed 120 characters (CS-0001). No decorative separators (CS-0112)."
+  - "IPFromRequest fallback chain matches PRP specification exactly: X-Real-IP → XFF[0] → SplitHostPort host → RemoteAddr verbatim."
+  - "strings.SplitN(xff, \",\", 2) correctly uses limit=2, preventing unnecessary work when XFF contains many hops."
+  - "strings.TrimSpace applied to XFF first element before returning."
+  - "SECURITY warning in IPFromRequest godoc is concise, actionable, and documents spoofing risk with correct mitigation."
+  - "UserAgentFromRequest is a clean passthrough; rationale comment (API symmetry) explains why trivial wrapper is warranted."
+  - "Guard-clause pattern (ES-0021) produces flat, readable control flow in both files."
+  - "No goroutines, mutex, atomic, or channels in either file — no concurrency concerns."
+  # From test-reviewer
+  - "All 28 test cases pass with -race; 0 data-race warnings across all subtests. Total test runtime ~1.3s."
+  - "tc := tc capture present in both cookie test loops (cookies_test.go:125, 196) and helper test loops (helpers_test.go:70, 111)."
+  - "RFC 6265 leading-dot-stripping comment in cookies_test.go is a useful annotation for readers."
+  - "Priority chain (X-Real-IP > X-Forwarded-For > RemoteAddr) exercised by dedicated priority test cases."
+  - "IPv6 bracket stripping, whitespace trimming, and empty-source fallback are all explicitly covered in TestIPFromRequest."
+  - "require.Len correctly placed before cookies[0] dereference in both cookie test loops — acts as critical guard against index panic."
+
+# ────────────────────────────────────────────────────────────────────────────────
+# DOD VALIDATION — per REQ-001-TASK-005 DOD
+# ────────────────────────────────────────────────────────────────────────────────
+dod_validation:
+  overall_status: PASS
+  criteria:
+    - id: DOD-01
+      criterion: "lib/cookies.go: SetRefreshCookie and ClearRefreshCookie implemented with functional options"
+      check: "Both functions present with CookieOption type and 4 option constructors"
+      status: MET
+    - id: DOD-02
+      criterion: "HttpOnly=true and Secure=true enforced unconditionally (post-opts)"
+      check: "cookies.go:102-106 — both flags set after for-loop over opts"
+      status: MET
+    - id: DOD-03
+      criterion: "ClearRefreshCookie sets MaxAge=-1 and Expires=time.Unix(0,0)"
+      check: "cookies.go:81 (MaxAge=-1) and cookies.go:85 (Expires=epoch); RFC comment present"
+      status: MET
+    - id: DOD-04
+      criterion: "lib/helpers.go: IPFromRequest with X-Real-IP > XFF > RemoteAddr fallback chain"
+      check: "helpers.go:33-43 — fallback chain order verified, matches PRP specification exactly"
+      status: MET
+    - id: DOD-05
+      criterion: "lib/helpers.go: UserAgentFromRequest returns r.UserAgent()"
+      check: "helpers.go:46-49 — clean passthrough with API-symmetry rationale comment"
+      status: MET
+    - id: DOD-06
+      criterion: "SECURITY warning present in IPFromRequest godoc"
+      check: "helpers.go:24-28 — spoofing warning with trusted proxy mitigation documented"
+      status: MET
+    - id: DOD-07
+      criterion: "Coverage ≥80% on cookies.go and helpers.go"
+      check: "cookies.go=100%, helpers.go=100% — exceeds threshold"
+      status: MET
+    - id: DOD-08
+      criterion: "make audit passes; go test -race passes without race-detection errors"
+      check: "build PASS, fmt PASS, vet PASS, lint 0 issues, 165/165 tests pass with -race"
+      status: MET
+
+# ────────────────────────────────────────────────────────────────────────────────
+# VALIDATION
+# ────────────────────────────────────────────────────────────────────────────────
+validation:
+  status: PASSED
+  checks:
+    - name: "code-review report processed"
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: "test-review report processed"
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: "critical issue counts match (0 == 0)"
+      status: PASS
+    - name: "warning issue counts match (0 == 0)"
+      status: PASS
+    - name: "suggestion issue counts match (0 == 0)"
+      status: PASS
+    - name: "all files reviewed present"
+      expected: 4
+      actual: 4
+      status: PASS
+
+# ────────────────────────────────────────────────────────────────────────────────
+# NEXT STEP
+# ────────────────────────────────────────────────────────────────────────────────
+next_step: "APPROVED — no fixes required. Proceed to next task."

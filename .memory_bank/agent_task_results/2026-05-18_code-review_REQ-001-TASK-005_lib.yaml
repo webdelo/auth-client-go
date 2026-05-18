@@ -1,0 +1,192 @@
+review_date: "2026-05-18"
+task_id: "REQ-001-TASK-005"
+files_reviewed:
+  - lib/cookies.go
+  - lib/helpers.go
+
+verdict: APPROVED
+
+# ────────────────────────────────────────────────────────────
+# PRP DOD compliance
+# ────────────────────────────────────────────────────────────
+prp_dod_compliance:
+
+  # 1. HttpOnly=true and Secure=true are set AFTER the opts loop.
+  #    lib/cookies.go:102-106: for-loop executes opts, then cookie.HttpOnly=true, cookie.Secure=true.
+  cookies_security_regression_guard: pass
+
+  # 2. No WithCookieInsecure, WithCookieAllowJS, WithCookieValue, WithCookieName options exist.
+  #    Only 4 exported option constructors: WithCookieDomain, WithCookiePath,
+  #    WithCookieMaxAge, WithCookieSameSite. Confirmed by grepping all exported funcs.
+  cookies_no_insecure_options: pass
+
+  # 3. Defaults verified:
+  #    defaultRefreshCookieName   = "refresh_token"        (line 9)
+  #    defaultRefreshCookiePath   = "/auth/refresh"        (line 10)
+  #    defaultRefreshCookieMaxAge = 14 * 24 * 60 * 60      (line 11; = 1209600)
+  #    SameSite                   = http.SameSiteStrictMode (line 100)
+  #    Domain                     = ""                     (zero value; host-only)
+  cookies_defaults_correct: pass
+
+  # 4. ClearRefreshCookie sets cookie.MaxAge = -1 (line 81)
+  #    AND cookie.Expires = time.Unix(0, 0) (line 85).
+  #    Both present; inline comment explains RFC 6265 §5.3 legacy-browser compat.
+  cookies_clear_expires_epoch: pass
+
+  # 5. IPFromRequest fallback chain (helpers.go:33-43):
+  #      X-Real-IP (non-empty) →
+  #      X-Forwarded-For[0] (SplitN limit=2, TrimSpace applied) →
+  #      net.SplitHostPort host part →
+  #      r.RemoteAddr verbatim (SplitHostPort error branch).
+  #    Order matches PRP specification exactly.
+  helpers_fallback_chain_order: pass
+
+  # 6. SECURITY warning in IPFromRequest godoc (helpers.go:24-28):
+  #    "SECURITY: This function is spoofable in the absence of a trusted proxy."
+  #    Warning explains the spoofing risk and prescribes mitigation (trusted proxy).
+  helpers_security_warning: pass
+
+  # 7. All exported identifiers have godoc starting with the identifier name (ES-0080/0081):
+  #    CookieOption (line 14), WithCookieDomain (line 24), WithCookiePath (line 29),
+  #    WithCookieMaxAge (line 36), WithCookieSameSite (line 44), SetRefreshCookie (line 51),
+  #    ClearRefreshCookie (line 72), IPFromRequest (line 9), UserAgentFromRequest (line 46).
+  godoc_es0080_es0081: pass
+
+  # 8. No //nolint annotations found in either file (grep returned empty).
+  no_nolint_es0171: pass
+
+# ────────────────────────────────────────────────────────────
+# Static analysis
+# ────────────────────────────────────────────────────────────
+build_status: PASS       # go build ./lib/... — no errors
+lint_status: PASS        # golangci-lint: 0 issues
+test_status: PASS        # go test -race -count=1: ok, 165 tests passed
+
+coverage:
+  cookies.go: "100%"     # WithCookieDomain/Path/MaxAge/SameSite/SetRefreshCookie/ClearRefreshCookie/newRefreshCookie all 100%
+  helpers.go: "100%"     # IPFromRequest 100%, UserAgentFromRequest 100%
+
+# ────────────────────────────────────────────────────────────
+# Issues
+# ────────────────────────────────────────────────────────────
+critical_issues: []
+
+warning_issues: []
+
+suggestion_issues: []
+
+# ────────────────────────────────────────────────────────────
+# Notes
+# ────────────────────────────────────────────────────────────
+notes: |
+  Both files are production-ready with zero issues found.
+
+  lib/cookies.go:
+  - The functional options pattern (ES-0120) is correctly applied. CookieOption is
+    defined as func(*http.Cookie) — identical idiom to Option func(*Client) from TASK-002.
+  - The security invariant (HttpOnly+Secure forcibly re-asserted AFTER the opts loop) is
+    correctly implemented in newRefreshCookie. The godoc on CookieOption explicitly
+    documents this ordering contract so the invariant is transparent to contributors.
+  - Only the 4 permitted options are exported; no security-disabling options exist.
+    The "forbidden" options are also named in the unexported helper's godoc for clarity.
+  - ClearRefreshCookie correctly sets MaxAge=-1 AND Expires=time.Unix(0,0) together,
+    matching the RFC 6265 §5.3 compat pattern from the auth-service reference implementation.
+  - All exported identifiers start their godoc with the identifier name (ES-0080/0081).
+  - Named constants for all defaults; no magic numbers (CS-0003).
+  - No lines exceed 120 characters (CS-0001). No decorative separators (CS-0112).
+
+  lib/helpers.go:
+  - IPFromRequest fallback chain matches the PRP specification exactly:
+      X-Real-IP → XFF[0] → SplitHostPort host → RemoteAddr verbatim.
+  - strings.SplitN(xff, ",", 2) correctly uses limit=2, preventing unnecessary work
+    when XFF contains many hops (e.g., "1.2.3.4, 5.6.7.8, 9.10.11.12").
+  - strings.TrimSpace is applied to the XFF first element before returning.
+  - SECURITY warning in godoc is concise, actionable, and documents the spoofing risk
+    with the correct mitigation (strip/overwrite headers at trusted proxy layer).
+  - UserAgentFromRequest is a clean passthrough; the rationale comment (API symmetry)
+    explains why a trivial wrapper is warranted without over-justifying.
+  - Guard-clause pattern (ES-0021) produces flat, readable control flow.
+
+  Coverage for both files is 100%. The test suite includes:
+  - cookies_test.go: table-driven tests covering defaults, each option, clear symmetry,
+    and security regression guard (HttpOnly+Secure assertions on every test case).
+  - helpers_test.go: 7+ IP edge cases (X-Real-IP, XFF multi, XFF whitespace, IPv4,
+    IPv6, no-port, all empty) and 3 UA cases (empty, typical, unicode).
+
+# ────────────────────────────────────────────────────────────
+# Rules verified
+# ────────────────────────────────────────────────────────────
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"   # gofmt: no files need formatting (gofmt -l returned empty)
+      - "ES-0002"   # tabs used throughout
+      - "ES-0003"   # braces on same line
+      - "ES-0010"   # package authclient — lowercase, no underscores
+      - "ES-0011"   # exported/unexported identifiers correct
+      - "ES-0015"   # MixedCaps used for all identifiers
+      - "ES-0016"   # function names use MixedCaps
+      - "ES-0021"   # guard clauses in IPFromRequest (early returns on each branch)
+      - "ES-0040"   # IPFromRequest returns string only (error-less by specification; PRP §Critical rules)
+      - "ES-0045"   # functional options instead of zero-value optional params
+      - "ES-0051"   # no interfaces defined in these files (N/A)
+      - "ES-0060"   # no swallowed errors; no _ = err patterns
+      - "ES-0063"   # no panic in production code
+      - "ES-0070"   # consistent receiver types (all option funcs are standalone funcs, not methods)
+      - "ES-0080"   # godoc precedes declarations
+      - "ES-0081"   # godoc starts with identifier name — verified for all 9 exported identifiers
+      - "ES-0110"   # no fmt.Sprintf for numeric conversions (only int() cast used)
+      - "ES-0120"   # functional options pattern correctly applied
+      - "ES-0130"   # imports: stdlib-only (net/http, time, net, strings); correctly grouped, single block
+      - "ES-0170"   # *http.Cookie (mutable option target), *http.Request (stdlib convention) — correct pointer use
+      - "ES-0171"   # no nolint annotations anywhere
+      - "ES-0173"   # no unclear abbreviations: w, r, v, xff, host are all idiomatic Go single-letters in scope
+    critical_rules_checked:
+      - "ES-0051"   # Interface at consumer — N/A (no interfaces defined in these files)
+      - "ES-0060"   # Handle errors explicitly — pass
+      - "ES-0063"   # No panic — pass
+      - "ES-0171"   # No nolint — pass
+
+  effective_concurrency:
+    checked: false
+    concurrency_detected: false
+    trigger_found: []
+    rules_applied: []
+    notes: >
+      No goroutines, mutex, atomic, channels, or select statements in either file.
+      EC-* rules are not applicable.
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"   # line length: no lines exceed 120 chars (verified with awk)
+      - "CS-0002"   # no naked returns
+      - "CS-0003"   # no magic numbers; all defaults extracted to named constants
+      - "CS-0004"   # no global mutable state (only const block)
+      - "CS-0010"   # block spacing: empty lines after if blocks present and correct
+      - "CS-0020"   # code reads top-to-bottom naturally
+      - "CS-0021"   # meaningful names: defaultRefreshCookieName, refreshToken, xff, etc.
+      - "CS-0023"   # low cyclomatic complexity; guard clauses flatten nesting
+      - "CS-0024"   # no over-engineering; helpers are purposefully minimal
+      - "CS-0050"   # both files in package authclient — PRP-documented exception for small
+                    # stdlib-wrapping helpers in lib/ (identical layout to TASK-002/003/004)
+      - "CS-0060"   # godoc on all public identifiers — verified for 9 exported symbols
+      - "CS-0061"   # gofmt + golangci-lint pass clean
+      - "CS-0070"   # English-only names
+      - "CS-0071"   # meaningful variable names
+      - "CS-0082"   # all functions well under 40 lines
+      - "CS-0111"   # no restating-the-obvious inline comments; all inline comments explain why
+                    # (e.g., "RFC 6265 §5.3 compat", "API symmetry with IPFromRequest")
+      - "CS-0112"   # no decorative separators
+      - "CS-0110"   # no internal standard/task references in comments
+
+  dba_rules:
+    checked: false
+    notes: "No database access in these files."
+
+  devops_rules:
+    checked: false
+    notes: "No infrastructure code in these files."
