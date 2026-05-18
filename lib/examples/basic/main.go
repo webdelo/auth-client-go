@@ -1,12 +1,8 @@
-// Package main demonstrates basic usage of auth-client-go.
+// Package main is a placeholder. The full demo lives under TASK-006.
 package main
 
-import (
-	"fmt"
-
-	"github.com/webdelo/auth-client-go/lib"
-)
+import "fmt"
 
 func main() {
-	fmt.Println("auth-client-go version:", lib.Version)
+	fmt.Println("authclient SDK — see examples/basic/main.go in TASK-006")
 }

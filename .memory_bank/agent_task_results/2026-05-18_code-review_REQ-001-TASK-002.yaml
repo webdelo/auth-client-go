@@ -1,0 +1,267 @@
+task_id: REQ-001-TASK-002
+review_type: code-review
+date: '2026-05-18'
+verdict: APPROVED_WITH_COMMENTS
+summary: |
+  All three files deliver a clean, correct base carcass for the SDK. Static analysis
+  (build, vet, fmt, lint, race-detector tests) passes without any issues. Coverage is
+  94.7% overall (errors.go 100%, client.go 92.9% — the only zero-coverage function is
+  WithCache, whose test case was explicitly excluded from the PRP). Every DOD criterion
+  is met. Two minor findings prevent a straight APPROVED: a rule-ID reference in a
+  public godoc comment (CS-0110) and a missing test for WithCache (suggestion). No
+  critical or blocking issues are present.
+
+files_reviewed:
+  - lib/errors.go
+  - lib/logger.go
+  - lib/client.go
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+  tests:
+    status: pass
+    count: 54
+    failed: []
+    coverage_total: "94.7%"
+    coverage_by_file:
+      errors.go: "100%"
+      client.go: "92.9% (WithCache 0% — placeholder, no test in PRP scope)"
+      logger.go: "NoopLogger calls exercised via Logger interface in tests"
+
+dod_validation:
+  total_criteria: 11
+  met: 11
+  failed: 0
+  details:
+    - criterion: "New(Config{Endpoint: 'auth:50051'}) returns *Client without error"
+      status: met
+      evidence: "client.go:145 — Endpoint guard passes, grpc.NewClient succeeds"
+
+    - criterion: "New(Config{}) returns error mentioning Endpoint"
+      status: met
+      evidence: "client.go:146-148 — errors.New('authclient: Config.Endpoint is required')"
+
+    - criterion: "(*Client).Close() is idempotent"
+      status: met
+      evidence: "client.go:233-239 — sync.Once guarantees single execution; coverge 100%"
+
+    - criterion: "lib/errors.go exports 5 sentinels + AuthError + RetryAfter"
+      status: met
+      evidence: "errors.go:21-37 (5 sentinels), 42-45 (AuthError), 66-72 (RetryAfter)"
+
+    - criterion: "errors.Is(mapGRPCError(grpcErr), ErrXxx) works for all mapping entries"
+      status: met
+      evidence: "errors.go:77-97 — all codes covered; errors.go coverage 100%"
+
+    - criterion: "statusFromWrapped walks errors.Unwrap chain"
+      status: met
+      evidence: "errors.go:111-118 — for-loop over errors.Unwrap; 100% coverage"
+
+    - criterion: "lib/logger.go has Logger interface + NoopLogger"
+      status: met
+      evidence: "logger.go:12-31; compile-time check var _ Logger = NoopLogger{} at line 31"
+
+    - criterion: "NoopLogger{}.Info/Warn/Error no-panic with nil args"
+      status: met
+      evidence: "logger.go:23-29 — all three methods are empty no-ops"
+
+    - criterion: "gRPC dial uses grpc.NewClient + keepalive(30s,10s,true) + retry only on ValidateToken"
+      status: met
+      evidence: "client.go:155-161 (keepalive), client.go:31-42 (retryServiceConfig scoped to ValidateToken only)"
+
+    - criterion: "Unit-test coverage >= 85% on client.go and errors.go"
+      status: met
+      evidence: "errors.go 100%, client.go 92.9% (WithCache 0% is acknowledged placeholder)"
+
+    - criterion: "make audit clean + no TODO in public godoc"
+      status: met
+      evidence: "All make targets pass; grep for TODO in lib/*.go returns zero results"
+
+findings:
+  critical: []
+
+  warnings:
+    - id: W-001
+      rule: CS-0110
+      file: "lib/logger.go:19"
+      category: STYLE
+      description: |
+        The public godoc for NoopLogger contains a reference to the internal
+        standard rule identifier "(ES-0143)":
+
+          // NoopLogger is the silent default Logger. It is used when Config.Logger is
+          // nil so that the SDK avoids per-call-site nil-checks (ES-0143).
+
+        CS-0110 prohibits internal rule/standard/guide identifiers in code comments.
+        The referenced justification is valid, but it should be expressed in plain
+        language rather than via a guide ID.
+      recommendation: |
+        Remove the rule reference and keep only the human-readable explanation:
+
+          // NoopLogger is the silent default Logger. It is used when Config.Logger is
+          // nil so that the SDK avoids per-call-site nil-checks at every logging
+          // call site.
+          type NoopLogger struct{}
+
+  suggestions:
+    - id: S-001
+      rule: coverage
+      file: "lib/client.go:108"
+      category: TESTS
+      description: |
+        WithCache has 0% test coverage. It is the only exported Option function
+        without a test. The PRP explicitly excluded it from the test scope, but
+        WithCache will be exercised by TASK-003 — adding a minimal test now
+        keeps coverage consistent and prevents regression.
+      recommendation: |
+        Add a table-driven test case in the existing TestNew or a dedicated
+        TestWithCache in client_test.go:
+
+          func TestWithCache(t *testing.T) {
+              t.Parallel()
+              cache := &mockCache{} // implement Cache interface in test
+              c, err := New(Config{Endpoint: "localhost:50051"}, WithCache(cache))
+              require.NoError(t, err)
+              defer c.Close()
+              assert.Equal(t, cache, c.cfg.Cache)
+          }
+
+    - id: S-002
+      rule: CS-0110
+      file: "lib/client.go:29"
+      category: STYLE
+      description: |
+        The comment on the unexported `retryServiceConfig` constant references
+        "REQ-001-ADR §R11":
+
+          // RefreshToken is intentionally excluded — retrying a refresh that succeeded
+          // at AUTH but lost the response would trigger family detection and burn the
+          // user's refresh chain (REQ-001-ADR §R11).
+
+        While ADR references are less clearly prohibited by CS-0110 than rule IDs,
+        the comment already explains the "why" in full detail in the preceding sentence.
+        The ADR cross-reference adds no information for a reader of the code itself.
+      recommendation: |
+        Remove the ADR reference; the explanation is self-contained:
+
+          // RefreshToken is intentionally excluded — retrying a refresh that succeeded
+          // at AUTH but lost the response would trigger family detection and burn the
+          // user's refresh chain. maxAttempts=4 means one initial attempt plus three
+          // retries with exponential backoff 100ms→1s.
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt — pass, no files flagged
+      - "ES-0002"  # tabs — correct
+      - "ES-0003"  # brace placement — correct
+      - "ES-0010"  # package name authclient — lowercase, acceptable
+      - "ES-0011"  # exported/unexported identifiers — correct throughout
+      - "ES-0014"  # Logger interface name acceptable (multi-method, -er not required)
+      - "ES-0015"  # MixedCaps — correct
+      - "ES-0016"  # function naming — correct
+      - "ES-0021"  # guard clauses — Endpoint checked early in New()
+      - "ES-0022"  # variable scope — minimal scope used
+      - "ES-0032"  # composite literals with field names — Client struct init uses named fields
+      - "ES-0040"  # return value+error — New returns (*Client, error)
+      - "ES-0042"  # defer — conn.Close deferred via Close(); cancelBG via Close()
+      - "ES-0050"  # small interfaces — Logger 3 methods, Cache 3 methods
+      - "ES-0051"  # interfaces at consumer — Logger and Cache defined in this package (it IS the consumer)
+      - "ES-0052"  # type assertion comma-ok — not applicable (no type assertions)
+      - "ES-0053"  # compile-time interface check — var _ Logger = NoopLogger{} present
+      - "ES-0060"  # handle errors explicitly — all errors returned, no _ = err patterns with error type
+      - "ES-0061"  # wrap errors with context — fmt.Errorf("authclient: grpc dial %q: %w", ...) correct
+      - "ES-0062"  # sentinel errors — 5 package-level var ErrXxx present
+      - "ES-0063"  # no panic — confirmed, grep shows zero panic() calls
+      - "ES-0070"  # consistent receiver types — all Client methods use *Client
+      - "ES-0071"  # pointer receiver for modifications — Close() mutates closeErr, uses *Client
+      - "ES-0072"  # value receiver for read-only — NoopLogger methods use value receiver (no state)
+      - "ES-0080"  # doc comments precede declaration — all exported types/funcs have godoc
+      - "ES-0081"  # doc starts with name — verified for all exported identifiers
+      - "ES-0090"  # enum starting value — FailClosed=0 is intentional secure default (zero-value exception)
+      - "ES-0120"  # functional options pattern — WithFailMode, WithLogger, WithCache, WithOpenMethods
+      - "ES-0130"  # import order — stdlib / grpc-external / auth-proto in client.go, correct
+      - "ES-0131"  # import aliases — auth_v1 alias is necessary (path vs identifier)
+      - "ES-0140"  # constructor named New — confirmed
+      - "ES-0142"  # validate in constructor — Endpoint validated, Logger nil-replaced
+      - "ES-0143"  # noop default — NoopLogger{} assigned in applyDefaults when nil
+      - "ES-0171"  # no nolint annotations — confirmed, grep returns zero results
+
+    critical_rules_checked:
+      - "ES-0051"  # Interface at consumer — Logger/Cache defined in the SDK package itself
+      - "ES-0060"  # Handle errors explicitly — verified, no _ = err on error type
+      - "ES-0063"  # No panic — verified
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "sync.Once (closeOnce in Client struct)"
+      - "context.CancelFunc (cancelBG)"
+      - "context.Context (bgCtx — documented exception per ADR)"
+    rules_applied:
+      - "EC-0010"  # goroutine lifecycle — bgCtx+cancelBG owned by Close(); no goroutine launched in TASK-002 but lifecycle ready
+      - "EC-0011"  # cancel contexts — cancelBG() called in Close()
+      - "EC-0012"  # no goroutine leaks — no goroutines launched in this task
+      - "EC-0050"  # ctx as first param — no methods yet, constructor does not need ctx
+      - "EC-0051"  # no ctx in struct — DOCUMENTED EXCEPTION: bgCtx is for cache-cleaner goroutine (TASK-003), cancelBG owned by Close()
+      - "EC-0055"  # call cancel — cancelBG() called inside sync.Once in Close()
+      - "EC-0062"  # Swap for entry guards — sync.Once used instead (correct pattern for Close)
+      - "EC-0063"  # don't mix atomic and mutex — not applicable, no atomic+mutex mixture
+      - "EC-0064"  # max 1 mutex per method — Close() acquires zero mutexes (sync.Once internal)
+      - "EC-0081"  # wait for goroutines — no goroutines in this task; WaitGroup to be added in TASK-003
+      - "EC-0090"  # race tests — make test-race passes, 54/54
+      - "EC-0092"  # no shared state without sync — closeErr written inside sync.Once (safe)
+
+    critical_rules_checked:
+      - "EC-0010"  # Goroutine lifecycle — ready for TASK-003
+      - "EC-0012"  # No goroutine leaks — no goroutines launched
+      - "EC-0055"  # Cancel called — cancelBG in Close()
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # lines <= 120 chars — verified, no violations
+      - "CS-0002"  # explicit returns — all functions use explicit returns
+      - "CS-0003"  # no magic numbers — constants declared for all numeric values
+      - "CS-0010"  # block spacing — correct throughout all three files
+      - "CS-0021"  # clear names — mapGRPCError, statusFromWrapped, retryAfterFromStatus clear
+      - "CS-0023"  # low cyclomatic complexity — switch in mapGRPCError is appropriate
+      - "CS-0053"  # no god-files — client.go 240 lines, errors.go 133 lines, logger.go 32 lines
+      - "CS-0060"  # godoc for public methods — all exported symbols have godoc
+      - "CS-0070"  # English naming — confirmed
+      - "CS-0082"  # function length — all functions well under 80 lines
+      - "CS-0110"  # no internal standard references — VIOLATION in logger.go:19 (W-001), borderline in client.go:29 (S-002)
+      - "CS-0111"  # no obvious inline comments — not present
+      - "CS-0112"  # no decorative separators — not present
+
+  dba_rules:
+    checked: false
+
+  devops_rules:
+    checked: false
+
+positive:
+  - "errors.go is exemplary: nil-safe receiver methods on AuthError, statusFromWrapped correctly walks the unwrap chain, mapErrorReason has a conservative safe default."
+  - "Retry policy is scoped ONLY to ValidateToken and ONLY for UNAVAILABLE — the security rationale (refresh family detection) is clearly documented inline."
+  - "sync.Once for idempotent Close() is the correct pattern; cancelBG is owned exactly by Close() with no risk of double-cancel."
+  - "applyDefaults uses return-copy pattern (value semantics) rather than mutating through a pointer — clean and testable."
+  - "grpc.NewClient used (not deprecated grpc.Dial), keepalive parameters match ADR (30s/10s/true to avoid grpc-go silent bump)."
+  - "All 5 sentinel errors are package-prefixed ('authclient: ...') for unambiguous log/error string identification."
+  - "Compile-time interface check for NoopLogger (var _ Logger = NoopLogger{}) prevents future silent breakage."
+  - "100% coverage on errors.go, 92.9% on client.go — well above the 85% DOD threshold."

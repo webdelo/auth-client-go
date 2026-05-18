@@ -1,6 +1,6 @@
 //go:build integration
 
-package lib_test
+package authclient_test
 
 import (
 	"net"
@@ -8,13 +8,10 @@ import (
 	"testing"
 	"time"
 
-	// Blank imports keep direct dependencies pinned until TASK-002+ wires
-	// them into real SDK code. Removed once TASK-002 imports auth_v1 and
-	// google.golang.org/grpc in production paths, and TASK-004 wires
-	// singleflight into the refresh flow.
-	_ "github.com/webdelo/auth-proto/go/auth_v1"
+	// Blank import keeps the singleflight dependency pinned until TASK-004
+	// wires it into the refresh flow. auth_v1 and grpc are direct imports of
+	// the SDK now (TASK-002).
 	_ "golang.org/x/sync/singleflight"
-	_ "google.golang.org/grpc"
 )
 
 func TestMain(m *testing.M) {

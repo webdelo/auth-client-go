@@ -1,0 +1,242 @@
+task_id: REQ-001-TASK-002
+review_type: test-review
+date: '2026-05-18'
+reviewer: test-reviewer
+verdict: APPROVED_WITH_COMMENTS
+
+summary: |
+  All 54 test cases across errors_test.go, logger_test.go, and client_test.go pass cleanly
+  under both the standard runner and the race detector. Overall lib-package coverage is 96.0%
+  (94.7% package-wide including the examples binary). errors.go achieves 100% coverage on
+  every function. The three structural violations found are all warnings-level: (1) TestNoopLogger
+  mixes three distinct methods (Info, Warn, Error) into one test function and lacks a "happy_path"
+  case by that exact name — both are minor naming/convention issues that do not affect test
+  correctness; (2) TestNew uses a wantErr string + check func split with an if-branch in the
+  runner body instead of a single want closure, which is a UT-0032 concern; (3) WithCache has
+  0% coverage because no test case exercises it (placeholder for TASK-003 but still a public API).
+  No critical violations found. No nolint directives, no error discards, no package-level shared
+  state, no decorative separators, no manual mock structs. The tc := tc capture and t.Parallel()
+  discipline is correct throughout.
+
+files_reviewed:
+  - lib/errors_test.go
+  - lib/logger_test.go
+  - lib/client_test.go
+
+test_counts:
+  total_tests: 9      # test functions
+  total_cases: 54
+  pass_rate: '100% (54/54)'
+  coverage:
+    lib_package_overall: '96.0%'
+    package_wide_incl_examples: '94.7%'
+    errors.go: '100%'
+    client.go: '92.9%'   # New() branch for grpc.NewClient failure not exercised; WithCache 0%
+    logger.go: 'n/a'     # NoopLogger methods are empty bodies; 0% is an instrumentation artifact
+
+coverage_by_function:
+  errors.go:
+    AuthError.Error: 100%
+    AuthError.Unwrap: 100%
+    RetryAfter: 100%
+    mapGRPCError: 100%
+    retryAfterFromStatus: 100%
+    statusFromWrapped: 100%
+    mapErrorReason: 100%
+  client.go:
+    WithFailMode: 100%
+    WithLogger: 100%
+    WithCache: 0%        # no test case; TASK-003 placeholder
+    WithOpenMethods: 100%
+    New: 92.9%           # grpc.NewClient error path not reachable in unit tests
+    newBackgroundContext: 100%
+    applyDefaults: 100%
+    defaultOpenMethods: 100%
+    Close: 100%
+  logger.go:
+    NoopLogger.Info: 0%  # empty body — no statements to instrument; tests do call it
+    NoopLogger.Warn: 0%  # same
+    NoopLogger.Error: 0% # same
+
+standards_compliance:
+  UT-0001_table_driven:
+    status: PASS
+    note: All test functions use map[string]struct table-driven pattern.
+  UT-0002_one_method_one_function:
+    status: WARN
+    note: >
+      TestNoopLogger combines Info, Warn, and Error (three distinct methods) into one
+      test function. Per UT-0002 there should be TestNoopLogger_Info, TestNoopLogger_Warn,
+      TestNoopLogger_Error.
+    file: lib/logger_test.go
+    line: 9
+  UT-0010_naming_format:
+    status: WARN
+    note: >
+      TestNoopLogger does not follow Test<Type>_<Method> format. All other functions
+      (TestMapGRPCError, TestMapErrorReason, TestRetryAfter, TestAuthError_Error,
+      TestAuthError_Unwrap, TestStatusFromWrapped, TestNew, TestClient_Close) are correct.
+    file: lib/logger_test.go
+    line: 9
+  UT-0011_happy_path_first:
+    status: WARN
+    note: >
+      TestNoopLogger has no case named exactly "happy_path". The first defined case
+      is "happy_path_info_with_ctx_and_fields" which violates the naming requirement.
+      All test tables in errors_test.go and client_test.go are compliant.
+    file: lib/logger_test.go
+    line: 15
+  UT-0012_case_names_snake_case:
+    status: PASS
+    note: All case names use snake_case across all three files.
+  UT-0027_no_decorative_separators:
+    status: PASS
+    note: No decorative comment separators found.
+  UT-0028_no_helper_functions:
+    status: PASS
+    note: >
+      recordingLogger in client_test.go is a type (struct), not a helper function.
+      Explicitly allowed per UT-0028 exception for adapter types.
+  UT-0029_no_package_level_variables:
+    status: PASS
+    note: No package-level test data variables found.
+  UT-0030_require_for_critical:
+    status: PASS
+    note: require used consistently for err, nil, and must-succeed conditions throughout.
+  UT-0031_assert_for_additional:
+    status: PASS
+    note: assert used for field value checks and flags.
+  UT-0032_no_conditional_logic:
+    status: WARN
+    note: >
+      TestNew runner body contains `if tc.wantErr != ""` (line 98) and `if tc.check != nil`
+      (line 111). Per UT-0032 these should be eliminated by making every case define a single
+      `want func(t *testing.T, c *Client, err error)` closure that handles both the error and
+      success paths inline, removing the need for the if-branches in the runner.
+    file: lib/client_test.go
+    lines: [98, 111]
+  UT-0040_t_parallel:
+    status: PASS
+    note: t.Parallel() present at the start of every test function and every subtest.
+  UT-0041_tc_tc_capture:
+    status: PASS
+    note: tc := tc capture present before t.Run in all loops.
+  UT-0080_map_for_simple:
+    status: PASS
+    note: map[string]struct used correctly across all three files.
+  UT-0100_one_test_file_per_source:
+    status: PASS
+    note: errors_test.go, logger_test.go, client_test.go mirror their source files exactly.
+  ES-0171_no_nolint:
+    status: PASS
+    note: No //nolint directives found in any test file.
+  ES-0060_no_error_discards:
+    status: PASS
+    note: >
+      No `_ = err` discards. Close() calls in t.Cleanup use t.Logf for best-effort cleanup
+      logging which is acceptable. close_is_idempotent captures all three Close() return
+      values for equality assertions.
+
+findings:
+  critical: []
+
+  warnings:
+    - id: T-W001
+      rule: UT-0002 + UT-0010
+      file: 'lib/logger_test.go:9'
+      description: >
+        TestNoopLogger covers three distinct receiver methods (Info, Warn, Error) in a single
+        test function. UT-0002 requires one method = one test function. UT-0010 requires
+        Test<Type>_<Method> naming. The three methods should be split into TestNoopLogger_Info,
+        TestNoopLogger_Warn, and TestNoopLogger_Error, each with its own table.
+      recommendation: |
+        Split into three functions:
+          func TestNoopLogger_Info(t *testing.T) { ... }
+          func TestNoopLogger_Warn(t *testing.T) { ... }
+          func TestNoopLogger_Error(t *testing.T) { ... }
+        Each should have a "happy_path" case plus the nil-context variants relevant to
+        that specific method.
+
+    - id: T-W002
+      rule: UT-0011
+      file: 'lib/logger_test.go:15'
+      description: >
+        TestNoopLogger has no case named exactly "happy_path". The standard requires the
+        canonical happy path to be identified with this exact name so reviewers can quickly
+        locate the baseline behavior.
+      recommendation: |
+        Rename "happy_path_info_with_ctx_and_fields" to "happy_path" (or add a "happy_path"
+        case if the function is kept as-is). After T-W001 is resolved and the function is
+        split, each new function must have its own "happy_path" case.
+
+    - id: T-W003
+      rule: UT-0032
+      file: 'lib/client_test.go:98,111'
+      description: >
+        TestNew uses a two-field dispatch pattern (wantErr string + check func) with explicit
+        if-branches in the runner body. This is conditional logic in the test body that
+        UT-0032 prohibits. Some cases (e.g. "missing_endpoint_returns_error") define only
+        wantErr and leave check nil, relying on `if tc.check != nil` in the runner.
+      recommendation: |
+        Collapse to a single `want func(t *testing.T, c *Client, err error)` closure per case:
+
+          type testCase struct {
+              cfg  Config
+              opts []Option
+              want func(t *testing.T, c *Client, err error)
+          }
+
+          "missing_endpoint_returns_error": {
+              cfg: Config{},
+              want: func(t *testing.T, c *Client, err error) {
+                  require.Error(t, err)
+                  assert.Contains(t, err.Error(), "Endpoint")
+                  assert.Nil(t, c)
+              },
+          },
+          "happy_path": {
+              cfg: Config{Endpoint: "localhost:50051"},
+              want: func(t *testing.T, c *Client, err error) {
+                  require.NoError(t, err)
+                  require.NotNil(t, c)
+                  t.Cleanup(func() { _ = c.Close() })
+                  assert.Equal(t, 30*time.Second, c.cfg.ValidateCacheTTL)
+                  assert.Equal(t, FailClosed, c.failMode)
+                  _, ok := c.logger.(NoopLogger)
+                  assert.True(t, ok)
+              },
+          },
+
+        This removes the if-branches from the runner body entirely.
+
+    - id: T-W004
+      rule: 'UT-0002 (coverage)'
+      file: 'lib/client_test.go'
+      description: >
+        WithCache (client.go:108) has 0% coverage. It is a public Option that will be used
+        starting in TASK-003, but it is already shipped and exercisable. The function is
+        trivially testable: a test case "with_cache_custom" in TestNew that passes a
+        WithCache(mockCache) option and asserts c.cfg.Cache != nil.
+      recommendation: |
+        Add a test case to TestNew:
+
+          "with_cache_custom": {
+              cfg:  Config{Endpoint: "x:1"},
+              opts: []Option{WithCache(stubCache{})},
+              want: func(t *testing.T, c *Client, err error) {
+                  require.NoError(t, err)
+                  require.NotNil(t, c)
+                  t.Cleanup(func() { _ = c.Close() })
+                  assert.NotNil(t, c.cfg.Cache)
+              },
+          },
+
+        where stubCache is a minimal inline struct implementing the Cache interface
+        (or a zero-value struct if the interface methods are empty stubs).
+
+  suggestions: []
+
+summary:
+  critical_count: 0
+  warning_count: 4
+  suggestion_count: 0
