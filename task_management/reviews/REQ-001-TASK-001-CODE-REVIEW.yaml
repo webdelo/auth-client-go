@@ -1,32 +1,63 @@
 # Aggregated Code Review Report
 # Task:     REQ-001-TASK-001 — Bootstrap dependencies and integration test infra
 # Date:     2026-05-18
-# Status:   APPROVED_WITH_COMMENTS (all W/S items addressed post-review; see issue_status)
+# Commit:   ed462b4 (branch: feature/req-001-task-001)
+# Status:   APPROVED — all prior W/S items fixed or accepted; 16/16 DOD met; 0 open issues
 
 # === METADATA ===
 metadata:
   date: "2026-05-18"
   task_id: "REQ-001-TASK-001"
   task_description: "Bootstrap dependencies and integration test infra"
+  commit: "ed462b4"
+  branch: "feature/req-001-task-001"
   report_types_aggregated:
     - "code-review"
     - "test-review"
-  source_reports:
-    code_review:
-      - ".memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-001.yaml"
-    test_review:
-      - ".memory_bank/agent_task_results/2026-05-18_test-review_lib.yaml"
   prp_reference: "task_management/plans/REQ-001-TASK-001-PRP.md"
+
+# === REVIEW HISTORY ===
+# Full audit trail: v1 → fix-landing → v2 verification.
+previous_reviews:
+  - path: ".memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-001.yaml"
+    round: "v1"
+    type: "code-review"
+    verdict: "APPROVED_WITH_COMMENTS"
+    issues_found: "0 critical, 2 warnings (W001-W002), 5 suggestions (S001-S005)"
+    date: "2026-05-18"
+
+  - path: ".memory_bank/agent_task_results/2026-05-18_test-review_lib.yaml"
+    round: "v1"
+    type: "test-review"
+    verdict: "APPROVED"
+    issues_found: "0 critical, 0 warnings, 2 informational suggestions (S001-S002)"
+    date: "2026-05-18"
+
+  - path: ".memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-001_v2.yaml"
+    round: "v2"
+    type: "code-review"
+    verdict: "APPROVED"
+    issues_found: "0 new issues; all v1 W/S items verified FIXED or ACCEPTED_DEVIATION"
+    commit_reviewed: "ed462b4"
+    date: "2026-05-18"
+
+  - path: ".memory_bank/agent_task_results/2026-05-18_test-review_lib_v2.yaml"
+    round: "v2"
+    type: "test-review"
+    verdict: "APPROVED"
+    issues_found: "0 new issues; file byte-for-byte identical to prior APPROVED review"
+    commit_reviewed: "ed462b4"
+    date: "2026-05-18"
 
 # === STATIC ANALYSIS ===
 static_analysis:
   build:
     status: "pass"
-    note: "go build ./lib/... and make build-examples both pass"
+    note: "go build ./lib/... and make build-examples both pass; make audit passes (vet + lint v2.11.4 + test + verify + tidy-diff)"
     errors: []
   fmt:
     status: "pass"
-    note: "gofmt clean on all Go files"
+    note: "gofmt clean on all Go files — verified at v1; confirmed unchanged at v2"
     files_need_formatting: []
   vet:
     status: "pass"
@@ -37,14 +68,18 @@ static_analysis:
     issues: []
   tests:
     status: "pass"
-    note: "make test + make test-race pass; make audit passes (vet + lint + test + verify + tidy-diff)"
+    note: "make test + make test-race pass; -tags=integration compiles cleanly; make audit green"
     failed: []
     coverage: "n/a — no new production code in TASK-001"
 
 # === CODE REVIEW ISSUES ===
-# Original IDs from: 2026-05-18_code-review_REQ-001-TASK-001.yaml
+# Source: 2026-05-18_code-review_REQ-001-TASK-001.yaml (v1) +
+#         2026-05-18_code-review_REQ-001-TASK-001_v2.yaml (v2 fix-landing verification)
 code_review:
-  files_reviewed: 8
+  packages_reviewed: 1  # bootstrap/infra — no production package introduced in TASK-001
+  files_reviewed: 8     # v1 reviewed; v2 re-verified 7 changed files
+  rounds: 2
+
   issues:
     critical: []
 
@@ -55,21 +90,22 @@ code_review:
         category: "LOGIC"
         title: "SDK-only env vars bleed into auth-app container via env_file: test.env"
         file: "dev/deployments/compose.test.yaml"
-        line: 62
-        standard: "effective_standards.md ES-0021 (minimize scope)"
+        line: 65
+        standard: "ES-0021 (minimize scope)"
         description: |
           auth-app's env_file: test.env injected SDK-test-only variables
           (AUTH_REPO_PATH, AUTH_ENDPOINT, RUN_INTEGRATION_TESTS) into the AUTH server
           container. AUTH server silently ignores unknown vars, so no runtime failure,
-          but it violates minimal-scope: server config and test harness config should not
-          share the same env file. Full split (Option B) deferred to v0.2.0.
+          but it violated minimal-scope: server config and test harness config should not
+          share the same env file.
         issue_status: "FIXED"
+        fix_commit: "ed462b4"
         fix_applied: |
-          Added clarifying comment in compose.test.yaml on the env_file line documenting
-          that test.env mixes SDK vars (AUTH_REPO_PATH, AUTH_ENDPOINT, RUN_INTEGRATION_TESTS)
-          and that the AUTH server silently ignores unrecognised variables.
-          Full split into auth-server.env / sdk-test.env deferred to v0.2.0.
-        fix_date: "2026-05-18"
+          Added clarifying comment immediately above the env_file: block in compose.test.yaml
+          (lines 65–68) documenting the dual-purpose nature of test.env and the planned
+          v0.2.0 split into auth-server.env + sdk-test.env. Full env-file split deferred to v0.2.0.
+        v2_evidence: "dev/deployments/compose.test.yaml lines 65–68 comment verified present by v2 reviewer"
+        residual: "Env var bleed still exists functionally (deferred v0.2.0). AUTH server silently ignores unknown vars — accepted."
 
       - id: "CR-W002"
         original_id: "TASK001-W002"
@@ -78,18 +114,24 @@ code_review:
         title: "auth-postgres exposes port 5432 to host — conflicts with local Postgres"
         file: "dev/deployments/compose.test.yaml"
         line: 29
-        standard: "effective_standards.md ES-0022 (minimize scope)"
+        standard: "ES-0022 (minimize scope)"
         description: |
           auth-postgres bound port 5432 unconditionally to the host interface. On machines
-          with a local Postgres (signal-analyzer, funding-bot), this causes "address already
+          with a local Postgres (signal-analyzer, funding-bot), this caused "address already
           in use" on `make env-up`. Inter-container traffic uses compose DNS and does not
           need the host binding at all.
         issue_status: "FIXED"
+        fix_commit: "ed462b4"
         fix_applied: |
           Removed the `ports: ["5432:5432"]` block from auth-postgres entirely.
-          Added an explanatory comment noting that services communicate over the compose
-          project network (auth-postgres:5432 hostname) and no host port binding is needed.
-        fix_date: "2026-05-18"
+          Added explanatory comment (lines 29–33) noting that inter-container communication
+          uses compose DNS (auth-postgres:5432) and no host port binding is needed.
+          Comment also documents optional DEBUG_POSTGRES_PORT for ad-hoc external access.
+        v2_evidence: |
+          No ports: block under auth-postgres in committed state — verified by v2 reviewer
+          reading full service definition (lines 21–42). Regression analysis confirmed:
+          auth-migrate DSN and auth-app POSTGRES_HOST both use compose hostname — fully safe.
+        regression_check: "NO REGRESSION — both auth-migrate and auth-app use compose DNS hostname, not host-mapped port"
 
     suggestions:
       - id: "CR-S001"
@@ -101,14 +143,13 @@ code_review:
         line: 33
         description: |
           If dev-up-test-env fails (e.g. auth-app never reaches healthy), make stops before
-          the recipe body — env-down is NOT called. Partially started containers remain.
-          Behaviour is documented in PRP Failure-Mode Sanity table and is acceptable for v0.1.0,
-          but README did not cover this specific scenario (only Ctrl+C was documented).
+          env-down is called. Partially started containers remain. Not covered in README.
         issue_status: "FIXED"
+        fix_commit: "ed462b4"
         fix_applied: |
-          Added second bullet under "Known limitations" in README documenting that partial
+          Added second bullet under "Known limitations" in README.md documenting that partial
           env-up failure does NOT auto-call env-down; user must run `make env-down` manually.
-        fix_date: "2026-05-18"
+        v2_evidence: "README.md lines 65–72 verified by v2 reviewer — both Ctrl+C and partial-failure bullets present"
 
       - id: "CR-S002"
         original_id: "TASK001-S002"
@@ -118,17 +159,20 @@ code_review:
         file: "dev/deployments/extra.mk"
         line: 17
         description: |
-          dev-up-test-env runs auth-migrate explicitly via `docker compose run --rm` (step 2),
-          then `docker compose up -d --wait auth-app` (step 3). Compose sees the depends_on
-          condition, the --rm container is gone, and spins up a new migrate container.
-          Migrations run twice; since `migrate up` is idempotent this is not a correctness bug,
-          but adds ~2-5s and produces confusing double-migration log output.
+          dev-up-test-env ran auth-migrate explicitly via `docker compose run --rm` (step 2),
+          then `docker compose up -d --wait auth-app` (step 3). Compose re-evaluated depends_on
+          and spun up a second migrate container. Migrations ran twice; idempotent but added
+          ~2-5s and produced confusing double-migration log output.
         issue_status: "FIXED"
+        fix_commit: "ed462b4"
         fix_applied: |
-          Added `--no-deps` flag to the `up -d --wait auth-app` step in extra.mk.
-          This skips depends_on processing for that call, preventing the second silent migrate run
-          while preserving the explicit migrate output from step 2.
-        fix_date: "2026-05-18"
+          Added `--no-deps` flag to the `up -d --wait auth-app` step in extra.mk (line 21).
+          Prevents second silent migrate run while preserving the explicit migration output.
+        v2_evidence: |
+          dev/deployments/extra.mk line 21 verified: `${_COMPOSE} --profile test up -d --wait --no-deps auth-app`
+          --no-deps flag confirmed present. Regression analysis: step ordering (postgres healthy →
+          migrate → auth-app with --no-deps) is safe — no dependency restart triggered.
+        regression_check: "NO REGRESSION — --no-deps suppresses dependency re-start only; auth-postgres stays healthy from step 1"
 
       - id: "CR-S003"
         original_id: "TASK001-S003"
@@ -136,14 +180,15 @@ code_review:
         category: "STYLE"
         title: ".temp/ missing from .gitignore"
         file: ".gitignore"
-        line: null
-        standard: "coding_style.md CS-0004; CLAUDE.md policy (Temp files → .temp/)"
+        line: 42
+        standard: "CS-0004; CLAUDE.md policy (Temp files → .temp/)"
         description: |
           CLAUDE.md mandates `Temp files → .temp/`. The .gitignore did not contain an entry
           for .temp/, so ad-hoc `go build -o .temp/...` binaries would appear as untracked files.
         issue_status: "FIXED"
-        fix_applied: "Added `.temp/` entry to .gitignore."
-        fix_date: "2026-05-18"
+        fix_commit: "ed462b4"
+        fix_applied: "Added `.temp/` entry with CLAUDE.md policy reference comment to .gitignore."
+        v2_evidence: ".gitignore lines 42–43 verified: comment + .temp/ entry with CLAUDE.md policy rationale"
 
       - id: "CR-S004"
         original_id: "TASK001-S004"
@@ -153,17 +198,16 @@ code_review:
         file: ".github/workflows/ci.yaml"
         line: 76
         description: |
-          The integration job had no `needs:` field. When triggered via workflow_dispatch
-          with run_integration=true, it runs concurrently with lint, test, and build jobs.
-          For v0.1.0 with manual-only trigger this is acceptable, but the intent was not
-          documented in the workflow file.
+          The integration job had no `needs:` field. When triggered via workflow_dispatch with
+          run_integration=true, it runs concurrently with lint, test, and build jobs. Intent
+          was not documented in the workflow file.
         issue_status: "FIXED"
+        fix_commit: "ed462b4"
         fix_applied: |
-          Added a comment above the `if: ${{ inputs.run_integration == true }}` line in
-          ci.yaml explaining the intentional absence of `needs:` (manual-only trigger;
-          developer is responsible for running lint/test/build before integration; add
-          `needs: [lint, test, build]` when integration becomes a mandatory gate).
-        fix_date: "2026-05-18"
+          Added explanatory comment above the `if:` condition in ci.yaml (lines 79–81)
+          documenting the intentional absence of `needs:` (manual-only trigger; developer
+          responsible; future upgrade path via needs: [lint, test, build] noted).
+        v2_evidence: ".github/workflows/ci.yaml lines 79–81 comment verified present and accurate by v2 reviewer"
 
       - id: "CR-S005"
         original_id: "TASK001-S005"
@@ -172,30 +216,33 @@ code_review:
         title: "Decorative separator characters in runtime echo output (extra.mk)"
         file: "dev/deployments/extra.mk"
         line: 16
-        standard: "coding_style.md CS-0112 (borderline)"
+        standard: "CS-0112 (borderline)"
         description: |
           echo statements in extra.mk use box-drawing characters (━━━) as visual separators
           in terminal output. CS-0112 prohibits decorative separators in source code.
-          The reviewer assessed this as borderline — CS-0112 targets structural code separators,
-          not user-facing terminal formatting. The ━━━ pattern is established convention in
-          sibling repos (auth, signal-analyzer, funding-bot).
+          Reviewer assessed as borderline — CS-0112 targets structural code separators, not
+          user-facing terminal formatting.
         issue_status: "ACCEPTED"
         accepted_deviation: true
         deviation_reason: |
           CS-0112 targets decorative separators used as structural dividers within source code.
-          The ━━━ characters here appear in runtime echo output (terminal UX), not as code
-          structural markers. The pattern is consistent with sibling repos (auth, signal-analyzer,
-          funding-bot) — keeping the convention avoids divergence from established platform style.
-          Reviewer explicitly flagged as "borderline; flagged for team decision". Team decision:
-          runtime echo output is outside CS-0112 scope; pattern accepted.
+          The ━━━ characters appear in runtime echo output (terminal UX), not as code structural
+          markers. Pattern is consistent with sibling repos (auth, signal-analyzer, funding-bot).
+          v2 reviewer re-confirmed: lines 16, 25, 34 in extra.mk still contain ━━━ — no action
+          required. Team decision: runtime echo output is outside CS-0112 scope.
+        v2_evidence: |
+          dev/deployments/extra.mk lines 16, 25, 34 confirmed containing ━━━ in @echo strings.
+          Accepted deviation re-validated in v2 review with same rationale.
 
   summary:
     total_critical: 0
     total_warnings: 2
     total_suggestions: 5
-    warnings_fixed: 2
-    suggestions_fixed: 4
-    suggestions_accepted: 1  # CR-S005
+    open_issues: 0
+    warnings_fixed: 2             # CR-W001, CR-W002
+    suggestions_fixed: 4          # CR-S001, CR-S002, CR-S003, CR-S004
+    suggestions_accepted: 1       # CR-S005
+    new_issues_in_v2: 0
 
   positive:
     - "Correct TEST_EXIT=$$? pattern for guaranteed env-down — consistent with auth, signal-analyzer, funding-bot"
@@ -210,13 +257,17 @@ code_review:
     - "GOLANGCI_VERSION bump v1.64.8 → v2.11.4 correctly fixes pre-existing infra mismatch with .golangci.yaml v2 format"
     - "continue-on-error: true on integration CI job correctly implements ADR §A13 (non-blocking optional gate)"
     - "Makefile help target correctly inherits integration targets via extra.mk inclusion"
+    - "W002 fix includes explanatory comment proactively documenting optional DEBUG_POSTGRES_PORT path"
+    - "S002 fix (--no-deps) is minimal correct solution; preserves explicit migration output while eliminating double-run"
+    - "S003 fix (.temp/ gitignore entry) cites CLAUDE.md policy rationale — useful for future contributor orientation"
+    - "No AI attribution markers in commit message — complies with CLAUDE.md policy"
 
   known_deviations:
     - deviation: "go 1.24.0 instead of go 1.24"
       verdict: "ACCEPTED — Go 1.21+ toolchain normalizes go directive to include patch version; functionally identical"
 
     - deviation: "grpc v1.79.3 and x/sync v0.19.0 (MVS-resolved from auth-proto/go transitive)"
-      verdict: "ACCEPTED — MVS correctly resolves minimum required versions; SDK does not over-pin"
+      verdict: "ACCEPTED — MVS correctly resolves minimum required versions; PRP version estimate was non-binding; SDK does not over-pin"
 
     - deviation: "3 blank imports in integration test instead of 1 (PRP specified only singleflight)"
       verdict: "ACCEPTED — Required to hold all 3 direct deps as non-indirect in go.mod before TASK-002+ wires them into production code. Comment explains rationale."
@@ -225,12 +276,15 @@ code_review:
       verdict: "ACCEPTED — Pre-existing infra mismatch fixed: .golangci.yaml was already v2 format, v1.64.8 would have rejected it"
 
 # === TEST REVIEW ISSUES ===
-# Original IDs from: 2026-05-18_test-review_lib.yaml
+# Source: 2026-05-18_test-review_lib.yaml (v1) +
+#         2026-05-18_test-review_lib_v2.yaml (v2 re-validation)
 test_review:
   package: "github.com/webdelo/auth-client-go/lib"
   files_reviewed: 1
   total_tests: 1
   coverage_percent: 0.0  # N/A — no production code in TASK-001
+  rounds: 2
+  file_changed_between_reviews: false  # git diff ed462b4 -- lib/client_integration_test.go: empty
 
   test_results:
     status: "pass"
@@ -239,12 +293,13 @@ test_review:
     skipped: 0
 
   standards_compliance:
-    build_tag: "pass"
-    external_test_package: "pass"
-    testmain_gate: "pass"       # IT-0008
-    error_handling: "pass"      # ES-0060
-    nolint_annotations: "pass"  # ES-0171
-    blank_imports_rationale: "pass"
+    build_tag: "pass"         # //go:build integration on line 1
+    external_test_package: "pass"  # package lib_test
+    testmain_gate: "pass"    # IT-0008 — RUN_INTEGRATION_TESTS gate + m.Run() exit forwarded
+    error_handling: "pass"   # ES-0060 — both DialTimeout and conn.Close errors captured
+    nolint_annotations: "pass"  # ES-0171 — zero //nolint: annotations
+    blank_imports_rationale: "pass"  # block comment documents purpose and removal condition
+    parallel_execution: "pass"  # IT-0010 — no t.Parallel() (correct for integration tests)
 
   issues:
     critical: []
@@ -256,41 +311,48 @@ test_review:
         original_id: "TEST-S001"
         source_report: "2026-05-18_test-review_lib.yaml"
         category: "STYLE"
-        title: "conn.Close error could use errors.Join pattern in future real tests"
+        title: "conn.Close teardown could use t.Cleanup in future multi-step tests"
         file: "lib/client_integration_test.go"
         line: 36
         standard: "ES-0060"
         description: |
-          For this TCP smoke test the standalone t.Fatalf for conn.Close is fine.
-          In future integration tests with multiple cleanup operations (gRPC connection
-          close + context cancel), consider errors.Join or defer-with-named-return to
-          surface all cleanup errors. Informational only — no action required for TASK-001.
+          For this single-connection TCP smoke test the inline error check on conn.Close is
+          appropriate. In future integration tests with multiple cleanup operations (gRPC
+          connection close + context cancel), consider t.Cleanup or defer-with-named-return
+          to surface all cleanup errors. Informational only — no action required for TASK-001.
         issue_status: "DEFERRED"
+        action_required: false
         deferred_to: "TASK-003"
         deferral_reason: "Informational pattern note for multi-step cleanup. Not applicable to current single-connection smoke test."
+        v2_carried_forward: true
 
       - id: "TR-S002"
         original_id: "TEST-S002"
         source_report: "2026-05-18_test-review_lib.yaml"
         category: "STYLE"
-        title: "Consider t.Skip instead of os.Exit(0) in TestMain for skip semantics visibility"
+        title: "os.Exit(0) in TestMain silently skips — optional log message for CI visibility"
         file: "lib/client_integration_test.go"
         line: 22
         standard: "IT-0008"
         description: |
-          TestMain uses os.Exit(0) when RUN_INTEGRATION_TESTS != "true". Both os.Exit(0)
-          and the alternative (print skip message then os.Exit(0)) are valid. Current form
-          matches the IT-0060 runner.go reference implementation. No change required.
+          TestMain uses os.Exit(0) when RUN_INTEGRATION_TESTS != "true". An optional
+          fmt.Println before exit would make CI logs clearer when integration tests are
+          intentionally skipped. Current form is compliant with IT-0008 reference
+          implementation. No action required.
         issue_status: "ACCEPTED"
+        action_required: false
         accepted_deviation: true
         deviation_reason: "Current os.Exit(0) pattern matches the IT-0060 runner.go reference and sibling repos. No change warranted."
+        v2_carried_forward: true
 
   summary:
     total_critical: 0
     total_warnings: 0
     total_suggestions: 2
-    suggestions_deferred: 1   # TR-S001
+    open_issues: 0
+    suggestions_deferred: 1   # TR-S001 → TASK-003
     suggestions_accepted: 1   # TR-S002
+    new_issues_in_v2: 0
 
   positive:
     - "Build tag //go:build integration correctly excludes file from regular make test — verified empirically"
@@ -302,6 +364,95 @@ test_review:
     - "Default endpoint fallback (localhost:50051) makes local development ergonomic without mandatory env var"
     - "Test scoped to TCP dial only (not gRPC handshake) — correctly bounded for TASK-001 infra smoke test"
     - "5-second dial timeout is reasonable for CI environments with slow Docker startup"
+    - "v2 re-validation: file byte-for-byte identical to prior APPROVED review (empty git diff)"
+    - "No t.Parallel() — correct; IT-0010 prohibits parallel integration test execution"
+
+# === ISSUE TRAIL (ALL 9 ITEMS) ===
+# Full status of every issue raised across v1 + v2 reviews.
+issue_trail:
+  - id: "CR-W001"
+    original_id: "TASK001-W001"
+    type: "warning"
+    severity: "warning"
+    title: "SDK env vars bleed into auth-app container via shared env_file"
+    status: "FIXED"
+    evidence: "compose.test.yaml lines 65–68: clarifying comment added; v2 reviewer confirmed"
+    fix_commit: "ed462b4"
+
+  - id: "CR-W002"
+    original_id: "TASK001-W002"
+    type: "warning"
+    severity: "warning"
+    title: "auth-postgres port 5432 host binding conflict"
+    status: "FIXED"
+    evidence: "ports: block removed; explanatory comment added; v2 reviewer verified no regression"
+    fix_commit: "ed462b4"
+
+  - id: "CR-S001"
+    original_id: "TASK001-S001"
+    type: "suggestion"
+    severity: "suggestion"
+    title: "env-down not guaranteed on partial env-up failure"
+    status: "FIXED"
+    evidence: "README.md lines 65–72: second Known limitations bullet added; v2 reviewer confirmed"
+    fix_commit: "ed462b4"
+
+  - id: "CR-S002"
+    original_id: "TASK001-S002"
+    type: "suggestion"
+    severity: "suggestion"
+    title: "auth-migrate double-run via depends_on"
+    status: "FIXED"
+    evidence: "extra.mk line 21: --no-deps added; v2 regression analysis: safe"
+    fix_commit: "ed462b4"
+
+  - id: "CR-S003"
+    original_id: "TASK001-S003"
+    type: "suggestion"
+    severity: "suggestion"
+    title: ".temp/ missing from .gitignore"
+    status: "FIXED"
+    evidence: ".gitignore lines 42–43: entry added with CLAUDE.md policy comment; v2 confirmed"
+    fix_commit: "ed462b4"
+
+  - id: "CR-S004"
+    original_id: "TASK001-S004"
+    type: "suggestion"
+    severity: "suggestion"
+    title: "CI integration job missing needs: design-intent documentation"
+    status: "FIXED"
+    evidence: "ci.yaml lines 79–81: explanatory comment added; v2 reviewer confirmed"
+    fix_commit: "ed462b4"
+
+  - id: "CR-S005"
+    original_id: "TASK001-S005"
+    type: "suggestion"
+    severity: "suggestion"
+    title: "Decorative ━━━ separators in echo output (extra.mk)"
+    status: "ACCEPTED"
+    evidence: "extra.mk lines 16, 25, 34: ━━━ pattern retained; v2 re-confirmed as team convention"
+    accepted_deviation: true
+    fix_commit: "n/a — no code change"
+
+  - id: "TR-S001"
+    original_id: "TEST-S001"
+    type: "suggestion"
+    severity: "informational"
+    title: "t.Cleanup teardown pattern for future multi-step integration tests"
+    status: "DEFERRED"
+    evidence: "Informational note for TASK-003+; not applicable to single-connection smoke test"
+    deferred_to: "TASK-003"
+    fix_commit: "n/a — deferred"
+
+  - id: "TR-S002"
+    original_id: "TEST-S002"
+    type: "suggestion"
+    severity: "informational"
+    title: "t.Skip vs os.Exit(0) in TestMain for CI log visibility"
+    status: "ACCEPTED"
+    evidence: "os.Exit(0) matches IT-0060 runner.go reference; v2 re-confirmed no action needed"
+    accepted_deviation: true
+    fix_commit: "n/a — no change"
 
 # === DOD COVERAGE ===
 # All 16 criteria from task_management/plans/REQ-001-TASK-001-PRP.md § DOD
@@ -314,183 +465,214 @@ dod_coverage:
 
   criteria:
     - id: "DOD-001"
-      description: "go.mod contains go 1.24 (downgrade from 1.26.2) and three direct-require: auth-proto/go v0.1.0, grpc, x/sync"
+      description: "go.mod contains go 1.24 and three direct-require: auth-proto/go v0.1.0, grpc, x/sync"
       status: "passed"
-      note: "go 1.24.0 (patch suffix normalised by Go toolchain — accepted deviation); all three direct deps present"
+      v2_verdict: "PASS"
+      note: "go 1.24.0 (patch suffix normalised by Go toolchain — accepted deviation); all three direct deps present as non-indirect"
 
     - id: "DOD-002"
       description: "go.sum created, go mod verify passes"
       status: "passed"
-      note: "42-line go.sum; no toolchain directive"
+      v2_verdict: "PASS"
+      note: "42-line go.sum; no toolchain directive in go.mod"
 
     - id: "DOD-003"
       description: "go mod why github.com/webdelo/auth-proto/go confirms direct dependency"
       status: "passed"
+      v2_verdict: "PASS"
 
     - id: "DOD-004"
       description: "go mod why for logrus, fx, prometheus/client_golang returns 'not needed'"
       status: "passed"
-      note: "Verified by submitter — no forbidden direct dependencies"
+      v2_verdict: "PASS"
+      note: "Verified by submitter; go.sum transitive closure clean with no rogue direct dependencies"
 
     - id: "DOD-005"
       description: "dev/deployments/test.env created with full AUTH ENV set and AUTH_ENDPOINT=localhost:50051"
       status: "passed"
+      v2_verdict: "PASS"
 
     - id: "DOD-006"
       description: "dev/deployments/compose.test.yaml created: auth-postgres + auth-migrate + auth-app (profile test)"
       status: "passed"
+      v2_verdict: "PASS"
 
     - id: "DOD-007"
       description: "dev/deployments/extra.mk created with dev-up-test-env, dev-down-test-env, env-up, env-down, test-integration"
       status: "passed"
+      v2_verdict: "PASS"
 
     - id: "DOD-008"
       description: "Makefile updated: -include dev/deployments/extra.mk and new targets in .PHONY"
       status: "passed"
+      v2_verdict: "PASS"
 
     - id: "DOD-009"
       description: "make env-up brings auth-app to healthy within 30s (up to 60s under load)"
       status: "passed"
+      v2_verdict: "PASS"
       note: "Verified by submitter"
 
     - id: "DOD-010"
       description: "make env-down stops containers and deletes volumes (auth-postgres-data, auth-jwt-keys)"
       status: "passed"
+      v2_verdict: "PASS"
       note: "Uses down -v --remove-orphans"
 
     - id: "DOD-011"
       description: "make test-integration always calls dev-down-test-env even if tests fail (TEST_EXIT pattern)"
       status: "passed"
+      v2_verdict: "PASS"
       note: "Verified by submitter with intentionally failing test"
 
     - id: "DOD-012"
-      description: "lib/client_integration_test.go created: //go:build integration, TestMain gate, TestAuthEndpointReachable, blank import x/sync/singleflight"
+      description: "lib/client_integration_test.go: //go:build integration, TestMain gate, TestAuthEndpointReachable, blank import x/sync/singleflight"
       status: "passed"
+      v2_verdict: "PASS"
       note: "3 blank imports total (auth_v1, singleflight, grpc) — accepted deviation; all documented in file comment"
 
     - id: "DOD-013"
       description: ".github/workflows/ci.yaml updated: workflow_dispatch.inputs.run_integration, GOPRIVATE top-level, integration job with if+continue-on-error"
       status: "passed"
+      v2_verdict: "PASS"
 
     - id: "DOD-014"
       description: "README.md updated: Local integration testing section with prereqs, commands, CI caveat, Known limitations"
       status: "passed"
-      note: "S001 fix added second Known limitation bullet (partial env-up failure)"
+      v2_verdict: "PASS"
+      note: "S001 fix added second Known limitations bullet (partial env-up failure) — now 2 bullets, aligned with PRP Failure-Mode table"
 
     - id: "DOD-015"
       description: "make audit passes cleanly (vet + lint + test + verify + tidy-diff)"
       status: "passed"
-      note: "Confirmed passing after all post-review fixes applied"
+      v2_verdict: "PASS"
+      note: "All post-review fixes applied; audit passes in committed state ed462b4"
 
     - id: "DOD-016"
       description: "Existing unit tests not broken (make test green); no //nolint: (ES-0171); no silent errors in new code (ES-0060)"
       status: "passed"
+      v2_verdict: "PASS"
+
+# === EXECUTION METRICS ===
+execution_metrics:
+  review_rounds: 2
+  issues_raised_total: 9        # 2W + 5S (code-review) + 2S informational (test-review)
+  issues_fixed: 6               # CR-W001, CR-W002, CR-S001, CR-S002, CR-S003, CR-S004
+  issues_accepted_deviation: 2  # CR-S005, TR-S002
+  issues_deferred: 1            # TR-S001 → TASK-003
+  issues_open: 0
+  dod_criteria_met: "16/16"
+  new_issues_introduced_by_fixes: 0
+  regressions_detected: 0
+  commits_reviewed: 1           # ed462b4
 
 # === OVERALL SUMMARY ===
 overall_summary:
   code_review:
-    status: "good"          # all critical: 0; warnings fixed; suggestions addressed or documented
+    status: "excellent"
     critical_issues: 0
-    warnings: 2             # both fixed post-review
-    suggestions: 5          # 4 fixed, 1 accepted as convention deviation
+    warnings: 2
+    warnings_fixed: 2
+    suggestions: 5
+    suggestions_fixed: 4
+    suggestions_accepted: 1
+    open_issues: 0
+
   test_review:
     status: "excellent"
     critical_issues: 0
     warnings: 0
-    suggestions: 2          # 1 deferred to TASK-003, 1 accepted
-    coverage: "n/a"         # no production code in TASK-001
-
-# === ISSUE STATUS SUMMARY TABLE ===
-issue_status_summary:
-  - id: "CR-W001"
-    original_id: "TASK001-W001"
-    type: "warning"
-    title: "SDK env vars bleed into auth-app container"
-    status: "FIXED"
-  - id: "CR-W002"
-    original_id: "TASK001-W002"
-    type: "warning"
-    title: "auth-postgres port 5432 host binding conflict"
-    status: "FIXED"
-  - id: "CR-S001"
-    original_id: "TASK001-S001"
-    type: "suggestion"
-    title: "env-down not guaranteed on partial env-up failure"
-    status: "FIXED"
-  - id: "CR-S002"
-    original_id: "TASK001-S002"
-    type: "suggestion"
-    title: "auth-migrate double-run via depends_on"
-    status: "FIXED"
-  - id: "CR-S003"
-    original_id: "TASK001-S003"
-    type: "suggestion"
-    title: ".temp/ missing from .gitignore"
-    status: "FIXED"
-  - id: "CR-S004"
-    original_id: "TASK001-S004"
-    type: "suggestion"
-    title: "CI integration job missing needs: documentation"
-    status: "FIXED"
-  - id: "CR-S005"
-    original_id: "TASK001-S005"
-    type: "suggestion"
-    title: "Decorative ━━━ separators in echo output"
-    status: "ACCEPTED"
-  - id: "TR-S001"
-    original_id: "TEST-S001"
-    type: "suggestion"
-    title: "errors.Join pattern for multi-step cleanup (future tests)"
-    status: "DEFERRED"
-  - id: "TR-S002"
-    original_id: "TEST-S002"
-    type: "suggestion"
-    title: "t.Skip vs os.Exit(0) in TestMain"
-    status: "ACCEPTED"
+    suggestions: 2
+    suggestions_deferred: 1    # TR-S001 → TASK-003
+    suggestions_accepted: 1   # TR-S002
+    open_issues: 0
+    coverage: "n/a"            # no production code in TASK-001
 
 # === VALIDATION ===
 validation:
   status: "PASSED"
   checks:
-    - name: "All code-review reports processed"
+    - name: "All v1 code-review reports processed"
       expected: 1
       actual: 1
       status: "PASS"
-    - name: "All test-review reports processed"
+
+    - name: "All v1 test-review reports processed"
       expected: 1
       actual: 1
       status: "PASS"
-    - name: "Code review issue counts match source"
+
+    - name: "All v2 code-review reports processed"
+      expected: 1
+      actual: 1
+      status: "PASS"
+
+    - name: "All v2 test-review reports processed"
+      expected: 1
+      actual: 1
+      status: "PASS"
+
+    - name: "Code review issue counts match source (v1)"
       expected: "0 critical, 2 warnings, 5 suggestions"
       actual: "0 critical, 2 warnings, 5 suggestions"
       status: "PASS"
-    - name: "Test review issue counts match source"
+
+    - name: "Test review issue counts match source (v1)"
       expected: "0 critical, 0 warnings, 2 suggestions"
       actual: "0 critical, 0 warnings, 2 suggestions"
       status: "PASS"
-    - name: "All source issues present in aggregated report"
+
+    - name: "v2 code-review: zero new issues"
+      expected: 0
+      actual: 0
       status: "PASS"
-      note: "CR-W001..W002, CR-S001..S005 from code-review; TR-S001..S002 from test-review — all accounted for"
+
+    - name: "v2 test-review: zero new issues; file unchanged"
+      expected: "file_changed=false, new_issues=0"
+      actual: "file_changed=false, new_issues=0"
+      status: "PASS"
+
+    - name: "All source issues present in issue_trail"
+      status: "PASS"
+      note: "CR-W001..W002, CR-S001..S005 from code-review; TR-S001..TR-S002 from test-review — all 9 accounted for"
+
+    - name: "No open issues in final state"
+      expected: 0
+      actual: 0
+      status: "PASS"
+
     - name: "DOD coverage complete"
       expected: 16
       actual: 16
       status: "PASS"
-    - name: "make audit passes after all fixes"
-      status: "PASS"
 
-# === VERDICT ===
-verdict: "APPROVED_WITH_COMMENTS"
+    - name: "make audit passes in committed state"
+      status: "PASS"
+      note: "Verified by submitter; accepted by v2 reviewer per task instructions"
+
+    - name: "Commit authored exclusively by user (no AI attribution)"
+      status: "PASS"
+      note: "ed462b4 authored by a.popov; no Co-Authored-By or AI markers"
+
+# === OVERALL VERDICT ===
+verdict: "APPROVED"
 verdict_reason: |
-  Zero critical issues in both code review and test review.
-  All 2 warnings fixed (CR-W001: env comment added; CR-W002: host port binding removed).
-  All 5 code-review suggestions addressed: 4 fixed (CR-S001..S004), 1 accepted as established
-  platform convention with documented deviation (CR-S005: ━━━ echo separators match sibling repos).
-  Both test-review suggestions resolved: TR-S001 deferred to TASK-003 (not applicable to
-  current single-connection smoke test); TR-S002 accepted (os.Exit(0) matches IT-0060 reference).
-  All 16 DOD criteria passed. make audit passes after fixes. Infrastructure is solid and ready
-  to support TASK-002+.
+  v1 review raised 7 actionable issues (2 warnings + 5 suggestions) and 2 informational
+  test suggestions. All 6 actionable code-review issues fixed in commit ed462b4:
+    - CR-W001: clarifying comment added to compose.test.yaml env_file block
+    - CR-W002: host port binding removed from auth-postgres; comment added
+    - CR-S001: README Known limitations second bullet added
+    - CR-S002: --no-deps flag added to auth-app startup step in extra.mk
+    - CR-S003: .temp/ added to .gitignore with policy reference
+    - CR-S004: design-intent comment added to CI integration job
+  CR-S005 accepted as established team convention (runtime echo output, CS-0112 out of scope).
+  TR-S001 deferred to TASK-003 (pattern not applicable to single-connection smoke test).
+  TR-S002 accepted (os.Exit(0) matches IT-0060 reference implementation).
+  v2 review verified all fixes present, zero regressions introduced, zero new issues.
+  Test file unchanged since prior APPROVED review (empty git diff).
+  All 16 DOD criteria satisfied. make audit green. Infrastructure ready for TASK-002+.
 next_actions:
   - "Proceed to TASK-002 (Client constructor + ValidateAccessToken + TTL cache)"
-  - "At TASK-002 window: consider env file split (CR-W001 Option B — auth-server.env / sdk-test.env)"
-  - "At TASK-003: apply TR-S001 errors.Join pattern for multi-step gRPC connection teardown"
-  - "Before v0.2.0: evaluate adding needs: [lint, test, build] to integration CI job (per CR-S004 comment)"
+  - "At TASK-002 window: consider full env file split (CR-W001 Option B — auth-server.env / sdk-test.env) for v0.2.0"
+  - "At TASK-003: apply TR-S001 t.Cleanup / errors.Join pattern for multi-step gRPC connection teardown"
+  - "Before v0.2.0: evaluate adding needs: [lint, test, build] to CI integration job (per CR-S004 comment)"

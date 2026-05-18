@@ -1,0 +1,165 @@
+# Test Review Report — v2 (re-validation)
+# Purpose: Confirm lib/client_integration_test.go is unchanged since prior APPROVED review
+#          and re-validate against all applicable standards.
+# Prior review: .memory_bank/agent_task_results/2026-05-18_test-review_lib.yaml  (APPROVED)
+# Commit under review: ed462b4  (REQ-001-TASK-001: bootstrap deps and integration test infra)
+
+# === METADATA ===
+metadata:
+  date: "2026-05-18"
+  reviewer: "test-reviewer"
+  package: "github.com/webdelo/auth-client-go/lib"
+  files_reviewed: 1
+  total_tests: 1
+  coverage_percent: 0.0  # N/A — integration placeholder; no production code in TASK-001
+
+# === CHANGE DETECTION ===
+change_detection:
+  prior_review_verdict: "APPROVED"
+  prior_review_file: ".memory_bank/agent_task_results/2026-05-18_test-review_lib.yaml"
+  git_diff_result: "empty"  # git diff ed462b4 -- lib/client_integration_test.go produced no output
+  file_unchanged: true
+  conclusion: >
+    The file at HEAD is byte-for-byte identical to commit ed462b4. No modifications have been
+    made since the prior review. Re-validation proceeds against the same content.
+
+# === TEST RESULTS ===
+test_results:
+  status: "pass"
+  passed: 1      # make test (no integration build tag): TestVersion in lib_test.go passes
+  failed: 0
+  skipped: 0
+  duration_seconds: 0.0
+  notes: |
+    - `make test` output: 1 test PASS, 0 failed, 0 skipped.
+    - client_integration_test.go is correctly excluded from the run by //go:build integration.
+    - Integration test gate (RUN_INTEGRATION_TESTS=true) not exercised in this run; behavior
+      confirmed in prior review and code is unchanged.
+  failed_tests: []
+
+# === STANDARDS COMPLIANCE ===
+# Scope note: integration smoke test / dependency-pin placeholder.
+# UT-* rules for table-driven tests, mocks, and parallelism are explicitly out-of-scope
+# per task definition (TASK-003+ handles real SDK tests).
+# Applicable standards: IT-0001, IT-0008, ES-0060, ES-0171.
+
+standards_compliance:
+
+  build_tag:
+    status: "pass"
+    notes: "//go:build integration on line 1 (no blank line before package declaration). Correct."
+    violations: []
+
+  external_test_package:
+    status: "pass"
+    notes: "package lib_test — correct external test package for an SDK library."
+    violations: []
+
+  testmain_gate:
+    standard: "IT-0008"
+    status: "pass"
+    notes: >
+      TestMain checks RUN_INTEGRATION_TESTS == "true"; exits 0 (clean skip) when absent or any
+      other value. m.Run() return value is forwarded to os.Exit — no swallowed exit codes.
+    violations: []
+
+  error_handling:
+    standard: "ES-0060"
+    status: "pass"
+    notes: >
+      Two error-returning calls: net.DialTimeout and conn.Close.
+      Both are captured in named err variables and cause t.Fatalf on failure.
+      Zero silent ignores, zero blank-identifier discards. Full compliance.
+    violations: []
+
+  nolint_annotations:
+    standard: "ES-0171"
+    status: "pass"
+    notes: "Zero //nolint: annotations anywhere in the file."
+    violations: []
+
+  blank_imports_rationale:
+    status: "pass"
+    notes: >
+      Three blank imports (auth_v1, singleflight, grpc) carry a block comment documenting
+      purpose (pin as direct deps) and explicit removal condition (TASK-002/004 wire them
+      into production paths). Intentional per PRP spec for TASK-001.
+    violations: []
+
+  table_driven_tests:
+    status: "na"
+    notes: "UT-0001 out-of-scope per task definition. Single TCP smoke test; no table needed."
+    violations: []
+
+  parallel_execution:
+    status: "pass"
+    notes: >
+      No t.Parallel() — correct for integration tests. IT-0010 prohibits parallel
+      integration test execution; file is fully compliant.
+    violations: []
+
+  mocks:
+    status: "na"
+    notes: "No interfaces in TASK-001 scope. Mock standards (UT-0020 through UT-0024) do not apply."
+    violations: []
+
+# === ISSUES ===
+issues:
+  critical: []
+
+  warnings: []
+
+  suggestions:
+    - id: "TEST-S001"
+      title: "conn.Close teardown could use t.Cleanup in future multi-step tests"
+      file: "lib/client_integration_test.go"
+      line: 36
+      standard: "ES-0060"
+      description: >
+        For this single-connection TCP smoke test, the inline error check on conn.Close is
+        perfectly appropriate. Carried forward from v1 review as informational context for
+        TASK-003+ gRPC teardown patterns (defer/t.Cleanup + t.Errorf for non-fatal cleanup).
+        No action required for TASK-001.
+      action_required: false
+
+    - id: "TEST-S002"
+      title: "os.Exit(0) in TestMain could log a skip message for CI visibility"
+      file: "lib/client_integration_test.go"
+      line: 22
+      standard: "IT-0008"
+      description: >
+        Current os.Exit(0) silently skips. An optional fmt.Println before exit would make
+        CI logs clearer when integration tests are intentionally skipped. Current form is
+        compliant with IT-0008 reference implementation. No action required.
+      action_required: false
+
+# === COVERAGE ===
+coverage:
+  overall_percent: 0.0
+  notes: >
+    Coverage N/A for TASK-001. No production code added; lib/lib.go contains only the
+    Version constant. The integration file is excluded from unit coverage by build tag.
+    Coverage measurement begins with TASK-002+.
+  by_function: []
+
+# === SUMMARY ===
+summary:
+  critical_count: 0
+  warning_count: 0
+  suggestion_count: 2
+  standards_violations: 0
+  file_changed_since_prior_review: false
+  coverage_status: "na"
+
+# === VERDICT ===
+verdict: "APPROVED"
+verdict_reason: >
+  File is byte-for-byte unchanged from commit ed462b4 (confirmed via empty git diff).
+  Re-validation confirms full compliance with all applicable standards:
+    - IT-0001: external test package lib_test [PASS]
+    - IT-0008: TestMain env-var gate (RUN_INTEGRATION_TESTS=true) [PASS]
+    - ES-0060: explicit error handling on both DialTimeout and conn.Close [PASS]
+    - ES-0171: zero //nolint: annotations [PASS]
+    - Build tag //go:build integration correctly gates file from make test [PASS]
+  Two informational suggestions carried forward from v1; neither requires action in TASK-001.
+  Prior APPROVED verdict stands unchanged.
