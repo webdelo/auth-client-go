@@ -1,5 +1,111 @@
-tasks: []
-
+metadata:
+  template_version: '1.0'
+  updated_at: '2026-05-18T08:11:59Z'
+  total_pending: 6
+  total_active: 0
+  total_completed: 1
+  total_blocked: 0
+pending_tasks:
+- task_id: REQ-001-TASK-002
+  branch: feature/req-001-task-002
+  description: Core Client + типизированные ошибки + Logger adapter
+  task_file: task_management/tasks/REQ-001-TASK-002.md
+  status: prp_ready
+  priority: high
+  depends_on:
+  - REQ-001-TASK-001
+  prp_file: task_management/plans/REQ-001-TASK-002-PRP.md
+- task_id: REQ-001-TASK-003
+  branch: feature/req-001-task-003
+  description: ValidateAccessToken + TTL cache + HTTPMiddleware + UnaryInterceptor
+    (server-side gRPC) + fail-mode
+  task_file: task_management/tasks/REQ-001-TASK-003.md
+  status: prp_ready
+  priority: high
+  depends_on:
+  - REQ-001-TASK-002
+  prp_file: task_management/plans/REQ-001-TASK-003-PRP.md
+- task_id: REQ-001-TASK-004
+  branch: feature/req-001-task-004
+  description: 'Auth operations: Login / Refresh (singleflight) / Logout / LogoutAll
+    / ChangePassword / GetCurrentUser'
+  task_file: task_management/tasks/REQ-001-TASK-004.md
+  status: prp_ready
+  priority: high
+  depends_on:
+  - REQ-001-TASK-002
+  prp_file: task_management/plans/REQ-001-TASK-004-PRP.md
+- task_id: REQ-001-TASK-005
+  branch: feature/req-001-task-005
+  description: Context helpers + Cookie helpers + HTTP request helpers (IP/User-Agent)
+  task_file: task_management/tasks/REQ-001-TASK-005.md
+  status: pending
+  priority: medium
+  depends_on:
+  - REQ-001-TASK-002
+- task_id: REQ-001-TASK-006
+  branch: feature/req-001-task-006
+  description: Examples — basic, http_middleware, grpc_interceptor
+  task_file: task_management/tasks/REQ-001-TASK-006.md
+  status: pending
+  priority: medium
+  depends_on:
+  - REQ-001-TASK-003
+  - REQ-001-TASK-004
+  - REQ-001-TASK-005
+- task_id: REQ-001-TASK-007
+  branch: feature/req-001-task-007
+  description: README + godoc + CHANGELOG + tag v0.1.0
+  task_file: task_management/tasks/REQ-001-TASK-007.md
+  status: pending
+  priority: high
+  depends_on:
+  - REQ-001-TASK-006
+active_tasks: []
+completed_tasks:
+- task_id: REQ-001-TASK-001
+  branch: feature/req-001-task-001
+  description: Bootstrap зависимостей и integration test infra (auth-proto, grpc,
+    docker-compose с AUTH, test.env, make test-integration)
+  task_file: task_management/tasks/REQ-001-TASK-001.md
+  status: completed
+  priority: high
+  depends_on: []
+  prp_file: task_management/plans/REQ-001-TASK-001-PRP.md
+  code_review_files:
+  - task_management/reviews/REQ-001-TASK-001-CODE-REVIEW.yaml
+  lifecycle:
+    execution:
+      completed: true
+      completed_at: '2026-05-18T10:11:36Z'
+    code_review:
+      completed: true
+      completed_at: '2026-05-18'
+      verdict: APPROVED_WITH_COMMENTS
+      original_verdict: APPROVED_WITH_COMMENTS
+      critical_issues: 0
+      warning_issues: 2
+      suggestion_issues: 5
+    bug_fixing:
+      has_bugs: false
+      bugs_fixed: false
+  result_report: task_management/results/REQ-001-TASK-001-result-report.md
+  completed_at: '2026-05-18T10:11:50Z'
+blocked_tasks: []
+status_reference:
+  feature_tasks:
+  - pending
+  - prp_ready
+  - in_progress
+  - pending_review
+  - reviewed
+  - completed
+  bugfix_tasks:
+  - pending
+  - analysis_complete
+  - in_progress
+  - pending_review
+  - completed
 notes:
-  - "Список заполняется по мере декомпозиции REQ-001 (SDK v0.1.0 implementation)."
-  - "Формат записи задачи — см. AUTH .memory_bank/tasks_list.yaml для образца."
+- Список заполняется автоматически через .claude/scripts/req_refresh.py
+- Формат записи задачи соответствует .claude/templates/tasks_list_template.yaml

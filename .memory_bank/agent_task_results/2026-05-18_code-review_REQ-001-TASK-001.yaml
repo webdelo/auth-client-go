@@ -1,0 +1,432 @@
+metadata:
+  date: "2026-05-18"
+  reviewer: "code-reviewer"
+  task: "REQ-001-TASK-001"
+  package: "bootstrap / infra"
+  description: "Bootstrap dependencies and integration test infra"
+  files_reviewed: 8
+  prp_reference: "task_management/plans/REQ-001-TASK-001-PRP.md"
+
+static_analysis:
+  build:
+    status: "pass"
+    note: "Verified by submitter — go build ./lib/... and make build-examples both pass"
+    errors: []
+  fmt:
+    status: "pass"
+    note: "Verified by submitter — gofmt clean on all Go files"
+    files_need_formatting: []
+  vet:
+    status: "pass"
+    errors: []
+  lint:
+    status: "pass"
+    note: "golangci-lint v2.11.4 0 issues — verified by submitter"
+    issues: []
+  tests:
+    status: "pass"
+    note: "make test + make test-race pass; integration placeholder compiles under -tags=integration"
+    failed: []
+    coverage: "n/a (no new production code in TASK-001)"
+
+dod_coverage:
+  go_mod_version_downgrade: "PASS — go 1.24.0 (minor deviation: patch suffix added by Go toolchain auto-format; within PRP intent)"
+  three_direct_deps: "PASS — auth-proto/go v0.1.0, grpc v1.79.3, x/sync v0.19.0"
+  go_sum_created: "PASS — 42-line go.sum; no toolchain directive"
+  forbidden_deps_absent: "PASS — logrus, fx, prometheus not in go.mod (verified by submitter)"
+  test_env_created: "PASS — dev/deployments/test.env; full AUTH ENV set"
+  compose_yaml_created: "PASS — dev/deployments/compose.test.yaml; auth-postgres + auth-migrate + auth-app"
+  extra_mk_created: "PASS — dev/deployments/extra.mk; all required targets"
+  makefile_updated: "PASS — -include dev/deployments/extra.mk added; .PHONY extended"
+  integration_test_placeholder: "PASS — lib/client_integration_test.go; build tag, TestMain gate, smoke test"
+  ci_yaml_updated: "PASS — workflow_dispatch.inputs.run_integration; GOPRIVATE top-level; integration job"
+  readme_updated: "PASS — Local integration testing section with prereqs, commands, caveat"
+  make_audit_passes: "PASS — vet + lint + test + verify + tidy-diff"
+  gitignore: "PARTIAL — .temp/ missing (Task 9 in PRP; pre-existing gap, not a TASK-001 regression)"
+
+known_deviations_assessment:
+  - deviation: "go 1.24.0 instead of go 1.24"
+    verdict: "ACCEPTED — Go 1.21+ toolchain normalizes go directive to include patch version; functionally identical"
+
+  - deviation: "grpc v1.79.3 and x/sync v0.19.0 (MVS-resolved from auth-proto/go transitive)"
+    verdict: "ACCEPTED — MVS correctly resolves minimum required versions; SDK does not over-pin"
+
+  - deviation: "3 blank imports in integration test instead of 1 (PRP specified only singleflight)"
+    verdict: "ACCEPTED — Required to hold all 3 direct deps as non-indirect in go.mod before TASK-002+ wires them into production code. Comment in test file explains rationale."
+
+  - deviation: "GOLANGCI_VERSION bumped v1.64.8 → v2.11.4 in Makefile, ci.yaml, README"
+    verdict: "ACCEPTED — Pre-existing infra mismatch fixed: .golangci.yaml was already v2 format, v1.64.8 would have rejected it. Correct fix."
+
+issues:
+  critical: []
+
+  warnings:
+    - id: "TASK001-W001"
+      category: "LOGIC"
+      title: "SDK-only env vars bleed into auth-app container via env_file: test.env"
+      file: "dev/deployments/compose.test.yaml"
+      line: 62
+      standard: "effective_standards.md ES-0021 (minimize scope)"
+      description: |
+        auth-app's env_file: test.env injects SDK-test-only variables
+        (AUTH_REPO_PATH=../../../auth, AUTH_ENDPOINT=localhost:50051,
+        RUN_INTEGRATION_TESTS=true) into the auth server container environment.
+        The AUTH server ignores unknown env vars, so this is not a runtime failure,
+        but it violates the principle of minimal scope: server config and test harness
+        config should not share the same env file.
+
+        In the CI integration job, make test-integration sets AUTH_REPO_PATH via
+        env: block and also via --env-file, creating potential for confusion when
+        debugging unexpected auth-app behavior with unexpected env vars set.
+      current_code: |
+        # compose.test.yaml auth-app service:
+        env_file:
+          - test.env  # also injects AUTH_REPO_PATH, AUTH_ENDPOINT, RUN_INTEGRATION_TESTS into container
+      recommended_fix: |
+        Option A (minimal): Add a comment in compose.test.yaml clarifying the dual-purpose
+        nature of test.env and that unknown vars are harmless:
+          env_file:
+            - test.env  # Includes SDK-test vars (AUTH_REPO_PATH, AUTH_ENDPOINT, RUN_INTEGRATION_TESTS);
+                        # AUTH server silently ignores unrecognised variables.
+
+        Option B (clean separation, TASK-002 window): Split test.env into:
+          - dev/deployments/auth-server.env  (AUTH server config only)
+          - dev/deployments/sdk-test.env     (AUTH_ENDPOINT, RUN_INTEGRATION_TESTS, AUTH_REPO_PATH)
+        Update compose.test.yaml: env_file: [auth-server.env]
+        Update extra.mk _COMPOSE: --env-file dev/deployments/auth-server.env
+        Update ci.yaml integration step to source sdk-test.env separately.
+
+        Option A is sufficient for TASK-001; Option B is recommended before TASK-003 adds
+        real tests that depend on specific AUTH server configuration.
+      reason: "Separation of concerns: server config should be isolated from test harness config"
+
+    - id: "TASK001-W002"
+      category: "LOGIC"
+      title: "auth-postgres exposes port 5432 to host — conflicts with local Postgres"
+      file: "dev/deployments/compose.test.yaml"
+      line: 29
+      standard: "effective_standards.md ES-0022 (minimize scope)"
+      description: |
+        auth-postgres binds port 5432 to the host interface. The comment in compose.test.yaml
+        says "(opcionalmente, для отладки)" but the port binding is unconditional.
+        On machines with a local Postgres instance (signal-analyzer, funding-bot also run PG),
+        this will cause "address already in use" on `make env-up`, even though auth-app and
+        auth-migrate communicate with auth-postgres purely over the compose project network
+        and do not need the host binding at all.
+      current_code: |
+        auth-postgres:
+          ports:
+            - "5432:5432"  # unnecessary for inter-container communication
+      recommended_fix: |
+        Remove the ports binding entirely or make it non-conflicting:
+          # Option A: Remove host binding (inter-container traffic uses compose DNS)
+          # auth-postgres service: omit `ports:` block entirely
+          # auth-migrate and auth-app connect via auth-postgres:5432 (compose hostname)
+
+          # Option B: Use a non-standard host port to avoid conflicts
+          ports:
+            - "15432:5432"  # 15432 is unlikely to conflict; documents debug intent
+
+        Recommended: Option A for CI correctness; Option B for local debugging convenience.
+      reason: |
+        Port 5432 is the default Postgres port used by many sibling services on the same
+        developer machine. An unconditional host binding will prevent env-up on any machine
+        already running a local Postgres (e.g. signal-analyzer's docker-compose).
+
+  suggestions:
+    - id: "TASK001-S001"
+      category: "LOGIC"
+      title: "env-down not guaranteed if env-up fails partially"
+      file: "dev/deployments/extra.mk"
+      line: 33
+      description: |
+        test-integration depends on dev-up-test-env as a Makefile prerequisite.
+        If dev-up-test-env fails (e.g., auth-app never becomes healthy), make stops
+        before executing the recipe body — env-down is NOT called.
+        Partially started containers (auth-postgres, potentially auth-migrate) remain
+        running and hold the named volume auth-jwt-keys.
+
+        This behaviour is documented in the PRP Failure-Mode Sanity table and is acceptable
+        for v0.1.0. The developer must run `make env-down` manually after a failed env-up.
+        However, the README does not document this specific failure scenario — only the
+        Ctrl+C scenario is documented.
+      current_code: |
+        test-integration: $(TEST_RUNNER) dev-up-test-env
+            @set +e; \
+                ...; \
+                $(MAKE) --no-print-directory dev-down-test-env; \
+                exit $$TEST_EXIT
+        # If dev-up-test-env fails, the recipe body above never executes → no env-down
+      recommended_fix: |
+        Add a note to README "Known limitation" section (alongside the existing Ctrl+C note):
+
+        **Known limitation (v0.1.0):** if `make env-up` fails (e.g., auth-app does not
+        reach healthy state within the timeout), partially started containers remain running.
+        Run `make env-down` manually to clean up before retrying.
+
+        The code itself is consistent with the established `TEST_EXIT` pattern used by
+        sibling repos (auth, signal-analyzer, funding-bot). No code change required.
+      reason: "Documentation gap — partial cleanup scenario should be communicated to users of the SDK"
+
+    - id: "TASK001-S002"
+      category: "LOGIC"
+      title: "auth-migrate double-run: run --rm then up auth-app triggers second migration"
+      file: "dev/deployments/extra.mk"
+      line: 17
+      description: |
+        The dev-up-test-env target runs auth-migrate explicitly via `docker compose run --rm`
+        (step 2), then starts auth-app via `docker compose up -d --wait auth-app` (step 3).
+
+        When compose processes `up auth-app`, it sees auth-migrate's depends_on condition
+        (service_completed_successfully) but the container was already removed (--rm).
+        Compose will spin up a new auth-migrate container to satisfy the dependency.
+        This means migrations run twice: once visibly via `run --rm` and once silently
+        in the background during `up auth-app`.
+
+        Since `migrate up` is idempotent (already-applied migrations are skipped), this
+        is not a correctness bug. However, it adds ~2-5s to env-up time and can produce
+        confusing double-migration log output.
+      current_code: |
+        dev-up-test-env:
+            ${_COMPOSE} --profile test up -d --wait auth-postgres     # step 1
+            ${_COMPOSE} --profile test run --rm auth-migrate           # step 2 (explicit)
+            ${_COMPOSE} --profile test up -d --wait auth-app           # step 3 (re-runs migrate silently)
+      recommended_fix: |
+        Two options:
+
+        Option A: Use `up --no-deps` in step 3 to skip depends_on processing:
+          ${_COMPOSE} --profile test up -d --wait --no-deps auth-app
+
+        Option B: Replace explicit `run --rm auth-migrate` with a single `up` call
+        that starts auth-postgres, auth-migrate, and auth-app in dependency order:
+          ${_COMPOSE} --profile test up -d --wait auth-postgres
+          ${_COMPOSE} --profile test up -d --wait auth-app
+          # (auth-app depends_on auth-migrate:completed, compose handles ordering)
+          # Explicit migrate step removed; compose orchestrates it internally
+
+        Option A is minimal and preserves the explicit migrate output (useful for debugging).
+        Option B simplifies the target but hides migration output until auth-app starts.
+
+        Both options are safe. No change required for v0.1.0 (idempotency saves us).
+      reason: "Implicit double migration run adds noise and latency to env-up; may confuse future developers"
+
+    - id: "TASK001-S003"
+      category: "STYLE"
+      title: ".temp/ missing from .gitignore"
+      file: ".gitignore"
+      line: null
+      standard: "coding_style.md CS-0004; CLAUDE.md policy (Temp files → .temp/)"
+      description: |
+        CLAUDE.md mandates: "Temp files → .temp/". The Makefile itself uses
+        `.temp/` as the output directory when running ad-hoc go builds outside
+        of make targets. PRP Task 9 required verifying that .temp/ is gitignored.
+
+        The current .gitignore does not have an entry for .temp/.
+        If a developer runs `go build -o .temp/auth-client-go` as documented in
+        CLAUDE.md, the generated binary will show up as an untracked file.
+      current_code: |
+        # Current .gitignore (no .temp/ entry)
+        bin/
+        coverage/
+        # ... no .temp/
+      recommended_fix: |
+        Add to .gitignore in the "Dev tools" or "Build artefacts" section:
+          # Temp builds (per CLAUDE.md: use -o .temp/ for ad-hoc builds)
+          .temp/
+      reason: "Policy compliance: CLAUDE.md requires .temp/ for ad-hoc builds, .gitignore should prevent accidental commits"
+
+    - id: "TASK001-S004"
+      category: "STYLE"
+      title: "CI integration job runs without requiring lint/test/build to pass first"
+      file: ".github/workflows/ci.yaml"
+      line: 76
+      description: |
+        The integration job has no `needs:` field. When triggered via workflow_dispatch
+        with run_integration=true, it runs concurrently with lint, test, and build jobs.
+        This means integration tests may run against code that hasn't passed basic quality
+        gates. While the code must compile for go test to succeed, a lint failure in
+        a separate job won't block integration.
+
+        For v0.1.0 with manual-only trigger this is acceptable — the developer decides
+        when to run integration. However, as the SDK grows and integration tests become
+        more meaningful gates, this ordering becomes important.
+      current_code: |
+        integration:
+          name: Integration Tests
+          runs-on: ubuntu-latest
+          if: ${{ inputs.run_integration == true }}
+          continue-on-error: true
+          # No `needs:` — runs concurrently with lint/test/build
+      recommended_fix: |
+        Add needs for the core quality gates (acceptable for v0.2.0 or when integration
+        becomes mandatory):
+          integration:
+            needs: [lint, test, build]
+            if: ${{ inputs.run_integration == true }}
+            continue-on-error: true
+
+        For v0.1.0, add a code comment explaining the intentional omission:
+          # integration job intentionally has no `needs:` — manual-only trigger,
+          # developer is responsible for running lint/test/build before integration.
+          # Add `needs: [lint, test, build]` when integration becomes mandatory gate.
+      reason: "Documentation of intentional ordering gap prevents future developers from accidentally removing a `needs:` that should be there"
+
+    - id: "TASK001-S005"
+      category: "STYLE"
+      title: "Decorative separator characters in runtime echo output (extra.mk)"
+      file: "dev/deployments/extra.mk"
+      line: 16
+      standard: "coding_style.md CS-0112"
+      description: |
+        The echo statements in extra.mk use box-drawing characters (━━━) as visual
+        separators in terminal output. CS-0112 prohibits decorative comment separators
+        in source code.
+
+        Assessment: CS-0112 explicitly targets "decorative разделители между блоками кода"
+        (code separators). The ━━━ usage here is in runtime echo output (terminal UX),
+        not as code structural separators. The rule's intent is to prevent visual noise
+        in source code that hides structural issues — not to prohibit user-facing terminal
+        formatting. The Makefile help target also uses box-drawing chars (pre-existing,
+        not in scope of this PR).
+
+        Per CLAUDE.md policy: "SUGGESTIONS are MANDATORY (will be applied)". However,
+        this specific pattern is a borderline CS-0112 application. The PRP does not
+        explicitly address it. Flagging as suggestion for team awareness, not as a
+        mandatory fix if team consensus is that runtime echo output is out of CS-0112 scope.
+      current_code: |
+        @echo "━━━ Starting AUTH test environment ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        @echo "━━━ Stopping AUTH test environment ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        @echo "━━━ Integration Tests ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      recommended_fix: |
+        If CS-0112 is interpreted as covering runtime echo output:
+          @echo "Starting AUTH test environment..."
+          @echo "Stopping AUTH test environment..."
+          @echo "Running integration tests..."
+
+        If CS-0112 applies only to source code structure (recommended interpretation):
+          No change required. The ━━━ in echo strings is user-facing terminal formatting,
+          not a code organization mechanism.
+      reason: "CS-0112 borderline case; flagged for team decision on scope of rule"
+
+summary:
+  critical_count: 0
+  warning_count: 2
+  suggestion_count: 5
+
+positive:
+  - "Correct TEST_EXIT=$$? pattern for guaranteed env-down — consistent with auth, signal-analyzer, funding-bot conventions"
+  - "ENV parameterization via ${AUTH_REPO_PATH:-../../../auth} with sensible defaults covers both local and CI layouts cleanly"
+  - "go.sum has exactly the expected transitive closure with no forbidden direct dependencies (logrus, fx, prometheus absent)"
+  - "TestMain gate via RUN_INTEGRATION_TESTS=true correctly prevents integration test execution under plain `go test`"
+  - "ES-0060 respected: conn.Close() error is checked in TestAuthEndpointReachable (no silent error suppression)"
+  - "POSTGRES_HOST_AUTH_METHOD: trust is correctly scoped to the test compose file only — does not affect production"
+  - "Named volumes with explicit names (auth-client-go-test-postgres-data, auth-client-go-test-jwt-keys) prevent collision with other compose projects"
+  - "No toolchain directive added to go.mod — correct for stable minimum-version guarantee"
+  - "3 blank imports rationale is clearly documented in test file comment — deviates from PRP spec but for a valid reason"
+  - "GOLANGCI_VERSION bump from v1.64.8 to v2.11.4 correctly fixes pre-existing infra mismatch with .golangci.yaml v2 format"
+  - "continue-on-error: true on integration CI job correctly implements ADR §A13 (non-blocking optional gate)"
+  - "Makefile help target correctly inherits integration targets via extra.mk inclusion"
+
+verdict: "APPROVED_WITH_COMMENTS"
+verdict_reason: |
+  Zero critical issues. Two warnings require action before TASK-002:
+  - TASK001-W001 (env var scope): minimum fix is a clarifying comment in compose.test.yaml;
+    full fix (env file split) deferred to TASK-002 window.
+  - TASK001-W002 (port 5432 conflict): removing or remapping the host port binding prevents
+    env-up failures on developer machines with local Postgres.
+  Five suggestions are mandatory per CLAUDE.md policy; TASK001-S003 (.temp gitignore) is
+  the highest-priority suggestion as it's a direct CLAUDE.md policy gap. All DOD criteria
+  from PRP are satisfied. The infra is solid and ready to support TASK-002+.
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    note: "Minimal Go code in this task (one _test.go file); most ES rules are N/A for infra files"
+    rules_applied:
+      - "ES-0001"  # gofmt — pass
+      - "ES-0002"  # tabs — pass
+      - "ES-0003"  # brace placement — pass
+      - "ES-0010"  # package names — lib_test correct
+      - "ES-0021"  # guard clauses — TestMain early exit pattern correct
+      - "ES-0022"  # minimize scope — flagged W001 (env var scope)
+      - "ES-0042"  # defer for cleanup — conn.Close() explicit (correct, no defer needed for test)
+      - "ES-0060"  # handle errors explicitly — PASS (conn.Close() error checked)
+      - "ES-0063"  # no panic — PASS (no panic in new code)
+      - "ES-0130"  # import order — PASS (stdlib → external blank imports)
+      - "ES-0131"  # no unnecessary aliases — PASS
+    critical_rules_checked:
+      - "ES-0051"  # interface at consumer — N/A (no interfaces introduced)
+      - "ES-0055"  # no generalized interfaces in provider — N/A
+      - "ES-0060"  # handle errors explicitly — PASS
+      - "ES-0063"  # no panic — PASS
+    rules_skipped:
+      - "ES-0011 through ES-0018"  # naming — N/A (no types/vars in new code beyond test funcs)
+      - "ES-0030 through ES-0035"  # data structures — N/A
+      - "ES-0040 through ES-0044"  # function design — N/A (test funcs are trivial)
+      - "ES-0050 through ES-0057"  # interface design — N/A (no interfaces)
+      - "ES-0061 through ES-0065"  # error handling nuances — N/A
+      - "ES-0070 through ES-0073"  # receivers — N/A
+      - "ES-0080 through ES-0081"  # documentation — N/A
+      - "ES-0090"                  # enums — N/A
+      - "ES-0110 through ES-0112"  # performance — N/A
+      - "ES-0120"                  # functional options — N/A
+      - "ES-0140 through ES-0142"  # constructors — N/A
+
+  effective_concurrency:
+    checked: false
+    total_rules: 35
+    concurrency_detected: false
+    trigger_found: []
+    note: |
+      No concurrency primitives (goroutines, mutex, atomic, channels) in any of the 8 changed files.
+      lib/client_integration_test.go has net.DialTimeout which is synchronous.
+      PRP explicitly states: "TASK-001 не вводит concurrency-кода. Goroutine-lifecycle (cache cleaner) появляется в TASK-003."
+    rules_applied: []
+    rules_skipped: ["All EC-* rules — no concurrency code in scope"]
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # line length 120 — PASS (checked long lines in extra.mk, ci.yaml)
+      - "CS-0002"  # explicit returns — PASS (no naked returns)
+      - "CS-0004"  # no global state — PASS (no global vars in test file)
+      - "CS-0010"  # block spacing — PASS (TestMain and TestAuthEndpointReachable have correct spacing)
+      - "CS-0031"  # nolint requires justification — PASS (no nolint directives)
+      - "CS-0060"  # godoc for public methods — N/A (test functions; test-only file)
+      - "CS-0070"  # English naming — PASS (comments in test.env/extra.mk mixed Russian/English; acceptable for infra files)
+      - "CS-0110"  # no internal standard references in code comments — PASS
+      - "CS-0111"  # no restating-obvious comments — PASS
+      - "CS-0112"  # no decorative separators — flagged S005 (borderline: runtime echo output)
+    critical_rules_checked:
+      - "CS-0112"  # decorative separators — flagged S005 for team decision
+      - "CS-0111"  # restating-obvious comments — PASS
+    rules_skipped:
+      - "CS-0003"   # magic numbers — N/A (only literal "true", 0, 5 in test code)
+      - "CS-0020 through CS-0024"  # code quality — N/A (trivial test functions)
+      - "CS-0040"   # anonymous functions ≤5 lines — N/A
+      - "CS-0050 through CS-0053"  # package structure — N/A (no new packages)
+      - "CS-0080 through CS-0082"  # types and limits — N/A
+      - "CS-0090"   # nil safety — N/A
+      - "CS-0100"   # no envDefault in prod configs — N/A
+      - "CS-0113 through CS-0122"  # data structures, constructors — N/A
+
+  dba_rules:
+    checked: false
+    note: "No database code in this task — no SQL, pgx, ClickHouse, or Redis usage"
+
+  devops_rules:
+    checked: true
+    note: "Docker Compose and Makefile infra reviewed against general DevOps best practices"
+    rules_applied:
+      - "Healthcheck: postgres uses pg_isready — correct"
+      - "Healthcheck: auth-app inherits Dockerfile HEALTHCHECK — correct"
+      - "Volume lifecycle: auth-jwt-keys named volume deleted on env-down -v — correct"
+      - "Image pinning: postgres:16-alpine, migrate/migrate:v4.17.0 — pinned, correct"
+      - "Port exposure: flagged W002 for port 5432 host binding conflict risk"
+      - "Env file separation: flagged W001 for SDK-only vars bleeding into server container"
+    issues_found:
+      - "TASK001-W001: env var scope leak"
+      - "TASK001-W002: port 5432 host binding conflict"
+      - "TASK001-S002: double migration run (idempotent, not a bug)"

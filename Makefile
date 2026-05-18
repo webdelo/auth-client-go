@@ -1,5 +1,5 @@
 # Tool versions
-GOLANGCI_VERSION ?= v1.64.8
+GOLANGCI_VERSION ?= v2.11.4
 SCRATCH_VERSION ?= 0.8.1
 MOCKERY_VERSION ?= v3.7.0
 
@@ -12,13 +12,14 @@ TEST_RUNNER_SRC := dev/tools/test-runner-main.go
 
 # Include dev tools
 -include dev/tools/tools.mk
+-include dev/deployments/extra.mk
 
 $(TEST_RUNNER): $(TEST_RUNNER_SRC)
 	@mkdir -p dev/tools/bin
 	@echo "Building test-runner..."
 	@go build -o $(TEST_RUNNER) $(TEST_RUNNER_SRC)
 
-.PHONY: test test-race bench coverage lint lint-fix fmt vet audit tidy clean build-examples help init-mem-bank update-mem-bank release release-dry-run release-with-notes generate-mocks
+.PHONY: test test-race bench coverage lint lint-fix fmt vet audit tidy clean build-examples help init-mem-bank update-mem-bank release release-dry-run release-with-notes generate-mocks test-integration env-up env-down dev-up-test-env dev-down-test-env
 
 ##@ Testing
 test: $(TEST_RUNNER) ## Run unit tests
