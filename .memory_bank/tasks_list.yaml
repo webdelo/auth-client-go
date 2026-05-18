@@ -1,20 +1,11 @@
 metadata:
   template_version: '1.0'
-  updated_at: '2026-05-18T08:25:47Z'
-  total_pending: 6
+  updated_at: '2026-05-18T10:21:51Z'
+  total_pending: 5
   total_active: 0
-  total_completed: 1
+  total_completed: 2
   total_blocked: 0
 pending_tasks:
-- task_id: REQ-001-TASK-002
-  branch: feature/req-001-task-002
-  description: Core Client + типизированные ошибки + Logger adapter
-  task_file: task_management/tasks/REQ-001-TASK-002.md
-  status: prp_ready
-  priority: high
-  depends_on:
-  - REQ-001-TASK-001
-  prp_file: task_management/plans/REQ-001-TASK-002-PRP.md
 - task_id: REQ-001-TASK-003
   branch: feature/req-001-task-003
   description: ValidateAccessToken + TTL cache + HTTPMiddleware + UnaryInterceptor
@@ -39,10 +30,11 @@ pending_tasks:
   branch: feature/req-001-task-005
   description: Context helpers + Cookie helpers + HTTP request helpers (IP/User-Agent)
   task_file: task_management/tasks/REQ-001-TASK-005.md
-  status: pending
+  status: prp_ready
   priority: medium
   depends_on:
   - REQ-001-TASK-002
+  prp_file: task_management/plans/REQ-001-TASK-005-PRP.md
 - task_id: REQ-001-TASK-006
   branch: feature/req-001-task-006
   description: Examples — basic, http_middleware, grpc_interceptor
@@ -91,6 +83,37 @@ completed_tasks:
       bugs_fixed: false
   result_report: task_management/results/REQ-001-TASK-001-result-report.md
   completed_at: '2026-05-18T10:11:50Z'
+- task_id: REQ-001-TASK-002
+  branch: feature/req-001-task-002
+  description: Core Client + типизированные ошибки + Logger adapter
+  task_file: task_management/tasks/REQ-001-TASK-002.md
+  status: completed
+  priority: high
+  depends_on:
+  - REQ-001-TASK-001
+  prp_file: task_management/plans/REQ-001-TASK-002-PRP.md
+  code_review_files:
+  - task_management/reviews/REQ-001-TASK-002-CODE-REVIEW.yaml
+  lifecycle:
+    execution:
+      completed: true
+      completed_at: '2026-05-18T11:41:35Z'
+    code_review:
+      completed: true
+      completed_at: null
+      verdict: ALL_FIXED
+      original_verdict: APPROVED_WITH_COMMENTS
+      critical_issues: 0
+      warning_issues: 6
+      suggestion_issues: 5
+      debug_completed_at: '2026-05-18'
+    bug_fixing:
+      has_bugs: false
+      bugs_fixed: true
+      debug_verdict: ALL_FIXED
+  result_report: task_management/results/REQ-001-TASK-002-result-report.md
+  debug_report_files:
+  - task_management/debug_reports/REQ-001-TASK-002-DEBUG-REPORT.yaml
 blocked_tasks: []
 status_reference:
   feature_tasks:

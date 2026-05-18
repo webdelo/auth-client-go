@@ -1,0 +1,655 @@
+task_id: REQ-001-TASK-002
+review_date: "2026-05-18"
+verdict: APPROVED_WITH_COMMENTS
+
+summary:
+  critical: 0
+  warning: 6
+  suggestion: 5
+  total: 11
+
+packages_reviewed:
+  - name: lib
+    files_production:
+      - lib/client.go
+      - lib/errors.go
+      - lib/logger.go
+      - lib/examples/basic/main.go
+    files_tests:
+      - lib/client_test.go
+      - lib/client_integration_test.go
+      - lib/errors_test.go
+      - lib/logger_test.go
+
+static_analysis:
+  build: pass
+  fmt: pass
+  vet: pass
+  lint: pass
+  tests: pass
+  race_detector: pass
+  coverage: "98.7% (lib package) -- exceeds 85% DOD target"
+
+test_results:
+  total: 60
+  passed: 60
+  failed: 0
+  skipped: 0
+  duration_seconds: 0.347
+
+issues:
+  # == CODE REVIEW WARNINGS (from code-reviewer) ==
+  - id: CR-001
+    original_id: "1"
+    source_agent: code-reviewer
+    source_report: 2026-05-18_code-review_lib.yaml
+    source_package: lib
+    severity: WARNING
+    category: style
+    rule: CS-0110
+    file: lib/client.go
+    line: 44
+    title: Internal task identifiers (TASK-003, TASK-002) in exported godoc comments
+    description: |
+      Four exported godoc blocks reference internal task management identifiers
+      that mean nothing to SDK consumers and violate CS-0110 ("No internal standard
+      references in code comments"):
+        - line 44: "FailMode controls how HTTPMiddleware/UnaryInterceptor (TASK-003) react"
+        - line 60-61: "default implementation lives in lib/internal/cache (TASK-003); for
+          TASK-002 the type is declared here so Config compiles"
+        - line 107: "WithCache overrides Config.Cache. Used in TASK-003."
+        - line 113: "that bypass the UnaryInterceptor (TASK-003)."
+
+      CS-0110 forbids references to internal tracking artifacts (task IDs, rule IDs).
+      Comments should explain WHAT and WHY, not trace back to internal roadmap items.
+    suggestion: |
+      Replace TASK-003/TASK-002 references with functional descriptions:
+
+        // FailMode controls how the HTTP middleware and gRPC unary interceptor react
+        // when the AUTH service is unavailable. See WithFailMode.
+
+        // Cache is the interface for ValidateToken result caching. The default
+        // implementation is created by New when Config.Cache is nil; supply a custom
+        // implementation via WithCache to override TTL or storage backend.
+
+        // WithCache overrides the ValidateToken result cache. Pass nil to disable caching.
+
+        // "/myapp.v1.UserService/Login") that bypass the authentication interceptor.
+        // The health-check endpoints /grpc.health.v1.Health/Check and /Watch are
+        // always in the open set.
+
+  - id: CR-002
+    original_id: "2"
+    source_agent: code-reviewer
+    source_report: 2026-05-18_code-review_lib.yaml
+    source_package: lib
+    severity: WARNING
+    category: godoc
+    rule: CS-0060
+    file: lib/client.go
+    line: 74
+    title: Config struct fields lack per-field godoc comments
+    description: |
+      The Config struct exports 9 fields, none of which have field-level
+      documentation comments. The PRP Data Models pseudocode shows the intended
+      inline documentation (e.g., "default 30s; 0 disables cache (used by TASK-003)",
+      "default FailClosed", "appended after SDK defaults"). Without per-field
+      comments, consumers cannot discover defaults or semantics via
+      `go doc github.com/webdelo/auth-client-go/lib Config` -- the output lists bare
+      field names with no descriptions.
+
+      CS-0060 requires godoc on all exported identifiers. In Go, struct field
+      comments appear in `go doc` output and are part of the public API surface.
+      This is particularly important for ValidateCacheTTL (zero has special meaning
+      in TASK-003) and DialOptions (ordering matters for credential override).
+    suggestion: |
+      Add per-field comments to the Config struct:
+
+        type Config struct {
+            // Endpoint is the AUTH service address ("host:port"). Required.
+            Endpoint string
+
+            // ValidateCacheTTL is the TTL for ValidateToken results. Defaults to 30s.
+            // Set to a negative value to use the default. Reserved: zero will disable
+            // caching once the cache implementation is wired (currently ignored).
+            ValidateCacheTTL time.Duration
+
+            // FailMode controls middleware behavior when AUTH is unreachable.
+            // Defaults to FailClosed (block the request with 503).
+            FailMode FailMode
+
+            // ValidateTimeout is the per-call timeout for ValidateToken. Defaults to 2s.
+            ValidateTimeout time.Duration
+
+            // LoginTimeout is the per-call timeout for Login. Defaults to 5s.
+            LoginTimeout time.Duration
+
+            // RefreshTimeout is the per-call timeout for Refresh. Defaults to 5s.
+            RefreshTimeout time.Duration
+
+            // DialOptions are appended to the SDK defaults, allowing the consumer
+            // to override transport credentials (TLS), interceptors, etc.
+            // The SDK insecure.NewCredentials() comes first; user options come after,
+            // so a user-supplied WithTransportCredentials wins.
+            DialOptions []grpc.DialOption
+
+            // Logger is the diagnostic logger. Defaults to NoopLogger if nil.
+            Logger Logger
+
+            // Cache is the ValidateToken result cache. Defaults to nil (no cache).
+            Cache Cache
+        }
+
+  - id: CR-003
+    original_id: "3"
+    source_agent: code-reviewer
+    source_report: 2026-05-18_code-review_lib.yaml
+    source_package: lib
+    severity: WARNING
+    category: correctness
+    rule: PRP
+    file: lib/client.go
+    line: 201
+    title: "applyDefaults: ValidateCacheTTL=0 is defaulted to 30s, making cache-disable impossible"
+    description: |
+      PRP Data Models document the contract:
+        "ValidateCacheTTL time.Duration  // default 30s; 0 disables cache (used by TASK-003)"
+
+      The current applyDefaults (lines 201-205):
+        if cfg.ValidateCacheTTL < 0 { cfg.ValidateCacheTTL = 0 }
+        if cfg.ValidateCacheTTL == 0 { cfg.ValidateCacheTTL = defaultValidateCacheTTL }
+
+      When a consumer sets Config{ValidateCacheTTL: 0}, the zero value is silently
+      promoted to 30s, making it impossible to opt out of the cache via the Config
+      struct. TASK-003 will rely on ValidateCacheTTL==0 as the "disable cache" signal.
+      This will cause a latent bug when TASK-003 wires the cache: the cache can never
+      be disabled by Config alone.
+
+      Note: the PRP Code Pattern pseudocode (line 759-763 of the PRP file) mirrors
+      the current implementation. This is an internal PRP inconsistency between the
+      Gotcha G10 prose and the pseudocode. The implementation follows the pseudocode,
+      which is incorrect with respect to the stated contract.
+    suggestion: |
+      Use a sentinel constant to distinguish "user set zero (disable)" from "user
+      omitted (use default)". The simplest fix without adding a new type is to treat
+      negative as "use default" and zero as "disable":
+
+        func applyDefaults(cfg Config) Config {
+            if cfg.ValidateCacheTTL < 0 {
+                // Negative has no sensible meaning; use default.
+                cfg.ValidateCacheTTL = defaultValidateCacheTTL
+            }
+            // ValidateCacheTTL == 0 means "disable cache" -- preserved as-is.
+            // TASK-003 will skip creating the cache when TTL is 0.
+            if cfg.ValidateTimeout <= 0 {
+                cfg.ValidateTimeout = defaultValidateTimeout
+            }
+            // ... rest unchanged
+        }
+
+      Update the godoc for ValidateCacheTTL field accordingly (see CR-002).
+
+  - id: CR-004
+    original_id: "4"
+    source_agent: code-reviewer
+    source_report: 2026-05-18_code-review_lib.yaml
+    source_package: lib
+    severity: WARNING
+    category: style
+    rule: CS-0111
+    file: lib/logger.go
+    line: 19
+    title: Redundant phrase "at every logging call site" after "per-call-site" in NoopLogger godoc
+    description: |
+      Line 19 of logger.go reads:
+        "nil so that the SDK avoids per-call-site nil-checks at every logging call site."
+
+      "per-call-site" and "at every logging call site" express the same idea; "call site"
+      is repeated. CS-0111 requires comments to be minimal and non-redundant.
+    suggestion: |
+      // NoopLogger is the silent default Logger. It is used when Config.Logger is
+      // nil so that the SDK avoids nil-checks at every call site.
+
+  # == TEST REVIEW WARNINGS (from test-reviewer) ==
+  - id: CR-005
+    original_id: "1"
+    source_agent: test-reviewer
+    source_report: 2026-05-18_test-review_lib_v3.yaml
+    source_package: lib
+    severity: WARNING
+    category: missing_case
+    rule: "DOD (REQ-001-TASK-002.md) + PRP Task 8"
+    file: lib/client_test.go
+    line: 33
+    title: "Missing TestNew case: endpoint_invalid_returns_dial_error_or_lazy"
+    description: |
+      PRP Task 8 (lib/client_test.go) lists 9 required cases for TestNew. All 8 functional
+      cases are present, but the 9th -- "endpoint_invalid_returns_dial_error_or_lazy" -- is
+      absent. The PRP specifies: endpoint "bad host with spaces". grpc.NewClient sometimes
+      validates the target eagerly, sometimes lazily. If it returns err -> assert; if nil -> skip.
+
+      The actual file has 9 cases (including an extra "with_cache_custom" that is not in
+      the minimal PRP list), but the specific boundary case for an invalid/malformed endpoint
+      string is not covered. grpc.NewClient does validate the target string -- a space in the
+      address triggers an error -- and documenting this behavior in a test is explicitly required
+      by the PRP.
+    suggestion: |
+      Add a test case in the TestNew map:
+
+        "endpoint_invalid_format_returns_error": {
+            cfg: Config{Endpoint: "bad host with spaces"},
+            want: func(t *testing.T, c *Client, err error) {
+                // grpc.NewClient rejects targets with spaces at parse time
+                if err != nil {
+                    require.Error(t, err)
+                    assert.Nil(t, c)
+                } else {
+                    // lazy dial: no error at construction, only at first RPC
+                    require.NotNil(t, c)
+                    t.Cleanup(func() { _ = c.Close() })
+                }
+            },
+        },
+
+      Note: the want closure's conditional branch is acceptable here because the test
+      explicitly documents the two possible grpc.NewClient behaviors (eager vs. lazy validation).
+
+  - id: CR-006
+    original_id: "2"
+    source_agent: test-reviewer
+    source_report: 2026-05-18_test-review_lib_v3.yaml
+    source_package: lib
+    severity: WARNING
+    category: structure
+    rule: "UT-0002 (tests_rules_index.yaml)"
+    file: lib/logger_test.go
+    line: 9
+    title: "NoopLogger split into 3 test functions instead of 1 table-driven function per PRP Task 7"
+    description: |
+      UT-0002 states "one method = one test function". The actual implementation correctly
+      follows this rule per method (TestNoopLogger_Info, TestNoopLogger_Warn,
+      TestNoopLogger_Error), and UT-0010 confirms the Test<Type>_<Method> naming format is
+      correct.
+
+      However, PRP Task 7 explicitly requires a SINGLE function "TestNoopLogger" that tests
+      all three methods in one table-driven set with cases like "info_no_panic_with_nil_ctx",
+      "warn_no_panic_with_nil_ctx", "error_no_panic_with_nil_err" together. The rationale is
+      that the NoopLogger is a single concern (all methods are no-ops), and splitting into 3
+      functions adds boilerplate without clarity benefit.
+
+      The 3-function approach technically complies with UT-0002 (each method has one function),
+      but the PRP task requirement is to have one unified TestNoopLogger function that exercises
+      all three methods in one table. This is a deviation from the PRP spec.
+
+      Current total cases across 3 functions: 9 (3 per method).
+      PRP required cases in one function: 6 cases (happy_path per method + nil-ctx per method).
+    suggestion: |
+      Consolidate into a single function:
+
+        func TestNoopLogger(t *testing.T) {
+            t.Parallel()
+
+            tests := map[string]struct {
+                run func(l Logger)
+            }{
+                "happy_path": {
+                    run: func(l Logger) { l.Info(context.Background(), "msg", "k", "v") },
+                },
+                "info_no_panic_with_nil_ctx": {
+                    run: func(l Logger) {
+                        var nilCtx context.Context
+                        l.Info(nilCtx, "msg")
+                    },
+                },
+                "warn_no_panic_with_empty_fields": {
+                    run: func(l Logger) { l.Warn(context.Background(), "msg") },
+                },
+                "warn_no_panic_with_nil_ctx": {
+                    run: func(l Logger) {
+                        var nilCtx context.Context
+                        l.Warn(nilCtx, "msg")
+                    },
+                },
+                "error_no_panic_with_nil_err": {
+                    run: func(l Logger) { l.Error(context.Background(), "msg", nil) },
+                },
+                "error_no_panic_with_nil_ctx_and_nil_err": {
+                    run: func(l Logger) {
+                        var nilCtx context.Context
+                        l.Error(nilCtx, "msg", nil)
+                    },
+                },
+            }
+
+            for name, tc := range tests {
+                tc := tc
+                t.Run(name, func(t *testing.T) {
+                    t.Parallel()
+                    tc.run(NoopLogger{})
+                })
+            }
+        }
+
+  # == CODE REVIEW SUGGESTIONS (from code-reviewer) ==
+  - id: CR-007
+    original_id: "5"
+    source_agent: code-reviewer
+    source_report: 2026-05-18_code-review_lib.yaml
+    source_package: lib
+    severity: SUGGESTION
+    category: style
+    rule: CS-0111
+    file: lib/logger.go
+    line: 22
+    title: "NoopLogger method godocs: 'No-op.' suffix restates the obvious empty body"
+    description: |
+      The godoc on each NoopLogger method follows the pattern "Info implements
+      Logger. No-op." The "No-op." suffix is redundant -- the empty body `{}` already
+      communicates this to any reader. CS-0111 discourages restating what the code
+      already shows.
+
+      "Info implements Logger." alone is sufficient and useful (documents interface
+      satisfaction). The trailing "No-op." adds no information not already visible.
+    suggestion: |
+      // Info implements Logger.
+      func (NoopLogger) Info(context.Context, string, ...any) {}
+
+      // Warn implements Logger.
+      func (NoopLogger) Warn(context.Context, string, ...any) {}
+
+      // Error implements Logger.
+      func (NoopLogger) Error(context.Context, string, error, ...any) {}
+
+  - id: CR-008
+    original_id: "6"
+    source_agent: code-reviewer
+    source_report: 2026-05-18_code-review_lib.yaml
+    source_package: lib
+    severity: SUGGESTION
+    category: correctness
+    rule: EC-0051
+    file: lib/client.go
+    line: 135
+    title: "bgCtx context.Context stored in Client struct (EC-0051 acknowledged exception)"
+    description: |
+      EC-0051 states "Never store context in structs." The Client struct stores
+      bgCtx context.Context (line 135) for lifecycle management of future background
+      goroutines (cache cleaner, TASK-003).
+
+      This is an ACKNOWLEDGED exception: the PRP explicitly prescribes adding field
+      bgCtx context.Context to Client struct as the solution for goroutine lifecycle
+      tracking across Close(). The background context is not a request-scoped context
+      but an owner-lifetime context -- semantically different from what EC-0051 targets.
+
+      Flagged as SUGGESTION for documentation clarity, not as a defect.
+    suggestion: |
+      Add a comment to the bgCtx field to make the intentional exception visible:
+
+        // bgCtx is the owner-lifetime context for background goroutines (cache
+        // cleaner, etc.). It is NOT a request context. Cancelled by Close.
+        // Storing it in the struct is intentional -- this is a lifecycle context,
+        // not a per-request context (EC-0051 exception).
+        bgCtx    context.Context
+        cancelBG context.CancelFunc
+
+  # == TEST REVIEW SUGGESTIONS (from test-reviewer) ==
+  - id: CR-009
+    original_id: "3"
+    source_agent: test-reviewer
+    source_report: 2026-05-18_test-review_lib_v3.yaml
+    source_package: lib
+    severity: SUGGESTION
+    category: missing_case
+    rule: "PRP Task 8 (TestNew)"
+    file: lib/client_test.go
+    line: 134
+    title: "defaults_applied_for_timeouts does not verify ValidateCacheTTL default"
+    description: |
+      The "defaults_applied_for_timeouts" test case checks ValidateTimeout (2s), LoginTimeout
+      (5s), and RefreshTimeout (5s) but omits the default ValidateCacheTTL (30s). The TTL
+      default IS verified separately in the "happy_path" case, so coverage is present, but the
+      "defaults_applied" case is named to cover all defaults and should be complete.
+
+      This is a readability and maintainability concern: a future developer adding a new default
+      would look at "defaults_applied_for_timeouts" and might not check "happy_path" for the TTL.
+    suggestion: |
+      Add the TTL assertion to the existing case:
+
+        "defaults_applied_for_timeouts": {
+            cfg: Config{Endpoint: "x:1"},
+            want: func(t *testing.T, c *Client, err error) {
+                require.NoError(t, err)
+                require.NotNil(t, c)
+                t.Cleanup(func() {
+                    if cerr := c.Close(); cerr != nil {
+                        t.Logf("close error: %v", cerr)
+                    }
+                })
+                assert.Equal(t, 30*time.Second, c.cfg.ValidateCacheTTL)  // add this line
+                assert.Equal(t, 2*time.Second, c.cfg.ValidateTimeout)
+                assert.Equal(t, 5*time.Second, c.cfg.LoginTimeout)
+                assert.Equal(t, 5*time.Second, c.cfg.RefreshTimeout)
+            },
+        },
+
+  - id: CR-010
+    original_id: "4"
+    source_agent: test-reviewer
+    source_report: 2026-05-18_test-review_lib_v3.yaml
+    source_package: lib
+    severity: SUGGESTION
+    category: structure
+    rule: "UT-0001, IT-0010"
+    file: lib/client_integration_test.go
+    line: 24
+    title: "Blank import of singleflight in integration test file -- consider tools.go for dep pinning"
+    description: |
+      TestAuthEndpointReachable is guarded by the build tag "integration" and the TestMain
+      RUN_INTEGRATION_TESTS env check, so it only runs intentionally. The test itself is
+      correct: not table-driven (acceptable for integration tests per IT-0010), uses t.Fatalf
+      for infra failure (correct), and uses conditional default for endpoint (input-setup logic,
+      not assertion logic, so UT-0032 is not violated).
+
+      The only stylistic issue: the blank import of golang.org/x/sync/singleflight in
+      an integration test file is an unusual dep-pinning technique. It works (go mod tidy
+      respects it because the file is part of the module even under a build tag), but it is
+      non-obvious. A clearer alternative for dep pinning is a tools.go file at module root.
+    suggestion: |
+      Consider creating lib/internal/tools/tools.go (or root-level tools.go) for dep pinning:
+
+        //go:build tools
+
+        package tools
+
+        import (
+            _ "golang.org/x/sync/singleflight" // pinned for TASK-004 refresh singleflight
+        )
+
+      This is idiomatic Go dep pinning (golang.org/x/tools/cmd/... convention) and does not
+      pollute the integration test file with an unrelated concern. Not required -- current
+      approach works -- but more discoverable.
+
+  - id: CR-011
+    original_id: "5"
+    source_agent: test-reviewer
+    source_report: 2026-05-18_test-review_lib_v3.yaml
+    source_package: lib
+    severity: SUGGESTION
+    category: style
+    rule: "PRP Task 8 (recordingLogger note)"
+    file: lib/client_test.go
+    line: 12
+    title: "recordingLogger lacks the infos counter field noted in PRP"
+    description: |
+      The PRP code pattern for recordingLogger shows:
+
+        type recordingLogger struct {
+            infos int
+        }
+        func (r *recordingLogger) Info(context.Context, string, ...any) { r.infos++ }
+
+      The actual implementation omits the infos counter:
+
+        type recordingLogger struct{}
+        func (*recordingLogger) Info(context.Context, string, ...any) {}
+
+      For the current test (only checking logger type assignment via type assertion), the
+      counter is not needed. However the PRP included it as a future-use field: if a test
+      needs to verify that the logger is actually being called, the counter enables that
+      assertion without any change.
+
+      This is a low-priority style note -- the empty struct is functionally correct for
+      TASK-002 scope.
+    suggestion: |
+      Optionally add the counter for forward-compatibility with future tests that verify
+      logger invocation counts:
+
+        type recordingLogger struct {
+            infos int
+        }
+
+        func (r *recordingLogger) Info(_ context.Context, _ string, _ ...any)             { r.infos++ }
+        func (r *recordingLogger) Warn(_ context.Context, _ string, _ ...any)             {}
+        func (r *recordingLogger) Error(_ context.Context, _ string, _ error, _ ...any)   {}
+
+      No change required if TASK-002 scope does not require logger invocation count checks.
+
+positive_observations:
+  # From code-reviewer
+  - source: code-reviewer
+    observation: "Correct use of grpc.NewClient (not deprecated grpc.Dial) with keepalive {30s, 10s, true} per ADR ss.R11/A6."
+  - source: code-reviewer
+    observation: "Retry policy scoped ONLY to /auth.v1.AuthService/ValidateToken -- RefreshToken correctly excluded."
+  - source: code-reviewer
+    observation: "sync.Once idempotent Close with cancelBG invocation -- satisfies EC-0010/EC-0012 lifecycle guarantee."
+  - source: code-reviewer
+    observation: "statusFromWrapped correctly walks errors.Unwrap chain and filters codes.Unknown -- handles fmt.Errorf('%w', grpcErr) wrapping properly."
+  - source: code-reviewer
+    observation: "mapGRPCError nil guard and correct switch: all 5 gRPC codes from mapping table implemented, default branch wraps ErrUnavailable."
+  - source: code-reviewer
+    observation: "AuthError nil-receiver guard in both Error() and Unwrap() -- defensive, correct."
+  - source: code-reviewer
+    observation: "NoopLogger value-receiver, compile-time interface check var _ Logger = NoopLogger{} per ES-0143."
+  - source: code-reviewer
+    observation: "Package name is authclient throughout all three files -- no package lib leftover."
+  - source: code-reviewer
+    observation: "insecure.NewCredentials() placed first in dialOpts; user cfg.DialOptions appended after -- allows TLS override per ADR A6."
+  - source: code-reviewer
+    observation: "All exported identifiers have godoc starting with the identifier name per ES-0081."
+  - source: code-reviewer
+    observation: "No nolint directives anywhere per ES-0171."
+  - source: code-reviewer
+    observation: "No deprecated grpc.Dial per ADR A15."
+  - source: code-reviewer
+    observation: "100% tests pass (60 tests), 98.7% coverage in lib package -- exceeds 85% DOD threshold."
+  - source: code-reviewer
+    observation: "make audit passes cleanly: vet + lint + test all green."
+  - source: code-reviewer
+    observation: "defaultOpenMethods() correctly returns both /grpc.health.v1.Health/Check and /grpc.health.v1.Health/Watch."
+  - source: code-reviewer
+    observation: "applyDefaults normalizes negative timeouts/TTLs defensively; Logger nil -> NoopLogger{} applied in applyDefaults (ES-0143)."
+  - source: code-reviewer
+    observation: "WithLogger option nil-guards to NoopLogger{} at option application time."
+  - source: code-reviewer
+    observation: "examples/basic/main.go is a minimal stub, compiles cleanly, matches PRP code pattern exactly."
+  - source: code-reviewer
+    observation: "All 5 sentinel errors present with authclient: prefix -- frozen API surface per ADR."
+  - source: code-reviewer
+    observation: "mapErrorReason correctly defaults unknown reasons to ErrInvalidToken (conservative)."
+  # From test-reviewer
+  - source: test-reviewer
+    observation: "All 60 tests pass with race detector enabled -- no data races."
+  - source: test-reviewer
+    observation: "make audit (vet + lint + test) is fully clean with 0 issues."
+  - source: test-reviewer
+    observation: "Coverage 98.7% significantly exceeds the 85% DOD target."
+  - source: test-reviewer
+    observation: "No nolint directives anywhere -- full ES-0171 compliance."
+  - source: test-reviewer
+    observation: "tc := tc variable capture applied correctly in all 11 test functions."
+  - source: test-reviewer
+    observation: "t.Parallel() correctly applied at both outer function and subtest level across all functions."
+  - source: test-reviewer
+    observation: "var nilCtx context.Context pattern used for nil-context testing -- no raw nil passed to context.Context parameter."
+  - source: test-reviewer
+    observation: "Client cleanup uses t.Cleanup with t.Logf on error -- idiomatic pattern that surfaces close errors in test output without failing the test."
+  - source: test-reviewer
+    observation: "errors_test.go tests are purely functional (no side effects, no shared state) -- ideal unit tests."
+  - source: test-reviewer
+    observation: "stubCache type added for WithCache option testing -- not in PRP but a valuable addition."
+  - source: test-reviewer
+    observation: "TestStatusFromWrapped double_wrapped case covers a non-trivial 2-level unwrap path."
+  - source: test-reviewer
+    observation: "Integration test correctly uses var nilCtx pattern, external package, build tag, and TestMain gate."
+
+verdict_reason: |
+  No critical issues across either code or test review. The implementation is functionally
+  correct and satisfies all DOD criteria: grpc.NewClient, keepalive, scoped retry policy,
+  idempotent Close, 5 sentinels + AuthError, statusFromWrapped, mapGRPCError, mapErrorReason,
+  Logger interface + NoopLogger, and the examples stub all match the PRP specification. All
+  60 tests pass with the race detector enabled; coverage is 98.7% (DOD target: 85%).
+
+  Six warnings must be addressed before the next TASK builds on top of this:
+    CR-001: TASK-003/TASK-002 task IDs in exported godoc -- consumers will see these.
+    CR-002: Config struct fields lack per-field documentation -- important for SDK usability.
+    CR-003: ValidateCacheTTL=0 is silently promoted to 30s, making cache-disable impossible
+            from Config (latent bug for TASK-003 which depends on TTL=0 as the disable signal).
+    CR-004: Minor wording redundancy in NoopLogger godoc.
+    CR-005: Missing TestNew case "endpoint_invalid_returns_dial_error_or_lazy" explicitly
+            required by PRP Task 8.
+    CR-006: logger_test.go splits into 3 functions instead of the 1 consolidated TestNoopLogger
+            function specified in PRP Task 7.
+
+  Five suggestions (CR-007 through CR-011) are informational and do not block approval.
+
+execution_metrics:
+  sub_agents:
+    - agent: code-reviewer
+      package: "lib (production)"
+      duration_seconds: 328
+      tokens_used: 79495
+      tool_uses: 68
+      cost_usd: unknown
+    - agent: test-reviewer
+      package: "lib (tests)"
+      duration_seconds: 346
+      tokens_used: 89760
+      tool_uses: 56
+      cost_usd: unknown
+  totals:
+    duration_seconds: 674
+    tokens_used: 169255
+    tool_uses: 124
+    cost_usd: unknown
+
+validation:
+  status: PASSED
+  checks:
+    - name: "code-review report processed"
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: "test-review report processed"
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: "Critical count matches (0 + 0 = 0)"
+      expected: 0
+      actual: 0
+      status: PASS
+    - name: "Warning count matches (4 + 2 = 6)"
+      expected: 6
+      actual: 6
+      status: PASS
+    - name: "Suggestion count matches (2 + 3 = 5)"
+      expected: 5
+      actual: 5
+      status: PASS
+    - name: "Total issue count matches (6 + 5 = 11)"
+      expected: 11
+      actual: 11
+      status: PASS
+    - name: "All global IDs are unique (CR-001 through CR-011)"
+      status: PASS
+    - name: "All issues carry original_id, source_agent, source_report fields"
+      status: PASS
