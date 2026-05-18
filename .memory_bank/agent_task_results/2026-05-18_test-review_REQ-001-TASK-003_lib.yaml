@@ -1,0 +1,570 @@
+review_id: REQ-001-TASK-003-TR-lib
+date: '2026-05-18'
+reviewer: test-reviewer
+package: lib + lib/internal/cache
+files_reviewed:
+  - lib/context_test.go
+  - lib/validate_test.go
+  - lib/middleware_http_test.go
+  - lib/interceptor_grpc_test.go
+  - lib/validate_integration_test.go
+  - lib/export_test.go
+  - lib/client_test.go (modified section only)
+  - lib/internal/cache/memory_test.go
+  - lib/internal/cache/memory_bench_test.go
+
+test_results:
+  status: pass
+  total: 132
+  passed: 132
+  failed: 0
+  skipped: 0
+  race_detector: pass
+  lint: clean
+  benchmark_get_ns_per_op: 33.26
+  benchmark_get_allocs: 0
+
+coverage:
+  lib_percent: 92.8
+  lib_internal_cache_percent: 100.0
+  dod_target_validate_go: 100.0
+  dod_target_middleware_http_go: 95.7
+  dod_target_interceptor_grpc_go: 100.0
+  dod_target_context_go: 100.0
+  dod_target_cache: 100.0
+  dod_met: true
+  notes: |
+    Per-function highlights (lib package):
+      validate.go / ValidateAccessToken: 100%
+      middleware_http.go / HTTPMiddleware: 95.7%
+      interceptor_grpc.go / UnaryInterceptor: 100%
+      context.go / IsZero/IsAdmin/HasRole/WithUser/UserFromContext: 100%
+      internal/cache/memory.go all functions: 100%
+    The 92.8% overall lib figure includes client.go New() at 89.5%
+    (one branch: grpc.NewClient lazy-dial error path is unreachable in unit tests)
+    and NoopLogger no-op bodies at 0% (zero statements — not an instrumentation gap).
+
+summary: |
+  All 132 tests pass with -race. Coverage meets DOD for every specified file. Benchmark
+  BenchmarkMemoryCache_Get runs at 33.26 ns/op with 0 allocs — well under the 1 µs target.
+  Lint is clean. The test suite is well-structured overall: parallel at both levels,
+  table-driven throughout, Expecter API used consistently, no mock.Anything.
+
+  Seven issues found:
+    - CRITICAL (3): logic in test loop body (UT-0032), redundant dead sleep in want closure,
+      hexSHA256 local helper closure duplicating exported HashToken (UT-0028).
+    - WARNING (3): three separate integration test functions for same method (UT-0002),
+      missing newTestMocks(t) constructor functions (UT-0026), missing import-cycle
+      documentation comment for client_test.go manual stubs.
+    - SUGGESTION (1): context matcher could verify more than ctx != nil.
+
+critical:
+  - id: TEST-C001
+    severity: CRITICAL
+    rule_id: UT-0032
+    file: lib/internal/cache/memory_test.go
+    line: 80
+    title: "Logic (if name == ...) in test loop body"
+    description: |
+      The test loop for TestMemoryCache_Get contains a conditional branch that inspects
+      the case name to decide whether to sleep:
+
+        if name == "expired_returns_false" {
+            time.Sleep(20 * time.Millisecond)
+        }
+
+      UT-0032 strictly forbids if/switch logic in test loop bodies. The timing requirement
+      for the "expired" case is a first-class property of that test case and must be expressed
+      as data, not as a name check.
+    recommended_fix: |
+      Add a `sleepBefore time.Duration` field to the test struct and move the sleep into the
+      subtest body before calling Get:
+
+        tests := map[string]struct {
+            setup       func(c *MemoryCache)
+            key         string
+            sleepBefore time.Duration   // ← new field
+            want        func(*testing.T, any, bool)
+        }{
+            "expired_returns_false": {
+                setup: func(c *MemoryCache) {
+                    c.Set(context.Background(), "expiring", "payload", 10*time.Millisecond)
+                },
+                key:         "expiring",
+                sleepBefore: 20 * time.Millisecond,   // ← declared inline
+                want: func(t *testing.T, val any, ok bool) {
+                    require.False(t, ok)
+                    assert.Nil(t, val)
+                },
+            },
+            // ...
+        }
+
+        t.Run(name, func(t *testing.T) {
+            t.Parallel()
+            c := NewMemoryCache(context.Background(), 0)
+            tc.setup(c)
+            if tc.sleepBefore > 0 {
+                time.Sleep(tc.sleepBefore)
+            }
+            val, ok := c.Get(context.Background(), tc.key)
+            tc.want(t, val, ok)
+        })
+
+      Note: the sleep inside the want closure of the current "expired_returns_false" case
+      (line 47) is dead code — it executes after the Get call whose result is already
+      determined. Remove it together with this fix.
+
+  - id: TEST-C002
+    severity: CRITICAL
+    rule_id: UT-0032
+    file: lib/interceptor_grpc_test.go
+    line: 406
+    title: "Logic (if tc.useLogger / if handler == nil) in test loop body"
+    description: |
+      The execution block inside the t.Run subtest contains two conditional branches:
+
+        // lines 406-409
+        var logger authclient.Logger
+        if tc.useLogger {
+            logger = m.logger
+        }
+
+        // lines 425-428
+        handler := tc.handler
+        if handler == nil {
+            handler = noopHandler
+        }
+
+      Both are UT-0032 violations: control flow in the execution section must not depend on
+      test-case fields used as flags. The intent of each test case should be fully expressed
+      in the prepareMocks and want closures and in the struct fields themselves.
+    recommended_fix: |
+      1. Replace `useLogger bool` with a `logger authclient.Logger` field and set it
+         directly in each test case that requires a real logger, defaulting to nil for others:
+
+           // In struct:
+           logger authclient.Logger
+
+           // In test case that needs the logger:
+           logger: m.logger,  // set inside prepareMocks or directly in struct
+
+           // In execution body — no if:
+           c := authclient.NewTestClient(cfg, m.cache, m.auth, tc.logger)
+
+      2. Replace the `handler == nil` nil-check default by requiring every test case to
+         specify a handler explicitly. Either set the field to `noopHandler` in each case
+         that does not supply a custom one, or define a `handler` field that panics if nil
+         and set noopHandler as the struct default:
+
+           // Each test case with no custom handler:
+           handler: noopHandler,
+
+           // Remove the nil-check from the execution body entirely.
+
+  - id: TEST-C003
+    severity: CRITICAL
+    rule_id: UT-0028
+    file: lib/validate_test.go
+    line: 42
+    title: "hexSHA256 helper closure duplicates exported HashToken"
+    description: |
+      TestClient_ValidateAccessToken defines a local helper closure at the top of the test
+      function body:
+
+        hexSHA256 := func(s string) string {
+            h := sha256.Sum256([]byte(s))
+            return hex.EncodeToString(h[:])
+        }
+
+      UT-0028 forbids helper functions/closures that compute or transform test data. More
+      importantly, `authclient.HashToken` is already exported via export_test.go precisely
+      for this purpose — middleware_http_test.go and interceptor_grpc_test.go both call
+      `authclient.HashToken(...)` directly. The closure in validate_test.go is a duplicate
+      implementation that introduces inconsistency and unnecessary code.
+    recommended_fix: |
+      Remove the hexSHA256 closure and replace every occurrence with authclient.HashToken:
+
+        // Before:
+        hexSHA256 := func(s string) string { ... }
+        expectedKey := hexSHA256("tok-u1")
+
+        // After:
+        expectedKey := authclient.HashToken("tok-u1")
+
+      Also remove the now-unused imports of "crypto/sha256" and "encoding/hex" from
+      validate_test.go.
+
+warnings:
+  - id: TEST-W001
+    severity: WARNING
+    rule_id: UT-0002
+    file: lib/validate_integration_test.go
+    line: 14
+    title: "Three separate test functions for one method (ValidateAccessToken)"
+    description: |
+      validate_integration_test.go declares three separate top-level functions that all test
+      the same method `ValidateAccessToken`:
+        - TestValidateAccessToken_Happy (line 14) — skipped
+        - TestValidateAccessToken_Invalid (line 18)
+        - TestValidateAccessToken_Expired (line 31) — skipped
+
+      UT-0002 mandates one method = one test function. Even for integration tests the naming
+      convention UT-0010/UT-0002 applies. This also results in case-name suffixes (_Happy,
+      _Invalid, _Expired) in the function names themselves — a pattern the standard reserves
+      for the case map keys, not the function name.
+
+      Note: the two skipped functions are placeholders pending TASK-004/007, so the impact
+      is currently low. However the pattern violates the standard.
+    recommended_fix: |
+      Consolidate into one function with table-driven cases, skipping individual entries
+      where the test cannot yet run:
+
+        func TestClient_ValidateAccessToken(t *testing.T) {
+            tests := map[string]struct {
+                run func(t *testing.T, c *authclient.Client)
+            }{
+                "happy_path": {
+                    run: func(t *testing.T, c *authclient.Client) {
+                        t.Skip("requires authclient.Login (TASK-004) for token acquisition")
+                    },
+                },
+                "invalid_token_returns_ErrInvalidToken": {
+                    run: func(t *testing.T, c *authclient.Client) {
+                        _, err := c.ValidateAccessToken(context.Background(), "definitely-not-a-real-token")
+                        require.ErrorIs(t, err, authclient.ErrInvalidToken)
+                    },
+                },
+                "expired_token_returns_ErrExpired": {
+                    run: func(t *testing.T, c *authclient.Client) {
+                        t.Skip("requires waiting >1m for access_token TTL; deferred to TASK-007")
+                    },
+                },
+            }
+            // ... create client, iterate
+        }
+
+  - id: TEST-W002
+    severity: WARNING
+    rule_id: UT-0026
+    file: lib/validate_test.go
+    line: 28
+    description_applies_to:
+      - lib/validate_test.go (validateTestMocks)
+      - lib/middleware_http_test.go (httpMiddlewareTestMocks)
+      - lib/interceptor_grpc_test.go (interceptorTestMocks)
+    title: "testMocks struct lacks newTestMocks(t) constructor"
+    description: |
+      UT-0026 requires the canonical pattern: testMocks struct + newTestMocks(t *testing.T)
+      constructor (with t.Helper()) + newHandlerFromMocks for object construction. The three
+      test files define the struct correctly but instantiate it via inline struct literals:
+
+        m := &validateTestMocks{
+            cache: mocks.NewMockCache(t),
+            auth:  &authclient.FakeAuthClient{},
+        }
+
+      Without a newTestMocks(t) constructor, t.Helper() is not called, which means any
+      failure during mock setup is attributed to the t.Run subtest line rather than the
+      actual failing mock.NewMockXxx call. Also, adding a new dependency to the mocks
+      struct requires updating every instantiation site instead of just the constructor.
+    recommended_fix: |
+      Add a newTestMocks(t) constructor in each test file. Example for validate_test.go:
+
+        func newValidateTestMocks(t *testing.T) *validateTestMocks {
+            t.Helper()
+            return &validateTestMocks{
+                cache: mocks.NewMockCache(t),
+                auth:  &authclient.FakeAuthClient{},
+            }
+        }
+
+      Then in the t.Run body:
+        m := newValidateTestMocks(t)
+        tc.prepareMocks(t, m)
+
+      Repeat for httpMiddlewareTestMocks (middleware_http_test.go) and
+      interceptorTestMocks (interceptor_grpc_test.go).
+
+  - id: TEST-W003
+    severity: WARNING
+    rule_id: UT-0020
+    file: lib/client_test.go
+    line: 12
+    title: "recordingLogger / stubCache are manual stubs without import-cycle explanation"
+    description: |
+      client_test.go defines two hand-written types that implement SDK interfaces:
+        - type recordingLogger struct{} implementing Logger
+        - type stubCache struct{} implementing Cache
+
+      UT-0020 forbids manually written mock/stub structs — generated mocks must be used.
+      The accepted exception here is the import cycle: client_test.go is in package authclient
+      (internal test file), and importing lib/mocks from package authclient would create a
+      circular dependency (lib/mocks → lib → lib, cycle). This is the same reason
+      FakeAuthClient exists in export_test.go.
+
+      However, while export_test.go has a clear 7-line comment block explaining the
+      import-cycle workaround, client_test.go has no such explanation. A future developer
+      seeing recordingLogger/stubCache without context may attempt to replace them with
+      mocks.MockLogger/mocks.MockCache, causing a build error.
+    recommended_fix: |
+      Add an explanatory comment at the top of client_test.go before the type declarations:
+
+        // recordingLogger and stubCache are hand-written test doubles rather than mockery-
+        // generated mocks because this file is in package authclient (internal test package).
+        // Importing lib/mocks from package authclient would create a circular dependency:
+        //   lib (authclient) → lib/mocks → lib (authclient).
+        // External tests (package authclient_test) use mocks.MockCache / mocks.MockLogger
+        // and avoid the cycle. See export_test.go for the same pattern applied to FakeAuthClient.
+
+suggestions:
+  - id: TEST-S001
+    severity: SUGGESTION
+    rule_id: UT-0023
+    file: lib/validate_test.go
+    line: 59
+    description_applies_to:
+      - lib/validate_test.go (all mock.MatchedBy for ctx)
+      - lib/middleware_http_test.go (all mock.MatchedBy for ctx)
+      - lib/interceptor_grpc_test.go (all mock.MatchedBy for ctx)
+    title: "Context MatchedBy check is ctx != nil — consider asserting derivation"
+    description: |
+      All cache mock expectations use:
+        mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })
+
+      `mock.MatchedBy` is the correct approach when the exact context value cannot be
+      injected (the middleware/interceptor creates a derived context with timeout internally).
+      However, the predicate `ctx != nil` is the weakest possible check — it accepts
+      any non-nil context including context.Background().
+
+      A stronger predicate would verify that the context has a deadline (i.e., that the
+      ValidateTimeout was actually applied):
+
+        mock.MatchedBy(func(ctx context.Context) bool {
+            _, hasDeadline := ctx.Deadline()
+            return hasDeadline
+        })
+
+      This is a suggestion rather than a violation because (a) mock.MatchedBy IS the
+      prescribed fallback for context parameters that cannot be captured, and (b) the
+      current check does protect against a nil context being passed (a regression that
+      would indicate a serious bug).
+    recommended_fix: |
+      Optionally strengthen the context matcher in validate_test.go, middleware_http_test.go,
+      and interceptor_grpc_test.go:
+
+        mock.MatchedBy(func(ctx context.Context) bool {
+            _, hasDeadline := ctx.Deadline()
+            return hasDeadline  // validates ValidateTimeout was applied
+        })
+
+      If the context timeout logic is already tested via behavior (e.g., the test for
+      grpc_deadline_exceeded), keeping ctx != nil is acceptable to avoid over-specifying
+      the internal implementation detail of when context.WithTimeout is called.
+
+positives:
+  - "132/132 tests pass with -race enabled — zero data races detected."
+  - "make lint: 0 issues. No //nolint directives anywhere (ES-0171 full compliance)."
+  - "BenchmarkMemoryCache_Get: 33.26 ns/op, 0 allocs — 30x under the 1 µs DOD target."
+  - "All target file coverage goals met: validate.go 100%, interceptor_grpc.go 100%, context.go 100%, cache 100%, middleware_http.go 95.7%."
+  - "Expecter API (.EXPECT().Method().Return().Once()) used consistently — no .On() calls anywhere."
+  - "No mock.Anything or mock.AnythingOfType in any test file — mock.MatchedBy used for context parameters where exact value is unavailable."
+  - "tc := tc variable capture present in every for-range test loop — UT-0041 fully compliant."
+  - "t.Parallel() at both main test and subtest level in all unit tests — UT-0040 compliant."
+  - "TestMemoryCache_Cleanup correctly omits t.Parallel() with explicit comment citing goroutine-count shared state — UT-0042 compliant."
+  - "FakeAuthClient workaround clearly documented in export_test.go with the import-cycle explanation — excellent pattern."
+  - "TestMemoryCache_Concurrent drives 50 goroutines simultaneously covering Set/Get/Delete — solid race detection coverage."
+  - "panic recovery in interceptor test (panic_in_handler_returns_internal) verifies both gRPC error code AND that logger.Error was called — thorough."
+  - "//go:build integration tag is the FIRST line in both integration test files — correct placement."
+  - "Table-driven pattern used in all 12 unit test functions — UT-0001 compliant."
+  - "mock.MatchedBy used with type-safe predicates for context parameters, not raw mock.Anything — meets the spirit of UT-0023."
+  - "validateTestMocks, httpMiddlewareTestMocks, interceptorTestMocks are created per-subtest inside t.Run — UT-0024 compliant (new mocks per subtest)."
+  - "happy_path is the first key declared in every test case map — UT-0011 compliant."
+
+standards_compliance:
+  UT_0001_table_driven:
+    status: pass
+    notes: |
+      All 12 unit test functions use map[string]struct{} table-driven pattern.
+      TestMemoryCache_Concurrent is a purposeful race test with no discrete cases — acceptable exception.
+
+  UT_0002_one_method_one_function:
+    status: fail
+    violations:
+      - file: lib/validate_integration_test.go
+        description: "3 separate functions for ValidateAccessToken — see TEST-W001"
+
+  UT_0010_naming_format:
+    status: pass
+    notes: |
+      All test functions follow Test<Type>_<Method> or TestFunc convention.
+      TestBearerToken, TestMemoryCache_*, TestClient_ValidateAccessToken, TestClient_HTTPMiddleware,
+      TestClient_UnaryInterceptor, TestUser_*, TestUserFromContext — all correct.
+      Integration tests: TestValidateAccessToken_* — suffix style violates UT-0010 convention
+      (should be TestClient_ValidateAccessToken with cases, not suffixed function names).
+
+  UT_0011_happy_path_first:
+    status: pass
+    notes: "happy_path is declared first in all test case maps (16 maps checked)."
+
+  UT_0012_snake_case:
+    status: pass
+    notes: "All test case names use snake_case. No violations."
+
+  UT_0020_mocks_via_mockery:
+    status: partial
+    notes: |
+      MockCache and MockLogger: generated by mockery — compliant.
+      FakeAuthClient: hand-written, documented workaround for unexported interface + import cycle — acceptable.
+      recordingLogger, stubCache in client_test.go: hand-written, same import cycle rationale — acceptable
+      but missing documentation (see TEST-W003).
+
+  UT_0021_expecter_api:
+    status: pass
+    notes: ".EXPECT().Method().Return().Once() used throughout. No .On() calls found."
+
+  UT_0022_explicit_call_count:
+    status: pass
+    notes: "All mock expectations specify .Once() or no expectation (meaning zero calls via mockery auto-assert)."
+
+  UT_0023_no_mock_anything:
+    status: pass
+    notes: |
+      No mock.Anything or mock.AnythingOfType anywhere. Context parameters use
+      mock.MatchedBy(func(ctx) bool { return ctx != nil }) — compliant per UT-0023 allowance.
+      The weak predicate is flagged as suggestion TEST-S001.
+
+  UT_0024_new_mocks_per_subtest:
+    status: pass
+    notes: "All *TestMocks structs are constructed inside t.Run — new instances per subtest."
+
+  UT_0026_testmocks_struct:
+    status: partial
+    notes: |
+      Struct defined correctly for all three test files (validateTestMocks,
+      httpMiddlewareTestMocks, interceptorTestMocks). Instantiated per-subtest inside t.Run.
+      Missing: newTestMocks(t) constructor function — see TEST-W002.
+
+  UT_0027_no_decorative_separators:
+    status: pass
+    notes: "No decorative section separators (─, ═, etc.) found in any test file."
+
+  UT_0028_no_helper_functions:
+    status: fail
+    violations:
+      - file: lib/validate_test.go
+        line: 42
+        description: "hexSHA256 := func(s string) string{...} — helper closure computing test key, see TEST-C003"
+      - file: lib/interceptor_grpc_test.go
+        line: 37
+        description: "makeCtxWithBearer/makeInfo/noopHandler closures — test setup helpers, violate UT-0028"
+    note: |
+      makeCtxWithBearer and makeInfo in interceptor_grpc_test.go are closures that construct
+      test-specific data (gRPC contexts and UnaryServerInfo). While defined as local variables
+      inside the test function (not package-level functions), they serve the same role as
+      forbidden helper functions per UT-0028. The fix is to inline their bodies at each use site
+      within the prepareMocks/ctx fields of the test case struct.
+
+  UT_0029_no_package_level_variables:
+    status: pass
+    notes: "No package-level var declarations for test data in any test file."
+
+  UT_0030_require_for_critical:
+    status: pass
+    notes: "require.NoError/Error/True/False/ErrorIs used for all critical stopping assertions."
+
+  UT_0031_assert_for_additional:
+    status: pass
+    notes: "assert.Equal/True/Nil/Empty/Contains used for non-blocking additional checks."
+
+  UT_0032_no_logic_in_tests:
+    status: fail
+    violations:
+      - file: lib/internal/cache/memory_test.go
+        line: 80
+        description: "if name == 'expired_returns_false' { time.Sleep(...) } — see TEST-C001"
+      - file: lib/interceptor_grpc_test.go
+        line: 406
+        description: "if tc.useLogger { logger = m.logger } — see TEST-C002"
+      - file: lib/interceptor_grpc_test.go
+        line: 425
+        description: "if handler == nil { handler = noopHandler } — see TEST-C002"
+
+  UT_0040_parallel:
+    status: pass
+    notes: |
+      t.Parallel() at top of all main test functions and all subtests.
+      TestMemoryCache_Cleanup correctly skips t.Parallel() per UT-0042 (goroutine-count shared state).
+
+  UT_0041_variable_capture:
+    status: pass
+    notes: "tc := tc present in all for-range loops before t.Run. Go 1.22+ loop variable semantics — still required by project policy."
+
+  UT_0042_when_not_parallel:
+    status: pass
+    notes: "TestMemoryCache_Cleanup correctly documented as non-parallel due to runtime.NumGoroutine() global state."
+
+  UT_0100_one_test_file_per_source:
+    status: pass
+    notes: |
+      context_test.go → context.go
+      validate_test.go → validate.go
+      middleware_http_test.go → middleware_http.go
+      interceptor_grpc_test.go → interceptor_grpc.go
+      memory_test.go + memory_bench_test.go → memory.go (split for bench — acceptable)
+      All 1:1 mappings correct.
+
+  ES_0171_no_nolint:
+    status: pass
+    notes: "Zero //nolint directives in any test file."
+
+  IT_0010_no_parallel_integration:
+    status: pass
+    notes: "Neither validate_integration_test.go nor client_integration_test.go calls t.Parallel()."
+
+  DOD_coverage:
+    status: pass
+    notes: |
+      validate.go:    100.0% (target 100%)   ✓
+      middleware.go:  95.7%  (target 95.7%)  ✓
+      interceptor.go: 100.0% (target 100%)   ✓
+      context.go:     100.0% (target 100%)   ✓
+      cache:          100.0% (target 100%)   ✓
+
+issue_summary:
+  critical_count: 3
+  warning_count: 3
+  suggestion_count: 1
+  total_issues: 7
+
+verdict: CHANGES_REQUESTED
+verdict_reason: |
+  Three CRITICAL violations must be resolved before this review can be closed:
+
+  1. TEST-C001: The `if name == "expired_returns_false"` conditional in memory_test.go loop body
+     violates UT-0032. Move the timing into a `sleepBefore time.Duration` struct field.
+     Also remove the dead `time.Sleep` inside the want closure of the same case.
+
+  2. TEST-C002: Two `if` branches in interceptor_grpc_test.go loop body (useLogger flag and
+     handler nil-default) violate UT-0032. Replace with explicit struct fields.
+
+  3. TEST-C003: The `hexSHA256` helper closure in validate_test.go duplicates the already-exported
+     `authclient.HashToken` and violates UT-0028. Replace all uses with `authclient.HashToken`.
+
+  Three WARNINGS represent required follow-up per project policy (suggestions are mandatory
+  per CLAUDE.md):
+
+  4. TEST-W001: Three integration test functions for one method violate UT-0002. Consolidate.
+
+  5. TEST-W002: Missing `newTestMocks(t)` constructor in three test files per UT-0026.
+     Add constructor with `t.Helper()` in validateTestMocks, httpMiddlewareTestMocks,
+     interceptorTestMocks.
+
+  6. TEST-W003: recordingLogger/stubCache in client_test.go lack import-cycle documentation.
+     Add a comment block equivalent to the one in export_test.go.
+
+  One suggestion (TEST-S001: stronger context matcher) is informational.
+
+  The test suite's overall quality is high — all 132 tests pass with race detector, all
+  DOD coverage targets are met, benchmark performance is excellent. The issues found are
+  structural/style violations rather than logic gaps or missing coverage.

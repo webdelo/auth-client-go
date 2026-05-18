@@ -1,0 +1,931 @@
+# API Design ADR — auth-client-go SDK v0.1.0
+# Архитектурное решение по публичной поверхности Go SDK для webdelo/auth.
+# Источник требований: task_management/tasks/REQ-001.md
+
+metadata:
+  req: "REQ-001"
+  version: "v0.1.0"
+  date: "2026-05-15"
+  author: "api-designer agent"
+  status: "draft"
+  module_path: "github.com/webdelo/auth-client-go/lib"
+  import_alias_recommended: "authclient"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 1. РЕЗЮМЕ КЛЮЧЕВЫХ РЕШЕНИЙ
+# ───────────────────────────────────────────────────────────────────────────────
+summary:
+  - id: "DEC-01"
+    decision: "Config struct с обязательными именованными полями + functional options для опциональных переключателей"
+    rationale: |
+      Гибрид: тяжёлая конфигурация (endpoint, dial options, timeouts) — через struct,
+      ortho-gonal toggle'ы (FailOpen, OpenMethods, Cache override) — через With*-функции.
+      Это идиома gRPC/grpc-go и стандартных Go SDK (aws-sdk-go-v2, mongo-go-driver).
+      Чистый Config-only — невозможно расширять без breaking change в struct.
+      Чистый options-only — теряются обязательные поля и валидация в одном месте.
+  - id: "DEC-02"
+    decision: "Тип User — экспортируемая struct (не interface), методы IsAdmin()/HasRole()"
+    rationale: |
+      Идентификатор и роль — value-object семантика. Interface избыточен для DTO.
+  - id: "DEC-03"
+    decision: "Sentinel errors через errors.Is, RetryAfter через errors.As на типизированный wrapper"
+    rationale: |
+      ErrRateLimited содержит метаданные (retry-after) — нужен not-just-sentinel.
+      Реализуется через приватный rateLimitedError, обёрнутый sentinel'ом."
+  - id: "DEC-04"
+    decision: "WithUser/UserFromContext через unexported ctx-key, возврат (User, bool)"
+    rationale: "Стандарт net/http и context-документации Go."
+  - id: "DEC-05"
+    decision: "Metrics interface — не включаем в v0.1.0, переносим в v0.2.0"
+    rationale: |
+      Logger + Cache достаточно для unblocking BFF. Metrics требует отдельного
+      design'а (counter/histogram семантика, label cardinality) — лучше отложить.
+  - id: "DEC-06"
+    decision: "Cookie helpers — фиксированные дефолты + с минимальным набором CookieOption (Domain, Path, MaxAge, SameSite override)"
+    rationale: |
+      Главная задача — защитить от ошибок. Открываем только те крутилки,
+      которые реально нужны (мульти-домен setup'ы)."
+  - id: "DEC-07"
+    decision: "IPFromRequest — без trusted proxies в v0.1.0, дока чётко проговаривает риск"
+    rationale: |
+      Trusted proxies CIDR-списки — отдельная feature (нужна валидация, тесты,
+      настройка). В v0.1.0 SDK честно берёт XFF[0] и документирует, что
+      consumer должен либо сам делать prefix-strip, либо передавать ClientIP в Login/Refresh
+      явно. Trusted proxies — добавим в v0.2.0 как WithTrustedProxies опцию.
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 2. ПУБЛИЧНАЯ ПОВЕРХНОСТЬ — lib/api.go (mockup)
+# ───────────────────────────────────────────────────────────────────────────────
+public_api_mockup: |
+  // Package authclient is the official Go SDK for the webdelo/auth service.
+  //
+  // The SDK wraps the gRPC contract from github.com/webdelo/auth-proto/go and
+  // adds production-grade concerns out of the box: TTL cache for ValidateToken,
+  // singleflight for refresh races, fail-closed middleware, typed errors,
+  // and helpers for cookies / fingerprint extraction.
+  //
+  // Quick start:
+  //
+  //  client, err := authclient.New(authclient.Config{Endpoint: "auth:50051"})
+  //  if err != nil { log.Fatal(err) }
+  //  defer client.Close()
+  //
+  //  mux.Handle("/api/secure", client.HTTPMiddleware(secureHandler))
+  package authclient
+
+  import (
+      "context"
+      "net/http"
+      "time"
+
+      "google.golang.org/grpc"
+  )
+
+  // ─── Constructor & Config ─────────────────────────────────────────────────
+
+  // Config configures a Client. Endpoint is the only required field;
+  // all other fields use sane defaults documented per-field.
+  //
+  // Use New() to construct a Client. Modify behavior either via Config fields
+  // or via functional Options — Options take precedence over Config.
+  type Config struct {
+      // Endpoint is the AUTH gRPC server address ("host:port"). Required.
+      Endpoint string
+
+      // ValidateCacheTTL is the TTL for ValidateToken result cache.
+      // Default: 30s. Set to 0 to disable caching (every call hits AUTH).
+      // Validation: must be in [0, 5*time.Minute]; values outside the range
+      // are clamped at New() and a warning is logged.
+      ValidateCacheTTL time.Duration
+
+      // FailMode controls middleware/interceptor behavior when AUTH is
+      // unavailable (network app_error, gRPC Unavailable, deadline exceeded).
+      // Default: FailClosed.
+      FailMode FailMode
+
+      // ValidateTimeout is the per-call timeout for ValidateAccessToken.
+      // Default: 2s. Applied only when the caller's ctx has no deadline.
+      ValidateTimeout time.Duration
+
+      // LoginTimeout is the per-call timeout for Login. Default: 5s.
+      LoginTimeout time.Duration
+
+      // RefreshTimeout is the per-call timeout for Refresh. Default: 5s.
+      RefreshTimeout time.Duration
+
+      // DialOptions are passed verbatim to grpc.NewClient. Use them to
+      // configure TLS, keepalive, retry policy. If nil — SDK uses
+      // grpc.WithTransportCredentials(insecure.NewCredentials()) for dev.
+      // Production setups MUST pass TLS credentials explicitly.
+      DialOptions []grpc.DialOption
+
+      // Logger is the consumer-provided logger adapter. Default: NoopLogger{}.
+      Logger Logger
+
+      // Cache is the consumer-provided ValidateToken cache adapter.
+      // Default: in-memory TTL cache (see internal/cache).
+      // Pass a custom implementation (e.g., Redis-backed) for distributed setups.
+      Cache Cache
+  }
+
+  // FailMode controls how middleware responds to AUTH unavailability.
+  type FailMode uint8
+
+  const (
+      // FailClosed (default): middleware returns 503 / gRPC Unavailable
+      // when AUTH cannot be reached. Safe default for protected endpoints.
+      FailClosed FailMode = iota
+
+      // FailOpen: middleware passes the request through with an empty User
+      // in context. Use only for non-critical endpoints (health, public read).
+      FailOpen
+  )
+
+  // Option mutates Client behavior. Options are applied after Config and
+  // override Config fields where they overlap.
+  type Option func(*Client)
+
+  // WithFailMode overrides Config.FailMode.
+  func WithFailMode(mode FailMode) Option
+
+  // WithOpenMethods marks gRPC methods that should bypass the AUTH check
+  // (e.g., "/health.v1.Health/Check"). Matched by full method name.
+  // Has no effect on HTTPMiddleware.
+  func WithOpenMethods(methods ...string) Option
+
+  // WithCache overrides Config.Cache.
+  func WithCache(cache Cache) Option
+
+  // WithLogger overrides Config.Logger.
+  func WithLogger(logger Logger) Option
+
+  // New creates a Client and dials the AUTH server.
+  //
+  // Returns an app_error if Config.Endpoint is empty, dial fails, or any
+  // option panics. The returned Client is safe for concurrent use.
+  // Callers MUST defer Close() to release the gRPC connection.
+  func New(cfg Config, opts ...Option) (*Client, error)
+
+  // Client is the SDK entry point. Safe for concurrent use.
+  type Client struct { /* unexported */ }
+
+  // Close releases the underlying gRPC connection. After Close,
+  // all methods return ErrUnavailable. Idempotent.
+  func (c *Client) Close() error
+
+  // ─── Validate ─────────────────────────────────────────────────────────────
+
+  // ValidateAccessToken verifies an access token against AUTH and returns
+  // the associated User. On cache hit (within ValidateCacheTTL), no network
+  // call is made.
+  //
+  // Errors:
+  //   - ErrInvalidToken — token is malformed, unknown, or token_version stale
+  //   - ErrExpired      — token expired
+  //   - ErrBlocked      — user is blocked
+  //   - ErrUnavailable  — AUTH unreachable / context cancelled
+  //
+  // The result is cached by sha256(accessToken) → User for ValidateCacheTTL.
+  // Cache misses are populated; failed validations are NOT cached
+  // (per-call AUTH check ensures fresh negative answers).
+  func (c *Client) ValidateAccessToken(ctx context.Context, accessToken string) (User, error)
+
+  // ─── Auth flow ────────────────────────────────────────────────────────────
+
+  // LoginInput carries credentials and client fingerprint for Login.
+  // ClientIP and UserAgent MUST come from the end-user's HTTP request,
+  // NOT from the calling service's process. Use IPFromRequest /
+  // UserAgentFromRequest helpers.
+  type LoginInput struct {
+      Email     string // required
+      Password  string // required
+      ClientIP  string // required for fingerprint binding
+      UserAgent string // required for fingerprint binding
+  }
+
+  // LoginOutput carries the issued tokens and authenticated user.
+  type LoginOutput struct {
+      AccessToken      string        // short-lived JWT (default 15m)
+      RefreshToken     string        // long-lived opaque token (default 30d)
+      AccessExpiresIn  time.Duration // time until access token expires
+      RefreshExpiresIn time.Duration // time until refresh token expires
+      User             User          // authenticated user (uuid + role)
+  }
+
+  // Login authenticates a user and returns issued tokens.
+  //
+  // Errors:
+  //   - ErrInvalidToken — wrong credentials (uniform "invalid email or password")
+  //   - ErrBlocked      — user is blocked
+  //   - ErrRateLimited  — too many login attempts; check RetryAfter(err)
+  //   - ErrUnavailable  — AUTH unreachable
+  func (c *Client) Login(ctx context.Context, in LoginInput) (LoginOutput, error)
+
+  // RefreshOutput carries rotated tokens after a successful refresh.
+  type RefreshOutput struct {
+      AccessToken      string
+      RefreshToken     string        // NEW refresh token; old one is invalidated
+      AccessExpiresIn  time.Duration
+      RefreshExpiresIn time.Duration
+  }
+
+  // Refresh rotates the refresh token and issues a new access token.
+  //
+  // Concurrent calls with the same refreshToken are coalesced via
+  // singleflight — only one request reaches AUTH, all callers receive
+  // the same result. This prevents family-detection false positives
+  // from racing browser tabs.
+  //
+  // Errors:
+  //   - ErrInvalidToken — refresh token unknown / family invalidated
+  //   - ErrExpired      — refresh token expired
+  //   - ErrBlocked      — user is blocked
+  //   - ErrUnavailable  — AUTH unreachable
+  func (c *Client) Refresh(ctx context.Context, refreshToken, clientIP, userAgent string) (RefreshOutput, error)
+
+  // Logout invalidates the given refresh token (single-session logout).
+  //
+  // Returns nil on success or if the token was already invalid (idempotent).
+  // Other errors:
+  //   - ErrUnavailable — AUTH unreachable
+  func (c *Client) Logout(ctx context.Context, refreshToken string) error
+
+  // LogoutAll invalidates ALL refresh tokens for the user identified by
+  // accessToken (bumps token_version). All access tokens issued before
+  // this call become invalid (subject to SDK cache TTL — see ValidateCacheTTL).
+  //
+  // Errors:
+  //   - ErrInvalidToken — accessToken invalid
+  //   - ErrExpired      — accessToken expired
+  //   - ErrUnavailable  — AUTH unreachable
+  func (c *Client) LogoutAll(ctx context.Context, accessToken string) error
+
+  // ChangePassword updates the user's password. On success, AUTH bumps
+  // token_version: the caller's accessToken remains valid until its TTL
+  // expires, but ALL other sessions are invalidated.
+  //
+  // Errors:
+  //   - ErrInvalidToken — accessToken invalid OR currentPassword wrong
+  //   - ErrExpired      — accessToken expired
+  //   - ErrUnavailable  — AUTH unreachable
+  func (c *Client) ChangePassword(ctx context.Context, accessToken, currentPassword, newPassword string) error
+
+  // GetCurrentUser returns the user identified by accessToken.
+  // Bypasses the validate cache (always hits AUTH for fresh data).
+  //
+  // Errors: same as ValidateAccessToken.
+  func (c *Client) GetCurrentUser(ctx context.Context, accessToken string) (User, error)
+
+  // ─── Middleware ───────────────────────────────────────────────────────────
+
+  // HTTPMiddleware wraps an http.Handler with AUTH validation.
+  //
+  // Behavior:
+  //   - Reads the access token from the "Authorization: Bearer <token>" header.
+  //     Missing or malformed header → 401 Unauthorized.
+  //   - Calls ValidateAccessToken(ctx, token).
+  //   - On ErrInvalidToken / ErrExpired / ErrBlocked → 401 Unauthorized.
+  //   - On ErrUnavailable: 503 (FailClosed) OR pass-through with empty User (FailOpen).
+  //   - On success: stores User in request context (UserFromContext to read).
+  //
+  // The middleware does NOT write a response body for errors — only sets
+  // status code. Wrap with a custom error handler if a body is needed.
+  func (c *Client) HTTPMiddleware(next http.Handler) http.Handler
+
+  // UnaryInterceptor returns a gRPC server interceptor that validates the
+  // "authorization" metadata header on every incoming RPC.
+  //
+  // Behavior mirrors HTTPMiddleware. Methods registered via WithOpenMethods
+  // bypass the check. On success, the User is injected into the request
+  // ctx and accessible via UserFromContext.
+  func (c *Client) UnaryInterceptor() grpc.UnaryServerInterceptor
+
+  // ─── User & Context ──────────────────────────────────────────────────────
+
+  // User is the authenticated principal returned by AUTH. Value-semantics:
+  // copy freely, do not mutate after creation.
+  type User struct {
+      UUID  string // canonical user UUID (RFC 4122)
+      Role  Role   // single role (RBAC)
+      Email string // user's email (denormalized for convenience)
+  }
+
+  // IsZero reports whether the User is the zero value (no authenticated user).
+  // Useful in FailOpen mode to distinguish "auth bypassed" from "auth ok".
+  func (u User) IsZero() bool
+
+  // IsAdmin reports whether the user has the admin role.
+  func (u User) IsAdmin() bool
+
+  // HasRole reports whether the user's role matches the given role.
+  func (u User) HasRole(role Role) bool
+
+  // Role is a typed enumeration of AUTH roles. Mirrors auth.v1.Role values.
+  type Role string
+
+  const (
+      RoleUnknown Role = ""
+      RoleUser    Role = "user"
+      RoleAdmin   Role = "admin"
+  )
+
+  // WithUser stores a User in the context. Used internally by middleware /
+  // interceptor; consumers normally don't need to call it directly.
+  func WithUser(ctx context.Context, user User) context.Context
+
+  // UserFromContext extracts the User stored by HTTPMiddleware /
+  // UnaryInterceptor. The bool is false if no User is present.
+  //
+  //  user, ok := authclient.UserFromContext(r.Context())
+  //  if !ok { http.Error(w, "no auth context", 500); return }
+  func UserFromContext(ctx context.Context) (User, bool)
+
+  // ─── Cookie helpers ──────────────────────────────────────────────────────
+
+  // CookieOption mutates the cookie set by SetRefreshCookie. Defaults are
+  // chosen for security; override only when necessary.
+  type CookieOption func(*http.Cookie)
+
+  // WithCookieDomain sets the cookie's Domain attribute (default: "" — host-only).
+  func WithCookieDomain(domain string) CookieOption
+
+  // WithCookiePath overrides the default Path "/auth/refresh".
+  // Use only if your refresh endpoint lives elsewhere.
+  func WithCookiePath(path string) CookieOption
+
+  // WithCookieMaxAge overrides the default MaxAge (14 days).
+  func WithCookieMaxAge(maxAge time.Duration) CookieOption
+
+  // WithCookieSameSite overrides the default SameSite=Strict.
+  // SameSite=None requires Secure=true (enforced by the browser).
+  func WithCookieSameSite(mode http.SameSite) CookieOption
+
+  // SetRefreshCookie writes the refresh token as an HttpOnly, Secure,
+  // SameSite=Strict cookie scoped to /auth/refresh with MaxAge=14 days.
+  //
+  // These defaults align with OWASP Session Management recommendations and
+  // make CSRF / XSS exfiltration significantly harder. Override only via
+  // CookieOption when integrating with non-standard refresh endpoints.
+  func SetRefreshCookie(w http.ResponseWriter, refreshToken string, opts ...CookieOption)
+
+  // ClearRefreshCookie writes an expired cookie that overwrites the
+  // refresh-token cookie set by SetRefreshCookie.
+  func ClearRefreshCookie(w http.ResponseWriter, opts ...CookieOption)
+
+  // ─── HTTP request helpers ────────────────────────────────────────────────
+
+  // IPFromRequest extracts the client IP from an http.Request, preferring
+  // X-Forwarded-For (first hop), then X-Real-IP, then RemoteAddr.
+  //
+  // SECURITY NOTE: this helper does NOT validate trusted proxies in v0.1.0.
+  // If your edge accepts XFF from untrusted clients, the returned value
+  // may be spoofed. Mitigations:
+  //   - terminate XFF at a trusted reverse proxy (nginx, ALB) and configure
+  //     it to overwrite XFF rather than append.
+  //   - for production, pass ClientIP explicitly to Login/Refresh from a
+  //     verified source.
+  //
+  // Trusted-proxy support (CIDR allow-list) is planned for v0.2.0 via
+  // a WithTrustedProxies option.
+  func IPFromRequest(r *http.Request) string
+
+  // UserAgentFromRequest returns r.UserAgent(). Provided for symmetry with
+  // IPFromRequest and to make fingerprint-extraction code self-documenting.
+  func UserAgentFromRequest(r *http.Request) string
+
+  // ─── Errors ──────────────────────────────────────────────────────────────
+
+  // ErrInvalidToken indicates the token is malformed, unknown, or its
+  // token_version is stale.
+  var ErrInvalidToken = errors.New("authclient: invalid token")
+
+  // ErrExpired indicates the token's exp claim has passed.
+  var ErrExpired = errors.New("authclient: token expired")
+
+  // ErrBlocked indicates the user account is blocked.
+  var ErrBlocked = errors.New("authclient: user blocked")
+
+  // ErrRateLimited indicates AUTH applied a rate limit. Use RetryAfter(err)
+  // to read the suggested back-off duration.
+  var ErrRateLimited = errors.New("authclient: rate limited")
+
+  // ErrUnavailable indicates AUTH cannot be reached (network app_error,
+  // gRPC Unavailable, context deadline exceeded, etc).
+  var ErrUnavailable = errors.New("authclient: service unavailable")
+
+  // RetryAfter extracts the suggested back-off from an ErrRateLimited app_error.
+  // Returns 0 if err does not wrap ErrRateLimited or carries no metadata.
+  //
+  //  if errors.Is(err, authclient.ErrRateLimited) {
+  //      time.Sleep(authclient.RetryAfter(err))
+  //  }
+  func RetryAfter(err error) time.Duration
+
+  // ─── Adapter interfaces ──────────────────────────────────────────────────
+
+  // Logger is the SDK's logging adapter. Implement this interface to wire
+  // SDK logs into your app's logger (zap, slog, ctxlogger, etc).
+  // Default: NoopLogger{}.
+  //
+  // Fields are key-value pairs (alternating string keys and arbitrary
+  // values), following the slog convention.
+  type Logger interface {
+      Info(ctx context.Context, msg string, fields ...any)
+      Warn(ctx context.Context, msg string, fields ...any)
+      Error(ctx context.Context, msg string, err error, fields ...any)
+  }
+
+  // NoopLogger discards all log records. Default Logger when none is provided.
+  type NoopLogger struct{}
+
+  func (NoopLogger) Info(ctx context.Context, msg string, fields ...any)             {}
+  func (NoopLogger) Warn(ctx context.Context, msg string, fields ...any)             {}
+  func (NoopLogger) Error(ctx context.Context, msg string, err error, fields ...any) {}
+
+  // Cache is the SDK's ValidateToken cache adapter. Implementations must be
+  // safe for concurrent use. Pass a Redis-backed implementation for
+  // distributed deployments; default is an in-memory LRU+TTL cache.
+  //
+  // Keys are sha256(access_token) hex-encoded — never the raw token.
+  type Cache interface {
+      // Get returns the cached User for key. ok=false on miss / expired entry.
+      Get(ctx context.Context, key string) (user User, ok bool)
+
+      // Set stores user under key with the given TTL. ttl=0 = do not store.
+      Set(ctx context.Context, key string, user User, ttl time.Duration)
+
+      // Delete removes key. No-op on miss.
+      Delete(ctx context.Context, key string)
+  }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 3. ERRORS — gRPC code mapping
+# ───────────────────────────────────────────────────────────────────────────────
+errors:
+  mapping_table:
+    - grpc_code: "codes.OK"
+      app_error: "nil"
+      condition: "Successful response"
+    - grpc_code: "codes.Unauthenticated"
+      app_error: "ErrInvalidToken"
+      condition: |
+        Default mapping. Some servers also return Unauthenticated for expired
+        tokens — disambiguate via status.Details() or message inspection
+        (AUTH server contract: code=Unauthenticated, reason=\"token_expired\"
+        in trailers → ErrExpired)."
+    - grpc_code: "codes.PermissionDenied"
+      app_error: "ErrBlocked"
+      condition: "User account blocked"
+    - grpc_code: "codes.ResourceExhausted"
+      app_error: "ErrRateLimited"
+      condition: |
+        Server hit rate-limit. SDK extracts \"retry-after\" trailer
+        (seconds), wraps into rateLimitedError{retryAfter: d}.
+        RetryAfter(err) reads it back."
+    - grpc_code: "codes.Unavailable"
+      app_error: "ErrUnavailable"
+      condition: "Network app_error / server down / context cancelled (DeadlineExceeded too)"
+    - grpc_code: "codes.DeadlineExceeded"
+      app_error: "ErrUnavailable"
+      condition: "Mapped to ErrUnavailable (treated as transient)"
+    - grpc_code: "codes.InvalidArgument"
+      app_error: "ErrInvalidToken"
+      condition: "Malformed token / empty input"
+    - grpc_code: "*"
+      app_error: "fmt.Errorf(\"authclient: unexpected app_error: %w\", err)"
+      condition: "Unknown gRPC code — preserve original for debugging"
+
+  ratelimit_metadata: |
+    AUTH server contract for rate-limit responses (per webdelo/auth REQ-003):
+      - gRPC: ResourceExhausted with trailer \"retry-after-ms\" = milliseconds.
+      - HTTP: 429 with header \"Retry-After\" = seconds.
+    SDK normalizes both to time.Duration via RetryAfter(err).
+
+  internal_wrapper: |
+    type rateLimitedError struct {
+        retryAfter time.Duration
+    }
+
+    func (e *rateLimitedError) Error() string   { return ErrRateLimited.Error() }
+    func (e *rateLimitedError) Unwrap() error   { return ErrRateLimited }
+    func (e *rateLimitedError) RetryAfter() time.Duration { return e.retryAfter }
+
+    // RetryAfter extracts the duration via errors.As.
+    func RetryAfter(err error) time.Duration {
+        var rl *rateLimitedError
+        if errors.As(err, &rl) {
+            return rl.retryAfter
+        }
+        return 0
+    }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 4. ОБОСНОВАНИЯ ПО КАЖДОМУ СПОРНОМУ РЕШЕНИЮ
+# ───────────────────────────────────────────────────────────────────────────────
+design_decisions:
+
+  - id: "DD-01"
+    topic: "Config struct vs Functional Options"
+    chosen: "Гибрид: Config + Options"
+    rationale: |
+      Чистый options-only (gRPC-style) делает обязательное поле Endpoint
+      \"спрятанным\" в WithEndpoint(...) — легко забыть. Чистый struct-only
+      требует breaking change при добавлении переключателей.
+      Гибрид: Config содержит обязательные/тяжёлые поля (Endpoint, timeouts,
+      DialOptions), Options — orthogonal toggle'ы (FailMode, OpenMethods).
+      Прецеденты: aws-sdk-go-v2 (NewFromConfig + Options), mongo-go-driver.
+    alternatives_rejected:
+      - "Только Options: теряется compile-time проверка обязательных полей"
+      - "Только struct: каждое расширение — breaking change"
+
+  - id: "DD-02"
+    topic: "Поля User"
+    chosen: "UUID, Role, Email — три поля"
+    rationale: |
+      UUID — primary key consumer для логов и audit.
+      Role — главное право доступа (RBAC).
+      Email — denormalized для convenience (большинство endpoint'ов хотят
+      показать \"hello, user@example.com\" без второго round-trip к AUTH).
+      Permissions — НЕ включаем: AUTH в v0.1.0 не выдаёт permissions
+      (только role). Когда появится — добавим без breaking change
+      (новое поле в struct).
+    alternatives_rejected:
+      - "Только UUID + Role: вынуждает consumer'а лишний раз ходить за email"
+      - "+ Permissions []string: нет в AUTH контракте v0.1.0"
+      - "+ Metadata map[string]string: open-ended, риск abuse"
+
+  - id: "DD-03"
+    topic: "ValidateAccessToken — что возвращать при cache hit/miss"
+    chosen: "Идентичный API; cache hit прозрачен для caller'а"
+    rationale: |
+      Caller не должен знать о кэше. SDK дискриминирует:
+        - cache hit: возвращает User из кэша, нет network call'а.
+        - cache miss: hits AUTH, на success — кладёт User в кэш с TTL.
+        - cache miss + AUTH вернул ошибку валидации (invalid/expired/blocked):
+          НЕ кэшируем negative result (чтобы reactivation сработал быстро).
+        - cache miss + AUTH unreachable: возвращаем ErrUnavailable, не кэшируем.
+      Это стандартное поведение TTL-кэша для security-чувствительных операций.
+
+  - id: "DD-04"
+    topic: "HTTP middleware — как извлекается token"
+    chosen: "Authorization: Bearer <token> header"
+    rationale: |
+      Стандарт RFC 6750. Альтернатива — query parameter — НЕ поддерживается
+      (риск утечки в access-логах прокси).
+      Cookie с access-токеном — НЕ поддерживается: access-токен short-lived,
+      cookie-storage избыточен. (Refresh-токен — отдельная история, см.
+      cookie helpers.)
+    error_responses:
+      - "Нет Authorization header → 401, Body пустой"
+      - "Header без Bearer prefix → 401"
+      - "ErrInvalidToken / ErrExpired / ErrBlocked → 401"
+      - "ErrRateLimited → 429 + Retry-After header (из RetryAfter(err))"
+      - "ErrUnavailable + FailClosed → 503"
+      - "ErrUnavailable + FailOpen → next.ServeHTTP с user=zero"
+
+  - id: "DD-05"
+    topic: "gRPC interceptor — open methods"
+    chosen: "WithOpenMethods([]string) функциональная опция"
+    rationale: |
+      Большинство сервисов имеют health-check / reflection endpoint'ы,
+      которые НЕ должны требовать токен. Опция позволяет передать
+      whitelist полных gRPC-имён методов (\"/grpc.health.v1.Health/Check\").
+      Альтернатива — отдельный New для open server — overkill.
+
+  - id: "DD-06"
+    topic: "Context key для User"
+    chosen: "Unexported type userCtxKey struct{}"
+    rationale: |
+      Best practice Go. Избегает коллизий ключей между пакетами,
+      не позволяет внешнему коду случайно (или намеренно) перезаписать User.
+      Возврат (User, bool) — стандарт Go (comma-ok idiom для maps/casts).
+
+  - id: "DD-07"
+    topic: "Cookie helpers — параметры по умолчанию"
+    chosen: "HttpOnly=true, Secure=true, SameSite=Strict, Path=/auth/refresh, MaxAge=14d"
+    rationale: |
+      OWASP Session Management cheatsheet. SameSite=Strict — самый строгий,
+      ломает single-sign-on с cross-site redirect, но для refresh-token
+      это допустимо (refresh всегда инициируется same-site из BFF).
+      Path=/auth/refresh — cookie шлётся ТОЛЬКО на refresh endpoint,
+      минимизирует attack surface при XSS.
+      MaxAge=14d — синхронизирован с дефолтом AUTH refresh-token TTL.
+      CookieOption'ы открывают override'ы для multi-domain setup'ов
+      (WithCookieDomain) и нестандартных endpoint paths (WithCookiePath).
+
+  - id: "DD-08"
+    topic: "IPFromRequest — trusted proxies"
+    chosen: "Без trusted proxies в v0.1.0; fallback порядок XFF[0] → X-Real-IP → RemoteAddr; явная dока про риск"
+    rationale: |
+      Trusted proxies (CIDR allow-list) — отдельная feature с reqs:
+      валидация CIDR, тесты, конфигурация per-deployment. Затягивает v0.1.0
+      минимум на пол-задачи. Альтернатива в v0.1.0:
+        1. Helper честно делает best-effort (XFF first hop).
+        2. README предупреждает про spoofing risk.
+        3. Production deployment должен либо терминировать XFF на trusted edge,
+           либо передавать ClientIP в Login/Refresh из надёжного источника.
+      v0.2.0: добавим WithTrustedProxies(cidrs ...string) Option,
+      без breaking change.
+
+  - id: "DD-09"
+    topic: "Logger interface — сигнатура"
+    chosen: "Info/Warn/Error с context + msg + variadic fields"
+    rationale: |
+      slog-style: совместим с Go 1.21+ slog без обёртки, удобен для
+      существующих логгеров (zap.SugaredLogger, ctxlogger). Error отдельно
+      принимает err — стандартный паттерн для structured logging.
+      Default — NoopLogger{} (см. ES-0143).
+    alternatives_rejected:
+      - "Только Logf(level, msg, args...): теряется типизация уровня"
+      - "Logger + With(field, value) chain: усложняет адаптеры"
+
+  - id: "DD-10"
+    topic: "Cache interface"
+    chosen: "Get/Set/Delete с context"
+    rationale: |
+      Минимальный набор для TTL-кэша. Контекст в сигнатуре — обязателен,
+      потому что Redis-impl сделает network call (нужен timeout/cancellation).
+      Default — internal/cache.MemoryCache (sync.Map + janitor goroutine).
+      Никаких Stats/Size/Keys в публичном interface — это implementation detail.
+
+  - id: "DD-11"
+    topic: "Metrics interface — включать в v0.1.0?"
+    chosen: "Отложить до v0.2.0"
+    rationale: |
+      Logger + Cache достаточно для unblocking BFF. Metrics interface —
+      нетривиальный design (counter vs histogram, label cardinality, какие
+      события эмитировать). Лучше заложить в v0.2.0 как осознанный дизайн,
+      чем пропихнуть в v0.1.0 как заглушку.
+      В v0.2.0 поверхность будет:
+        type Metrics interface {
+          IncCounter(name string, labels map[string]string)
+          ObserveHistogram(name string, value float64, labels map[string]string)
+        }
+      Добавление — НЕ breaking change.
+
+  - id: "DD-12"
+    topic: "Login без ClientIP/UA — разрешать?"
+    chosen: "ClientIP/UA — required в LoginInput, но НЕ enforced compile-time"
+    rationale: |
+      Validator at Login() time: если ClientIP=\"\" или UA=\"\" — Logger.Warn,
+      но запрос идёт в AUTH (AUTH сам решит). Это позволяет тестам
+      и не-HTTP сервисам (CLI, daemon) работать без fingerprint.
+      README настоятельно рекомендует использовать IPFromRequest /
+      UserAgentFromRequest для HTTP-фронтов.
+
+  - id: "DD-13"
+    topic: "RefreshOutput содержит ли User?"
+    chosen: "НЕТ — только tokens"
+    rationale: |
+      Refresh — operation rotation, не identity lookup. Если consumer
+      хочет user info после refresh — отдельный ValidateAccessToken
+      (cache hit будет, network call'а нет). Это держит API минимальным
+      и соответствует AUTH gRPC контракту (RefreshResponse без user).
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 5. EVOLUTION GUIDELINES — что нельзя трогать после v1.0.0
+# ───────────────────────────────────────────────────────────────────────────────
+evolution_rules:
+
+  frozen_after_v1_0_0:
+    description: "Эти элементы НЕ должны меняться после v1.0.0 без major bump."
+    public_types:
+      - "type Client struct{}                   — фабрика и lifecycle"
+      - "type Config struct{}                   — добавление полей OK, удаление/переименование — breaking"
+      - "type User struct{}                     — добавление полей OK, удаление/переименование — breaking"
+      - "type LoginInput struct{}               — то же"
+      - "type LoginOutput struct{}              — то же"
+      - "type RefreshOutput struct{}            — то же"
+      - "type Role string                       — значения констант (RoleUser, RoleAdmin) — frozen"
+      - "type FailMode uint8                    — значения констант — frozen"
+    public_funcs:
+      - "func New(cfg Config, opts ...Option) (*Client, error)"
+      - "func (*Client) Close() error"
+      - "func (*Client) ValidateAccessToken(ctx, token) (User, error)"
+      - "func (*Client) Login(ctx, in) (LoginOutput, error)"
+      - "func (*Client) Refresh(ctx, refreshToken, ip, ua) (RefreshOutput, error)"
+      - "func (*Client) Logout(ctx, refreshToken) error"
+      - "func (*Client) LogoutAll(ctx, accessToken) error"
+      - "func (*Client) ChangePassword(ctx, accessToken, current, new) error"
+      - "func (*Client) GetCurrentUser(ctx, accessToken) (User, error)"
+      - "func (*Client) HTTPMiddleware(next http.Handler) http.Handler"
+      - "func (*Client) UnaryInterceptor() grpc.UnaryServerInterceptor"
+      - "func WithUser(ctx, user) context.Context"
+      - "func UserFromContext(ctx) (User, bool)"
+      - "func SetRefreshCookie(w, token, opts...)"
+      - "func ClearRefreshCookie(w, opts...)"
+      - "func IPFromRequest(r) string"
+      - "func UserAgentFromRequest(r) string"
+      - "func RetryAfter(err) time.Duration"
+    public_errors:
+      - "ErrInvalidToken / ErrExpired / ErrBlocked / ErrRateLimited / ErrUnavailable"
+      - "errors.Is(err, ErrXxx) — гарантия работы навсегда"
+    interfaces:
+      - "type Logger interface"
+      - "type Cache interface"
+      - "Изменение сигнатур методов interface'а — breaking"
+
+  safe_changes:
+    description: "Эти изменения allowed после v1.0.0 без major bump."
+    additive:
+      - "Новые методы на *Client (например NewWithDialer)"
+      - "Новые поля в Config / User / LoginOutput (zero-value-compatible)"
+      - "Новые Option'ы (With*)"
+      - "Новые sentinel errors (errors.Is — backward-compat)"
+      - "Новые поля в CookieOption defaults"
+    behaviour:
+      - "Performance improvements в кэше / singleflight"
+      - "Расширение error mapping (новые grpc codes → existing sentinels)"
+
+  forbidden_changes:
+    description: "ЗАПРЕЩЕНО после v1.0.0."
+    breaking:
+      - "Переименование/удаление любого exported identifier"
+      - "Изменение типа поля в exported struct"
+      - "Изменение сигнатуры (параметры, return values) exported function"
+      - "Удаление константы (RoleUser, FailClosed)"
+      - "Изменение поведения (semantic) без Option-fallback"
+      - "Добавление required параметра в существующую функцию"
+      - "Изменение default'ов cookie helpers (security regression)"
+
+  pre_v1_freedom:
+    description: "v0.x период — breaking changes allowed, но дисциплина:"
+    rules:
+      - "Каждое breaking change → запись в CHANGELOG.md под ## Breaking"
+      - "minor bump (v0.1 → v0.2) для breaking, patch (v0.1.0 → v0.1.1) для bug-fix"
+      - "Migration notes в CHANGELOG для каждого breaking"
+      - "Heads-up consumer'ам (BFF) за 1 неделю до tag'а"
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 6. EXAMPLES — реальные usage flows
+# ───────────────────────────────────────────────────────────────────────────────
+examples:
+
+  basic_login_validate: |
+    package main
+
+    import (
+        \"context\"
+        \"log\"
+
+        authclient \"github.com/webdelo/auth-client-go/lib\"
+    )
+
+    func main() {
+        client, err := authclient.New(authclient.Config{
+            Endpoint: \"auth:50051\",
+        })
+        if err != nil { log.Fatal(err) }
+        defer client.Close()
+
+        ctx := context.Background()
+        out, err := client.Login(ctx, authclient.LoginInput{
+            Email:     \"alice@example.com\",
+            Password:  \"hunter2\",
+            ClientIP:  \"203.0.113.42\",
+            UserAgent: \"cli/1.0\",
+        })
+        if err != nil { log.Fatal(err) }
+
+        user, err := client.ValidateAccessToken(ctx, out.AccessToken)
+        if err != nil { log.Fatal(err) }
+        log.Printf(\"hello, %s (%s)\", user.Email, user.Role)
+    }
+
+  http_middleware: |
+    func main() {
+        client, _ := authclient.New(authclient.Config{
+            Endpoint: \"auth:50051\",
+            FailMode: authclient.FailClosed,
+        })
+        defer client.Close()
+
+        secured := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            user, _ := authclient.UserFromContext(r.Context())
+            fmt.Fprintf(w, \"hello %s\", user.Email)
+        })
+
+        http.Handle(\"/api/me\", client.HTTPMiddleware(secured))
+        http.ListenAndServe(\":8080\", nil)
+    }
+
+  grpc_interceptor: |
+    func main() {
+        client, _ := authclient.New(
+            authclient.Config{Endpoint: \"auth:50051\"},
+            authclient.WithOpenMethods(\"/grpc.health.v1.Health/Check\"),
+        )
+        defer client.Close()
+
+        srv := grpc.NewServer(
+            grpc.UnaryInterceptor(client.UnaryInterceptor()),
+        )
+        // register services + serve
+    }
+
+  refresh_with_cookie: |
+    // BFF endpoint: POST /auth/refresh
+    func handleRefresh(client *authclient.Client) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+            cookie, err := r.Cookie(\"refresh_token\")
+            if err != nil { http.Error(w, \"no cookie\", 401); return }
+
+            out, err := client.Refresh(r.Context(),
+                cookie.Value,
+                authclient.IPFromRequest(r),
+                authclient.UserAgentFromRequest(r),
+            )
+            switch {
+            case errors.Is(err, authclient.ErrInvalidToken),
+                 errors.Is(err, authclient.ErrExpired):
+                authclient.ClearRefreshCookie(w)
+                http.Error(w, \"re-login\", 401)
+                return
+            case errors.Is(err, authclient.ErrRateLimited):
+                w.Header().Set(\"Retry-After\", strconv.Itoa(int(authclient.RetryAfter(err).Seconds())))
+                http.Error(w, \"too many\", 429)
+                return
+            case err != nil:
+                http.Error(w, \"unavailable\", 503)
+                return
+            }
+            authclient.SetRefreshCookie(w, out.RefreshToken)
+            json.NewEncoder(w).Encode(map[string]string{\"access_token\": out.AccessToken})
+        }
+    }
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 7. OPEN QUESTIONS — что обсудить с командой ДО старта реализации
+# ───────────────────────────────────────────────────────────────────────────────
+open_questions:
+
+  - id: "OQ-01"
+    question: "User.Email — действительно ли AUTH возвращает его в ValidateTokenResponse?"
+    why_it_matters: |
+      Если AUTH в ValidateTokenResponse возвращает только UUID+Role (без Email),
+      то User.Email после ValidateAccessToken будет пуст. Тогда нужно:
+        a) убрать Email из User, либо
+        b) делать второй RPC GetCurrentUser (плохо для perf), либо
+        c) попросить AUTH добавить Email в ValidateTokenResponse.
+    suggested_resolution: |
+      Сверить с auth-proto/go@v0.1.0 ValidateTokenResponse. Если Email
+      отсутствует — option (c): добавить в AUTH (отдельный REQ),
+      пока — User содержит только UUID+Role в v0.1.0.
+
+  - id: "OQ-02"
+    question: "Permissions / multi-role support когда?"
+    why_it_matters: |
+      AUTH сейчас одна роль на user. Если в будущем будет multi-role
+      или fine-grained permissions — Role string не масштабируется.
+    suggested_resolution: |
+      В v0.1.0 — Role string. Когда AUTH добавит multi-role —
+      User получит Roles []Role (additive, не breaking),
+      Role останется как первая роль для backward compat.
+
+  - id: "OQ-03"
+    question: "Refresh — куда деть rotation для server-issued cookie? SDK сам ставит cookie или возвращает caller'у?"
+    why_it_matters: |
+      Если SDK возвращает RefreshOutput с новым refresh — caller обязан
+      вызвать SetRefreshCookie. Можно ли сделать helper-метод
+      RefreshAndSetCookie(ctx, w, r) одним вызовом?
+    suggested_resolution: |
+      В v0.1.0 — caller вызывает SetRefreshCookie сам (2 строки кода).
+      В v0.2.0 — добавим RefreshFromRequest(ctx, w, r) как convenience-helper
+      (additive). Сейчас — explicit лучше implicit.
+
+  - id: "OQ-04"
+    question: "Streaming gRPC interceptor нужен в v0.1.0?"
+    why_it_matters: |
+      AUTH сейчас не имеет streaming RPC. Consumer-services (BFF) —
+      пока тоже не используют streaming. Но если кто-то добавит — без
+      stream interceptor SDK защитит только unary."
+    suggested_resolution: |
+      v0.1.0 — только UnaryInterceptor (90% use cases). v0.2.0 —
+      StreamInterceptor() grpc.StreamServerInterceptor (additive).
+
+# ───────────────────────────────────────────────────────────────────────────────
+# 8. CHECKLIST — что проверить перед merge финальной реализации
+# ───────────────────────────────────────────────────────────────────────────────
+review_checklist:
+  api_consistency:
+    - "[ ] Все exported types/funcs имеют godoc с примером (где применимо)"
+    - "[ ] Все sentinel errors начинаются с \"authclient: \" — единый префикс"
+    - "[ ] Methods на Client принимают ctx первым параметром"
+    - "[ ] Все timeouts конфигурируются через Config (не hardcoded)"
+    - "[ ] Все fields Config — value types или интерфейсы (не указатели)"
+  go_idioms:
+    - "[ ] Получатели на Client — указательные (*Client)"
+    - "[ ] Getter'ы User — без префикса Get (User.IsAdmin, не GetIsAdmin)"
+    - "[ ] (User, bool) — comma-ok idiom для UserFromContext"
+    - "[ ] errors.Is работает для всех sentinel'ов"
+    - "[ ] errors.As работает для RetryAfter extractor'а"
+  safety:
+    - "[ ] FailClosed — default (security-first)"
+    - "[ ] Cookie defaults — HttpOnly+Secure+SameSite=Strict (нельзя ослабить случайно)"
+    - "[ ] Negative validate results НЕ кэшируются"
+    - "[ ] Cache key — sha256(token), не raw token (логи безопасны)"
+    - "[ ] singleflight ключ — sha256(refresh_token)"
+  testability:
+    - "[ ] Logger / Cache — интерфейсы (можно подменить в тестах)"
+    - "[ ] Можно создать Client без реального gRPC dial для unit-тестов?"
+      "      — TODO: рассмотреть internal/transport interface для mock-ability"

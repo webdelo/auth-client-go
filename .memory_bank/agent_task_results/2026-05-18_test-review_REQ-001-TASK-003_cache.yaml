@@ -1,0 +1,413 @@
+agent: test-reviewer
+task_id: REQ-001-TASK-003
+package: lib/internal/cache
+date: 2026-05-18
+files_reviewed:
+  - lib/internal/cache/memory_test.go
+  - lib/internal/cache/memory_bench_test.go
+
+# ─── Test Execution Results ───────────────────────────────────────────────────
+
+test_results:
+  passed: 13
+  failed: 0
+  skipped: 0
+  race_detector: PASS
+  duration_seconds: 0.294
+  command: "go test -v -race -count=1 ./lib/internal/cache/"
+
+coverage_analysis:
+  memory.go:
+    total: 100.0%
+    by_function:
+      NewMemoryCache: 100.0%
+      Get: 100.0%
+      Set: 100.0%
+      Delete: 100.0%
+      cleanupLoop: 100.0%
+    gaps: none
+
+benchmark_review:
+  BenchmarkMemoryCache_Get:
+    pattern_correct: true
+    has_b_ResetTimer: true
+    has_b_ReportAllocs: true
+    warmup_present: true  # c.Set called before b.ResetTimer — correct warmup
+    result_ns_per_op: 32.77
+    result_allocs_per_op: 0
+    target_1us: EXCEEDED_TARGET  # 32.77 ns/op << 1000 ns/op — passes with 30x headroom
+    note: >
+      Benchmark is named BenchmarkMemoryCache_Get, but the task/PRP specify the
+      name BenchmarkValidateCache_Hit. The naming mismatch means `go test
+      -bench=BenchmarkValidateCache_Hit` finds nothing. The bench itself is
+      correct in structure and comfortably meets the <1µs target (32 ns/op).
+  BenchmarkMemoryCache_Set:
+    pattern_correct: true
+    has_b_ResetTimer: true
+    has_b_ReportAllocs: true
+    result_ns_per_op: 76.14
+    result_allocs_per_op: 3
+    note: >
+      Set allocates 112 B / 3 allocs per op (entry struct + sync.Map store).
+      Expected for this design — no issue.
+
+# ─── Standards Compliance ─────────────────────────────────────────────────────
+
+standards_compliance:
+  UT-0001_table_driven: PASS
+  UT-0002_one_method_one_function: PASS
+  UT-0010_naming_format: PASS  # TestMemoryCache_Get, TestMemoryCache_Delete, etc.
+  UT-0011_happy_path_first:
+    status: PASS
+    note: >
+      map iteration order is non-deterministic; "happy_path" key is present in
+      all tables that have multiple cases. This satisfies the intent of UT-0011
+      (key exists, not positional in a slice). Acceptable for map-based tables.
+  UT-0012_snake_case: PASS
+  UT-0020_mocks_via_mockery: N/A  # No external dependencies to mock in this package
+  UT-0021_expecter_api: N/A
+  UT-0022_explicit_call_count: N/A
+  UT-0023_no_mock_anything: N/A
+  UT-0024_new_mocks_per_subtest: N/A
+  UT-0028_no_helper_functions: PASS
+  UT-0029_no_package_globals: PASS
+  UT-0030_require_for_critical: PASS
+  UT-0031_assert_for_additional: PASS
+  UT-0032_no_logic_in_tests: PASS
+  UT-0040_t_parallel_main_test: PARTIAL  # See TR-CACHE-W001
+  UT-0041_tc_capture: PASS  # tc := tc present in all parallel loops
+  UT-0051_no_magic_numbers:
+    status: WARNING  # See TR-CACHE-W002
+  UT-0071_synctest_for_time_dependent:
+    status: WARNING  # See TR-CACHE-W003
+  UT-0100_one_test_file_per_source: PASS
+
+# ─── Issues ───────────────────────────────────────────────────────────────────
+
+issues:
+
+  critical: []
+
+  warnings:
+
+    - id: TR-CACHE-W001
+      severity: WARNING
+      rule_id: UT-0040
+      file: lib/internal/cache/memory_test.go
+      line: 128
+      title: "TestMemoryCache_Cleanup missing t.Parallel() on the outer function"
+      description: >
+        TestMemoryCache_Cleanup does not call t.Parallel() at the top, and its
+        subtests also run sequentially (no t.Parallel() inside the loop). The
+        comment on line 127-128 says "Goroutine-count subtests are NOT parallel
+        (they measure global runtime state)." This is a legitimate reason — the
+        goroutine-count test in subtest "goroutine_exits_when_ctx_cancelled"
+        uses runtime.NumGoroutine() which is global state and would be
+        invalidated by parallel execution. However, the outer test function
+        itself could still declare t.Parallel() to run concurrently with other
+        top-level test functions (TestMemoryCache_Get, TestMemoryCache_Delete,
+        TestMemoryCache_Concurrent), without making its subtests parallel. Not
+        calling t.Parallel() on the outer function means the entire
+        TestMemoryCache_Cleanup blocks other parallelizable tests from running.
+        Per UT-0040, the outer test should call t.Parallel() unless it
+        genuinely cannot (e.g., modifies os.Setenv). Measuring NumGoroutine in
+        subtests is a valid exclusion for those subtests, but not for the outer
+        wrapper.
+      recommendation: >
+        Add t.Parallel() at line 129 (immediately after the function opens).
+        Keep the subtests sequential (no t.Parallel() inside the loop) as
+        documented, since they rely on global goroutine count. The comment
+        explaining why subtests are sequential is good and should stay.
+
+        ```go
+        func TestMemoryCache_Cleanup(t *testing.T) {
+            t.Parallel()  // add this line
+
+            tests := map[string]struct { ... }{
+                ...
+            }
+            for name, tc := range tests {
+                tc := tc
+                t.Run(name, func(t *testing.T) {
+                    // no t.Parallel() here — correct, global state
+                    tc.run(t)
+                })
+            }
+        }
+        ```
+
+    - id: TR-CACHE-W002
+      severity: WARNING
+      rule_id: UT-0051
+      file: lib/internal/cache/memory_test.go
+      line: 43
+      title: "Magic numbers for TTL and sleep durations"
+      description: >
+        Several magic numeric literals appear in test cases without named
+        constants:
+          - line 43: `10*time.Millisecond` (TTL for expiring entry)
+          - line 44: `20*time.Millisecond` (sleepBefore — must be > TTL)
+          - line 174: `const cleanupInterval = 20 * time.Millisecond` — local
+            const is good, pattern to follow
+          - line 176: `5*time.Millisecond` (TTL of short entry)
+          - line 179: `60*time.Millisecond` (wait for cleanup)
+          - line 202: `50` (numGoroutines — IS already a named const, good)
+
+        The relationship between TTL (10ms), sleep (20ms) in
+        "expired_returns_false" is implicit: sleep must be > TTL but the code
+        does not express this contract. If TTL is changed and sleep is not
+        updated, the test silently breaks.
+      recommendation: >
+        Define named constants that express the relationship:
+
+        ```go
+        "expired_returns_false": {
+            setup: func(c *MemoryCache) {
+                const entryTTL = 10 * time.Millisecond
+                c.Set(context.Background(), "expiring", "payload", entryTTL)
+            },
+            sleepBefore: 25 * time.Millisecond, // > entryTTL
+            ...
+        }
+        ```
+
+        For "expired_entry_removed_by_cleanup" in TestMemoryCache_Cleanup, the
+        local `const cleanupInterval` is correct; similarly extract the entry
+        TTL and wait duration:
+
+        ```go
+        const cleanupInterval = 20 * time.Millisecond
+        const entryTTL        = 5 * time.Millisecond
+        const waitForCleanup  = 3 * cleanupInterval // explicit: needs ≥2 ticks
+        ```
+
+    - id: TR-CACHE-W003
+      severity: WARNING
+      rule_id: UT-0071
+      file: lib/internal/cache/memory_test.go
+      line: 128
+      title: "Time-dependent tests use real time.Sleep instead of synctest"
+      description: >
+        Go 1.24 introduced testing/synctest (available since the project uses
+        go1.26.2). The PRP §Applied Standards and the task notes explicitly
+        reference UT-0071 and synctest for the cleanup goroutine tests.
+
+        Three subtests rely on wall-clock sleeping:
+          1. "expired_returns_false" (line 73-74): time.Sleep(20ms)
+          2. "goroutine_exits_when_ctx_cancelled" (line 139,146): time.Sleep
+             inside a polling loop (up to 200ms total)
+          3. "expired_entry_removed_by_cleanup" (line 179): time.Sleep(60ms)
+
+        Using real time.Sleep makes these tests:
+          - Inherently slow (at least 20+60+30 = ~110ms extra per full run)
+          - Potentially flaky under high CPU load (goroutine scheduler delay
+            can exceed the poll budget)
+          - Not deterministic (timing depends on OS scheduler)
+
+        synctest.Run + synctest.Wait would make time-dependent tests
+        deterministic and near-instantaneous by controlling the fake clock.
+      recommendation: >
+        Refactor time-dependent subtests with synctest. Example for the
+        goroutine-lifecycle subtest:
+
+        ```go
+        import "testing/synctest"
+
+        "goroutine_exits_when_ctx_cancelled": {
+            run: func(t *testing.T) {
+                synctest.Run(func() {
+                    baseline := runtime.NumGoroutine()
+                    ctx, cancel := context.WithCancel(context.Background())
+                    _ = NewMemoryCache(ctx, 10*time.Millisecond)
+                    synctest.Wait()  // wait for goroutine to start
+                    cancel()
+                    synctest.Wait()  // wait for goroutine to exit
+                    assert.LessOrEqual(t, runtime.NumGoroutine(), baseline)
+                })
+            },
+        },
+        ```
+
+        For "expired_returns_false" the lazy-expire path does not involve a
+        goroutine, so synctest.Run + advancing the fake clock is sufficient:
+
+        ```go
+        synctest.Run(func() {
+            c := NewMemoryCache(context.Background(), 0)
+            c.Set(context.Background(), "expiring", "payload", 10*time.Millisecond)
+            time.Sleep(20 * time.Millisecond) // advances fake clock, no real sleep
+            synctest.Wait()
+            val, ok := c.Get(context.Background(), "expiring")
+            require.False(t, ok)
+            assert.Nil(t, val)
+        })
+        ```
+
+        Note: if synctest.Run is used, the test function must NOT also call
+        t.Parallel() in the subtest body (synctest.Run has its own goroutine
+        management). The outer TestMemoryCache_Cleanup can still call
+        t.Parallel().
+
+  suggestions:
+
+    - id: TR-CACHE-S001
+      severity: SUGGESTION
+      rule_id: UT-0010
+      file: lib/internal/cache/memory_bench_test.go
+      line: 9
+      title: "Benchmark name does not match the name mandated by task/PRP"
+      description: >
+        The task DOD (REQ-001-TASK-003.md line 39) and PRP success criteria
+        (REQ-001-TASK-003-PRP.md line 64) specify:
+          "BenchmarkValidateCache_Hit — Get на 100% hit, должен быть < 1µs/op"
+
+        The implemented benchmark is named BenchmarkMemoryCache_Get. Running
+        `go test -bench=BenchmarkValidateCache_Hit ./lib/internal/cache/` finds
+        nothing; CI/CD tooling or reviewers checking DOD compliance will get a
+        false negative.
+
+        The underlying structure is correct (warmup before b.ResetTimer,
+        b.ReportAllocs, 0 allocs, ~33 ns/op). Only the name needs to change or
+        an alias added.
+      recommendation: >
+        Either rename BenchmarkMemoryCache_Get to BenchmarkValidateCache_Hit,
+        or add a separate benchmark function with that name:
+
+        ```go
+        // BenchmarkValidateCache_Hit measures a 100% cache-hit path.
+        // Must stay < 1µs/op per REQ-001-TASK-003 DOD.
+        func BenchmarkValidateCache_Hit(b *testing.B) {
+            c := NewMemoryCache(context.Background(), time.Minute)
+            c.Set(context.Background(), "k", "user-payload", time.Minute)
+            b.ReportAllocs()
+            b.ResetTimer()
+            for i := 0; i < b.N; i++ {
+                _, _ = c.Get(context.Background(), "k")
+            }
+        }
+        ```
+
+        Keeping BenchmarkMemoryCache_Get alongside is fine for discoverability.
+
+    - id: TR-CACHE-S002
+      severity: SUGGESTION
+      rule_id: UT-0040
+      file: lib/internal/cache/memory_test.go
+      line: 199
+      title: "TestMemoryCache_Concurrent missing subtest table structure"
+      description: >
+        TestMemoryCache_Concurrent is a single flat test (no table, no subtests)
+        and correctly calls t.Parallel(). The test itself is valid — it stresses
+        concurrent access to the MemoryCache. However, per UT-0001 and UT-0002,
+        all test functions should use the table-driven pattern. Currently there
+        is only one scenario (50 goroutines, mixed Set/Get/Delete). Adding edge
+        cases such as "all_goroutines_delete" or "single_key_contention" would
+        require restructuring into a table, which would also make the intent
+        of each concurrent scenario explicit.
+
+        This is a suggestion, not a requirement — a single concurrent stress
+        test is better than none, and the concurrent test as written is
+        valuable.
+      recommendation: >
+        If additional concurrent scenarios are needed in the future, wrap into
+        a table. For now, consider adding a brief comment explaining what the
+        single scenario tests:
+
+        ```go
+        // TestMemoryCache_Concurrent verifies that concurrent Get/Set/Delete
+        // on shared and distinct keys does not produce data races.
+        // Run with: go test -race ./lib/internal/cache/
+        func TestMemoryCache_Concurrent(t *testing.T) {
+            t.Parallel()
+            ...
+        }
+        ```
+
+    - id: TR-CACHE-S003
+      severity: SUGGESTION
+      rule_id: null
+      file: lib/internal/cache/memory_test.go
+      line: 154
+      title: "Goroutine-leak assertion is fragile: compares absolute count to baseline"
+      description: >
+        In "goroutine_exits_when_ctx_cancelled", the test captures
+        `baseline := runtime.NumGoroutine()` before creating the cache and then
+        asserts `runtime.NumGoroutine() <= baseline` after cancel.
+
+        This is fragile for two reasons:
+          1. Between baseline capture and cancel(), other tests running in
+             parallel (TestMemoryCache_Get, TestMemoryCache_Concurrent) may
+             start goroutines, inflating the count above baseline even after
+             the cleanup goroutine exits.
+          2. The test passes even if the goroutine count is exactly baseline-1
+             (e.g., another goroutine that was alive at baseline has since
+             exited), masking the possibility that the cleanup goroutine never
+             started.
+
+        The correct assertion for a goroutine-leak check is: count after equals
+        count before (i.e., the net delta is zero), not "count ≤ baseline".
+        Using synctest (TR-CACHE-W003) would resolve both concerns because it
+        provides isolation from other goroutines.
+      recommendation: >
+        In the absence of synctest, strengthen the assertion by measuring the
+        delta rather than the absolute count, or restrict the comparison to
+        "did the count drop by exactly 1 from its peak right after start":
+
+        ```go
+        baseline := runtime.NumGoroutine()
+        ctx, cancel := context.WithCancel(context.Background())
+        _ = NewMemoryCache(ctx, 10*time.Millisecond)
+
+        // Wait for the goroutine to start (count should be baseline+1).
+        require.Eventually(t, func() bool {
+            return runtime.NumGoroutine() >= baseline+1
+        }, 100*time.Millisecond, 2*time.Millisecond, "goroutine did not start")
+
+        cancel()
+
+        // Wait for it to exit (count should return to baseline).
+        assert.Eventually(t, func() bool {
+            return runtime.NumGoroutine() <= baseline
+        }, 200*time.Millisecond, 5*time.Millisecond, "goroutine did not exit after cancel")
+        ```
+
+        Using require.Eventually / assert.Eventually from testify eliminates the
+        hand-rolled polling loop and makes the intent clearer.
+
+# ─── Summary ──────────────────────────────────────────────────────────────────
+
+summary:
+  critical_count: 0
+  warning_count: 3
+  suggestion_count: 3
+  all_tests_pass: true
+  race_detector_clean: true
+  coverage_percent: 100.0
+
+# ─── Verdict ──────────────────────────────────────────────────────────────────
+
+verdict: APPROVED_WITH_COMMENTS
+verdict_rationale: >
+  All 13 tests pass with -race, coverage is 100% (all 5 functions in memory.go).
+  The benchmark comfortably meets the <1µs/op target (33 ns/op, 0 allocs).
+  Structural standards are largely followed: table-driven pattern, tc := tc
+  captures, require/assert split, no helpers, no globals, no decorative
+  separators.
+
+  Three warnings require attention before the next review pass:
+    1. TR-CACHE-W001 — TestMemoryCache_Cleanup should call t.Parallel() at the
+       outer level (its subtests can remain sequential).
+    2. TR-CACHE-W002 — magic sleep/TTL literals need named constants that
+       express their relationships.
+    3. TR-CACHE-W003 — time-dependent subtests should use testing/synctest
+       (Go 1.24+, available here on go1.26.2) as mandated by UT-0071 and
+       the PRP Applied Standards section.
+
+  One suggestion (TR-CACHE-S001) concerns the benchmark name mismatch vs DOD
+  ("BenchmarkValidateCache_Hit" required, "BenchmarkMemoryCache_Get" delivered)
+  which breaks DOD traceability. It is filed as a suggestion because the
+  benchmark substance is correct, but it is on the boundary of WARNING.
+
+execution_metrics:
+  duration_seconds: ~90
+  tokens_used: ~8500

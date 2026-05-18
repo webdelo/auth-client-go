@@ -1,15 +1,14 @@
 ---
-disable-version-string: true
-resolve-type-alias: false
-issue-845-fix: true
-with-expecter: true
 log-level: error
+template: testify
+template-data:
+  unroll-variadic: true
 
 packages:
-  # Interfaces are defined where they are consumed (Go best practice).
-  # Generate mocks for library package which contains interfaces for dependencies.
+  # All consumer-side interfaces in this module: Cache, Logger, authServiceClient.
   github.com/webdelo/auth-client-go/lib:
     config:
       all: true
-      outpkg: mocks
-      dir: "{{.InterfaceDir}}/mocks"
+      dir: '{{.InterfaceDir}}/mocks'
+      pkgname: mocks
+      filename: 'mock_{{.InterfaceName}}.go'

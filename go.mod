@@ -3,6 +3,7 @@ module github.com/webdelo/auth-client-go
 go 1.24.0
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/stretchr/testify v1.11.1
 	github.com/webdelo/auth-proto/go v0.1.0
 	golang.org/x/sync v0.19.0
@@ -12,6 +13,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect

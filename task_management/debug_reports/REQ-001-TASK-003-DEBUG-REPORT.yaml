@@ -1,0 +1,329 @@
+metadata:
+  task_id: REQ-001-TASK-003
+  report_date: "2026-05-18"
+  source_report: task_management/reviews/REQ-001-TASK-003-CODE-REVIEW.yaml
+  validation_report: task_management/reviews/REQ-001-TASK-003-CODE-REVIEW-FIX-VALIDATION.yaml
+  branch: feature/req-001-task-003
+  packages:
+    - lib
+    - lib/internal/cache
+
+pre_validation:
+  build: PASS
+  test: PASS  # 132/132
+  lint: PASS  # 0 issues
+  race: PASS  # 132/132
+  notes: "Baseline clean before fixes."
+
+execution_plan:
+  approach: "Two waves. Wave 1: source-code agents (parallel, independent files). Wave 2: test agents (parallel after wave 1)."
+  waves:
+    - wave: 1
+      agents:
+        - agent: debugger
+          model: sonnet
+          scope: lib/internal/cache/memory.go + lib/client.go (and mechanical rename in cache test files)
+          issues: [CR-001, CR-003, CR-010, CR-011, CR-012, CR-018, CR-019, CR-026, CR-027, CR-032]
+        - agent: code-writer
+          model: sonnet
+          scope: lib/errors.go
+          issues: [CR-003, CR-004, CR-017, CR-018, CR-020]
+        - agent: security-auditor
+          model: sonnet
+          scope: lib/middleware_http.go + lib/interceptor_grpc.go + lib/validate.go
+          issues: [CR-016, CR-018, CR-031, CR-033]
+    - wave: 2
+      agents:
+        - agent: unit-test-writer
+          model: sonnet
+          scope: lib/*_test.go (excluding cache)
+          issues: [CR-002, CR-005, CR-006, CR-007, CR-008, CR-009, CR-023, CR-024, CR-025, plus follow-up updates for source renames]
+        - agent: unit-test-writer
+          model: sonnet
+          scope: lib/internal/cache/*_test.go
+          issues: [CR-013, CR-014, CR-015, CR-021, CR-028, CR-029, CR-030]
+
+fixes:
+  # WARNINGS (16)
+  - id: CR-001
+    severity: WARNING
+    rule_id: CS-0060
+    file: lib/client.go
+    status: FIXED
+    summary: "Config.ValidateCacheTTL godoc rewritten — accurately documents that TTL=0 still allocates the cache object but Set is no-op."
+  - id: CR-002
+    severity: WARNING
+    rule_id: ES-0053
+    file: lib/client_test.go
+    status: FIXED
+    summary: "Added TestClient_CacheAdapter_RoundTrip — exercises the default cacheAdapter.Get/Set via real Client + FakeAuthClient, validating second call hits cache (auth.ValidateCalls == 1)."
+  - id: CR-003
+    severity: WARNING
+    rule_id: CS-0060
+    file: lib/client.go (added), lib/errors.go (removed)
+    status: FIXED
+    summary: "Package comment moved from errors.go to client.go (canonical entry point)."
+  - id: CR-004
+    severity: WARNING
+    rule_id: ES-0080
+    file: lib/errors.go
+    status: FIXED
+    summary: "AuthError.RetryAfter renamed → RetryAfterHint (eliminates function/field name collision); both fields received explicit godoc. Tests updated."
+  - id: CR-005
+    severity: WARNING
+    rule_id: UT-0010
+    file: lib/client_test.go
+    status: FIXED
+    summary: "TestNew → TestClient_New."
+  - id: CR-006
+    severity: WARNING
+    rule_id: UT-0010
+    file: lib/logger_test.go
+    status: FIXED
+    summary: "TestNoopLogger → TestNoopLogger_Smoke (collective smoke test naming)."
+  - id: CR-007
+    severity: WARNING
+    rule_id: UT-0020
+    file: lib/client_test.go
+    status: FIXED
+    summary: "Added explicit UT-0020 waiver block above recordingLogger/stubCache documenting the import-cycle constraint."
+  - id: CR-008
+    severity: WARNING
+    rule_id: UT-0020
+    file: lib/export_test.go
+    status: FIXED
+    summary: "Added explicit UT-0020 waiver comment to FakeAuthClient explaining the unexported-interface constraint."
+  - id: CR-009
+    severity: WARNING
+    rule_id: UT-0032
+    file: lib/middleware_http_test.go
+    status: FIXED
+    summary: "Replaced authzHeader field + conditional with setupRequest func(*http.Request) closure; every case provides explicit closure; loop body unconditional."
+  - id: CR-010
+    severity: WARNING
+    rule_id: EC-0081
+    file: lib/internal/cache/memory.go, lib/client.go
+    status: FIXED
+    summary: "Added sync.WaitGroup + Wait() method to MemoryCache; Client gained memCache field; Client.Close() now calls memCache.Wait() between cancelBG and grpcConn.Close — deterministic goroutine shutdown."
+  - id: CR-011
+    severity: WARNING
+    rule_id: ES-0052
+    file: lib/internal/cache/memory.go
+    status: FIXED
+    summary: "Bare v.(entry) replaced with comma-ok form in Get and in cleanupLoop Range callback. Corrupt entries deleted and treated as miss/skip."
+  - id: CR-012
+    severity: WARNING
+    rule_id: ES-0140
+    file: lib/internal/cache/memory.go, lib/client.go, lib/internal/cache/*_test.go
+    status: FIXED
+    summary: "NewMemoryCache renamed → New per ES-0140. Call sites updated in client.go and both cache test files."
+  - id: CR-013
+    severity: WARNING
+    rule_id: UT-0040
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Added t.Parallel() at the top of TestMemoryCache_Cleanup. Subtests remain sequential per UT-0042 (NumGoroutine / synctest)."
+  - id: CR-014
+    severity: WARNING
+    rule_id: UT-0051
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Magic time literals replaced with named package-level constants (entryTTL, sleepBeforeExpiry, cleanupInterval, shortTTL, cleanupWait) documenting their relationships."
+  - id: CR-015
+    severity: WARNING
+    rule_id: UT-0071
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Time-dependent subtests refactored to use testing/synctest. expired_returns_false extracted into TestMemoryCache_Get_ExpiryWithSynctest. goroutine_exits_when_ctx_cancelled now uses synctest + c.Wait() (no NumGoroutine polling). expired_entry_removed_by_cleanup wrapped in synctest with fake-clock advancement."
+  - id: CR-016
+    severity: WARNING
+    rule_id: null
+    security_severity: MEDIUM
+    file: lib/interceptor_grpc.go
+    status: FIXED
+    summary: "Panic recovery now returns status.Error(codes.Internal, \"internal error\") on the wire. Full panic value + debug.Stack() logged via Error(). No internal-state leak to gRPC client."
+
+  # SUGGESTIONS (17)
+  - id: CR-017
+    severity: SUGGESTION
+    rule_id: EC-0054
+    file: lib/errors.go
+    status: FIXED
+    summary: "Added case codes.Canceled in mapGRPCError → returns fmt.Errorf(\"authclient: %w\", context.Canceled). Caller cancellation no longer masked as ErrUnavailable."
+  - id: CR-018
+    severity: SUGGESTION
+    rule_id: CS-0010
+    file: lib/client.go, lib/errors.go, lib/middleware_http.go, lib/interceptor_grpc.go, lib/validate.go
+    status: FIXED
+    summary: "Blank lines added after if blocks in all five source files per CS-0010."
+  - id: CR-019
+    severity: SUGGESTION
+    rule_id: ES-0080
+    file: lib/client.go
+    status: FIXED
+    summary: "Cache interface godoc extended with context contract: cancelled ctx → zero value/no-op immediately; ttl is sole TTL source."
+  - id: CR-020
+    severity: SUGGESTION
+    rule_id: CS-0021
+    file: lib/errors.go
+    status: FIXED
+    summary: "Resolved jointly with CR-004 (RetryAfter → RetryAfterHint rename eliminates field/function name collision)."
+  - id: CR-021
+    severity: SUGGESTION
+    rule_id: UT-0040
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Added UT-0042 exception docstring on TestMemoryCache_Cleanup and inline comment at the subtest loop."
+  - id: CR-022
+    severity: SUGGESTION
+    rule_id: UT-0071
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Covered by CR-015 synctest refactor."
+  - id: CR-023
+    severity: SUGGESTION
+    rule_id: UT-0070
+    file: lib/validate_test.go, go.mod
+    status: FIXED
+    summary: "Added github.com/google/go-cmp v0.7.0 dependency. User struct comparisons in happy_path and cache_key_is_hex_sha256 use cmp.Diff for clearer diffs."
+  - id: CR-024
+    severity: SUGGESTION
+    rule_id: null
+    file: lib/validate_integration_test.go
+    status: FIXED
+    summary: "Each integration subtest run: closure now starts with UT-0042 exception comment."
+  - id: CR-025
+    severity: SUGGESTION
+    rule_id: UT-0032
+    file: lib/client_test.go
+    status: PARTIAL
+    summary: "Conditional retained in want closure for endpoint_invalid_format_returns_error; replaced inline comment with expanded UT-0032-exception note citing gRPC NewClient lazy-resolution contract. Reviewer accepts (recommendation explicitly listed comment-only fix as alternative)."
+    note: "Original report listed two options (split into subtests OR document with comment) — chose comment-only per simpler alternative."
+  - id: CR-026
+    severity: SUGGESTION
+    rule_id: null
+    file: lib/internal/cache/memory.go
+    status: FIXED
+    summary: "Range callback rewritten with local variable e, ok := v.(entry); double type assertion eliminated. Pairs with CR-011 comma-ok."
+  - id: CR-027
+    severity: SUGGESTION
+    rule_id: null
+    file: lib/internal/cache/memory.go
+    status: FIXED
+    summary: "New constructor godoc extended with TTL/2 ratio recommendation and 0-interval behaviour explanation."
+  - id: CR-028
+    severity: SUGGESTION
+    rule_id: UT-0010
+    file: lib/internal/cache/memory_bench_test.go
+    status: FIXED
+    summary: "BenchmarkMemoryCache_Get renamed → BenchmarkValidateCache_Hit (matches DOD-05 spec). Confirmed: 32.05 ns/op, 0 allocs (>30x under 1µs target)."
+  - id: CR-029
+    severity: SUGGESTION
+    rule_id: UT-0040
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Added comment block above TestMemoryCache_Concurrent explaining 50-goroutine scenario, -race requirement, and table-restructuring guidance for future expansion."
+  - id: CR-030
+    severity: SUGGESTION
+    rule_id: null
+    file: lib/internal/cache/memory_test.go
+    status: FIXED
+    summary: "Fragile NumGoroutine baseline assertion removed by CR-015 synctest rewrite (deterministic c.Wait() in bubble)."
+  - id: CR-031
+    severity: SUGGESTION
+    rule_id: null
+    security_severity: LOW
+    file: lib/middleware_http.go
+    status: FIXED
+    summary: "bearerToken length cap reordered: outer raw-string bound applied in first if; inner len(token) > maxBearerLen moved before ContainsAny. O(1) rejection of oversized tokens."
+  - id: CR-032
+    severity: SUGGESTION
+    rule_id: null
+    security_severity: LOW
+    file: lib/client.go
+    status: FIXED
+    summary: "Config.DialOptions godoc gained SECURITY warning about insecure default. isLocalEndpoint helper added. New() emits Warn for non-local endpoint with no DialOptions."
+  - id: CR-033
+    severity: SUGGESTION
+    rule_id: null
+    security_severity: LOW
+    file: lib/middleware_http.go, lib/interceptor_grpc.go
+    status: FIXED
+    summary: "All 401 response bodies collapsed to \"unauthorized\". All Unauthenticated gRPC status messages collapsed to \"unauthenticated\". No account-status disclosure."
+
+skipped: []  # All 33 issues addressed (32 FIXED, 1 PARTIAL with reviewer acceptance)
+
+summary:
+  total_issues: 33
+  by_severity:
+    critical: 0
+    warning: 16
+    suggestion: 17
+  by_status:
+    fixed: 32
+    partial: 1
+    not_fixed: 0
+  new_issues_introduced: 0
+
+final_validation:
+  build: PASS
+  test: PASS  # 133/133 (one new test added: TestClient_CacheAdapter_RoundTrip)
+  lint: PASS  # 0 issues
+  race: PASS  # 133/133, no races
+  bench:
+    BenchmarkValidateCache_Hit: "32.05 ns/op, 0 B/op, 0 allocs/op (>30x under 1µs DOD target)"
+    BenchmarkMemoryCache_Set: "72.77 ns/op, 112 B/op, 3 allocs/op"
+
+dod_validation:
+  overall_status: PASS
+  criteria:
+    - id: DOD-01
+      criterion: "lib/internal/cache/memory.go contains MemoryCache with Get/Set/Delete"
+      status: MET
+    - id: DOD-02
+      criterion: "(*Client).ValidateAccessToken; empty token returns ErrInvalidToken without gRPC"
+      status: MET
+    - id: DOD-03
+      criterion: "Positive cached; negative NOT cached"
+      status: MET
+    - id: DOD-04
+      criterion: "Cleanup goroutine exits on Close()"
+      status: MET
+      note: "Strengthened by CR-010 (sync.WaitGroup + Wait()): shutdown is now deterministic, not best-effort."
+    - id: DOD-05
+      criterion: "BenchmarkValidateCache_Hit < 1µs/op"
+      status: MET
+      note: "Renamed per CR-028 (now matches DOD spec). Measured: 32.05 ns/op (>30x headroom)."
+    - id: DOD-06
+      criterion: "HTTPMiddleware returns 401/503/429/200 per ADR §A10"
+      status: MET
+      note: "401 bodies opaque per CR-033 (security); headers/status unchanged."
+    - id: DOD-07
+      criterion: "UnaryInterceptor skips WithOpenMethods; panic → codes.Internal"
+      status: MET
+      note: "Panic message opaque (CR-016); full diagnostic logged."
+    - id: DOD-08
+      criterion: "WithOpenMethods augments registry correctly"
+      status: MET
+    - id: DOD-09
+      criterion: "Integration tests pass via make test-integration"
+      status: MET
+      note: "Happy/Expired remain t.Skip until TASK-004/-007 per PRP; Invalid passes against real AUTH."
+    - id: DOD-10
+      criterion: "Unit + integration coverage ≥80% on validate/middleware/interceptor/cache"
+      status: MET
+      note: "Coverage retained — lib=92.8%, cache=100% from original review."
+    - id: DOD-11
+      criterion: "make audit + go test -race pass"
+      status: MET
+
+code_review_validation:
+  reviewer: code-reviewer (sonnet)
+  report: task_management/reviews/REQ-001-TASK-003-CODE-REVIEW-FIX-VALIDATION.yaml
+  verdict: APPROVED
+  fixed: 32
+  partial: 1
+  not_fixed: 0
+  new_issues: 0
+
+verdict: ALL_FIXED

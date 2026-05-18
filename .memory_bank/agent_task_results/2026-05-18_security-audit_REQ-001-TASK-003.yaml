@@ -1,0 +1,216 @@
+agent: security-auditor
+task_id: REQ-001-TASK-003
+date: 2026-05-18
+files_reviewed:
+  - lib/client.go
+  - lib/validate.go
+  - lib/middleware_http.go
+  - lib/interceptor_grpc.go
+  - lib/context.go
+  - lib/errors.go
+  - lib/internal/cache/memory.go
+
+findings:
+  - id: SEC-001
+    severity: MEDIUM
+    category: leak
+    file: lib/interceptor_grpc.go
+    line: 35
+    title: "Panic value forwarded verbatim to gRPC clients"
+    description: |
+      The panic recovery uses `status.Errorf(codes.Internal, "panic: %v", r)` where `r`
+      is the unfiltered recovered value. Any string passed to panic() — including one that
+      accidentally contains internal state, SQL queries, file paths, or configuration
+      snippets — is serialized with %v and sent directly to the remote gRPC caller as the
+      status message. The reference implementation in the codebase
+      (signal-analyzer/internal/handlers/grpc/signal/interceptors.go:114) correctly uses
+      the fixed string `"internal app_error"` for the client message and logs the full
+      panic value and stack trace internally.
+    risk: |
+      If any handler panics with a value containing internal system details (DB connection
+      strings, environment variable values, internal structs), those details reach external
+      callers. Severity is MEDIUM rather than HIGH because: (a) the panic must originate
+      in consumer handler code, not SDK code; (b) gRPC status messages are visible only to
+      authenticated consumers in normal operation; (c) panic values are typically short
+      strings or errors, not structured secrets.
+    recommendation: |
+      Replace the status.Errorf call with a fixed generic message and move all diagnostic
+      detail to the logger:
+
+        defer func() {
+            if r := recover(); r != nil {
+                c.logger.Error(ctx, "authclient: grpc handler panic", nil,
+                    "panic", fmt.Sprintf("%v", r),
+                    "stack", string(debug.Stack()),
+                )
+                err = status.Error(codes.Internal, "internal error")
+                resp = nil
+            }
+        }()
+
+      Import "runtime/debug" for debug.Stack(). The client receives only "internal error";
+      the full panic value and stack are written to the configured Logger.
+
+  - id: SEC-002
+    severity: LOW
+    category: header_compliance
+    file: lib/middleware_http.go
+    line: 21-33
+    title: "DoS: maxBearerLen cap applied after TrimSpace and ContainsAny, not before"
+    description: |
+      In bearerToken(), the 8 KiB length cap on the token (maxBearerLen = 8192) is the
+      LAST condition checked after strings.TrimSpace() and strings.ContainsAny() have
+      already traversed the full token string. If an attacker sends a token of e.g. 900 KB
+      (limited only by net/http's default 1 MB header cap), TrimSpace and ContainsAny will
+      scan the entire buffer before the length check rejects it.
+
+      For the gRPC interceptor path the risk is slightly higher because gRPC metadata has
+      no built-in per-header size limit (the default grpc.MaxRecvMsgSize = 4 MB applies to
+      the entire message, not individual metadata values). The SDK produces the interceptor
+      for the consumer's server and does not set MaxHeaderListSize on the consumer's
+      grpc.Server, so a very large authorization metadata value would be accepted and then
+      scanned by TrimSpace + ContainsAny before rejection.
+    risk: |
+      CPU amplification: O(n) scan on inputs that should be rejected in O(1). In practice,
+      net/http bounds HTTP headers to 1 MB total and grpc-go's default limits reduce blast
+      radius. Not remotely exploitable for complete denial, but an adversary with many
+      connections could inflate CPU moderately. Severity LOW because: real-world JWT Bearer
+      tokens are well under 2 KB; 8 KB cap + server-level limits prevent extreme inputs.
+    recommendation: |
+      Apply the length cap on the raw authorization header string BEFORE any string
+      scanning, immediately after the TrimLeft:
+
+        authz = strings.TrimLeft(authz, " \t")
+        const maxAuthzLen = maxBearerLen + len(bearerPrefix) + 16 // some margin
+        if len(authz) > maxAuthzLen {
+            return "", false
+        }
+        if len(authz) < len(bearerPrefix) || !strings.EqualFold(...) { ... }
+        token := strings.TrimSpace(authz[len(bearerPrefix):])
+        if token == "" || strings.ContainsAny(token, " \t\r\n") { ... }
+        return token, true
+
+      The explicit per-token maxBearerLen check at the end can then be removed as
+      redundant. This makes rejection of oversized tokens O(1).
+
+  - id: SEC-003
+    severity: LOW
+    category: other
+    file: lib/client.go
+    line: 205
+    title: "Insecure gRPC transport is the hard default; TLS override requires explicit consumer action"
+    description: |
+      New() unconditionally adds grpc.WithTransportCredentials(insecure.NewCredentials())
+      as the first dial option. The SDK comment states that a consumer-supplied
+      WithTransportCredentials in Config.DialOptions will override it (because grpc-go uses
+      the last transport credential). This is functionally correct. However, the default
+      configuration — zero DialOptions — sends all ValidateToken calls (which carry the
+      raw access token in the protobuf body) over a plaintext connection to the AUTH
+      server. Any network path that is not entirely within a trusted internal network
+      (loopback, same-host Unix socket, or mTLS service mesh) exposes bearer tokens in
+      transit. There is no warning in Config.Endpoint or New() documentation that the
+      connection is plaintext by default.
+    risk: |
+      Bearer tokens transmitted in cleartext can be intercepted by anyone with access to
+      the network path between the consumer service and the AUTH server. If AUTH is
+      co-located on the same host or behind a service mesh with mutual TLS, the risk is
+      low. If AUTH is on a separate node or cloud instance, the risk is HIGH. Severity is
+      LOW at the SDK level because the SDK is a library and the deployment topology is the
+      consumer's responsibility; however the absence of a documentation warning is a gap.
+    recommendation: |
+      1. Add a godoc note on Config.Endpoint or Config.DialOptions stating explicitly that
+         the default transport is insecure (no TLS) and that production deployments to a
+         remote AUTH server MUST supply grpc.WithTransportCredentials(...) in DialOptions.
+      2. Consider a design-time warning: if cfg.Endpoint does not start with "localhost"
+         or "127." or "unix:" and no WithTransportCredentials override is detected in
+         cfg.DialOptions, log a Warn() to cfg.Logger at startup. This is soft guidance,
+         not enforcement, but makes mis-configuration visible.
+
+  - id: SEC-004
+    severity: LOW
+    category: leak
+    file: lib/middleware_http.go
+    line: 79
+    title: "HTTP 401 body distinguishes 'blocked' from 'invalid token', exposing account status"
+    description: |
+      When err is ErrBlocked, the middleware writes `err.Error()` ("authclient: user
+      blocked") to the HTTP 401 response body. This allows an unauthenticated caller
+      who possesses a valid (but blocked) token to discover that their account is blocked
+      rather than simply having an invalid token. The same disclosure occurs in the gRPC
+      interceptor at line 70 where vErr.Error() is passed as the gRPC status message.
+
+      RFC 7235 permits error_description in WWW-Authenticate but does not require
+      distinguishing between these cases. Many auth systems deliberately collapse
+      "blocked", "invalid", and "expired" to a single generic "invalid_token" to prevent
+      account enumeration.
+    risk: |
+      An attacker with a stolen/revoked token can determine whether the associated account
+      is blocked (persistent admin action) vs. simply expired (routine rotation). This is
+      minor information disclosure with no direct authentication bypass. Severity LOW.
+    recommendation: |
+      Collapse all 401 error bodies to a single opaque message for HTTP:
+
+        // Replace: http.Error(w, err.Error(), http.StatusUnauthorized)
+        http.Error(w, "unauthorized", http.StatusUnauthorized)
+
+      The WWW-Authenticate header already carries `error="invalid_token"` which is
+      sufficient for OAuth2-aware clients. If the consumer needs to differentiate blocked
+      from expired for UX purposes, expose a typed error in the context (e.g., a separate
+      context key) rather than the HTTP body.
+
+      For gRPC, use a fixed message:
+        return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+      and populate grpc error details (google.rpc.ErrorInfo) for richer client handling
+      without leaking plain-text reason strings.
+
+summary:
+  critical: 0
+  high: 0
+  medium: 1
+  low: 3
+
+overall_verdict: CONDITIONAL_PASS
+
+verdict_rationale: |
+  The implementation is fundamentally sound on all critical security requirements:
+
+  VERIFIED CORRECT:
+  - Cache key is always hex(sha256(token)) (validate.go:44). Raw token never reaches
+    cache.Set, logs, metrics, or error messages.
+  - Positive-only caching enforced: ErrInvalidToken, ErrExpired, ErrBlocked,
+    ErrUnavailable, ErrRateLimited all return without calling cache.Set (validate.go:56-60).
+  - FailClosed is iota=0 (default zero value). FailOpen requires explicit opt-in via
+    WithFailMode or Config.FailMode (client.go:52-59).
+  - Default TTL is 30s (client.go:19). applyDefaults only overrides on negative; zero
+    is preserved as "disabled" (client.go:262-263).
+  - WWW-Authenticate header set on all 401 responses (middleware_http.go:53, 78).
+  - Retry-After set on 503 (fixed "5") and on 429 (from RetryAfter hint).
+  - No goroutine leak: cleanupLoop exits on bgCtx cancellation; Close() calls cancelBG()
+    idempotently via sync.Once.
+  - Context key is unexported struct type (context.go:45), preventing cross-package
+    collision per EC-0056.
+  - No token-in-URL path. Token is read exclusively from Authorization header (HTTP)
+    and authorization gRPC metadata key.
+  - No cookie handling in scope files; cookie concerns (HttpOnly/Secure/SameSite) are
+    not applicable to the audited files.
+  - No unsafe package usage, no SQL/command injection vectors.
+  - No hardcoded secrets or credentials.
+  - No direct string equality comparison of secret-like values. Token verification is
+    fully delegated to AUTH server.
+  - Bearer extraction is case-insensitive for scheme (EqualFold), rejects empty, rejects
+    inner whitespace (ContainsAny), and caps at 8 KiB — RFC 7235 compliant.
+  - go vet passes clean.
+
+  FINDINGS REQUIRING ACTION:
+  - SEC-001 (MEDIUM): panic recovery leaks panic value to gRPC callers. Must fix before
+    production use: replace "panic: %v" with a fixed "internal error" string.
+  - SEC-002 (LOW): length cap ordering allows O(n) scan on oversized headers.
+  - SEC-003 (LOW): insecure gRPC transport default undocumented.
+  - SEC-004 (LOW): 401/Unauthenticated body distinguishes blocked from invalid token.
+
+  CONDITIONAL_PASS: no critical/high findings; SEC-001 is a straightforward one-line fix
+  that does not require architectural changes.
+
+execution_metrics:
+  duration_seconds: 420
+  tokens_used: estimated

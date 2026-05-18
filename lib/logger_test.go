@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestNoopLogger(t *testing.T) {
+func TestNoopLogger_Smoke(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {

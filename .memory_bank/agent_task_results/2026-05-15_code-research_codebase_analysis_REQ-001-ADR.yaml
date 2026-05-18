@@ -1,0 +1,615 @@
+metadata:
+  date: "2026-05-15"
+  researcher: "code-researcher"
+  query: "Анализ связанных репозиториев (fundingbot, signal-analyzer) и guide-файлов auth-client-go для ADR к REQ-001"
+  task_slug: "codebase_analysis_REQ-001-ADR"
+  duration_seconds: 300
+
+search_strategy:
+  approach: |
+    1. Прочитаны project_map.yaml, tech_stack.yaml, dev_commands.yaml, scratch.yaml проекта.
+    2. Изучены grpc/clients/* из fundingbot (screener_client, balance_controller_client) — паттерн Dial+keepalive+Start/Close.
+    3. Изучены grpc_clients/* из signal-analyzer (funding_bot/client.go) — паттерн singleflight+RWMutex+TTL-кэш.
+    4. Изучены interceptors из обоих репо (client/server interceptors, metrics, recovery, logging).
+    5. Изучены apperrors (sentinel errors) из signal-analyzer.
+    6. Прочитаны три guide-файла: effective_standards.md, coding_style.md, effective_concurrency.md.
+    7. Проверено: dev/tools/test-runner-main.go, Makefile, scratch.yaml.
+  tools_used:
+    - "Read"
+    - "Bash (find, ls)"
+
+files_analyzed:
+  - id: "FILE-001"
+    path: "/Users/a.popov/Development/GOLANG/fundingbot/internal/grpc/clients/grpc_funding_rates_screener_client/screener_client.go"
+    purpose: "Эталонный gRPC client wrapper c sync.RWMutex + keepalive + Start/Close lifecycle"
+    lines_read: 268
+    key_sections:
+      - start_line: 26
+        end_line: 88
+        description: "Struct с mutex+isActive, конструктор New(config), Start с DialContext+keepalive options"
+      - start_line: 90
+        end_line: 124
+        description: "Close с select на ctx.Done() — graceful shutdown через channel"
+
+  - id: "FILE-002"
+    path: "/Users/a.popov/Development/GOLANG/fundingbot/internal/grpc/clients/grpc_balance_controller_client/client.go"
+    purpose: "Вариант gRPC client с atomic.Bool вместо sync.Mutex для isActive"
+    lines_read: 245
+    key_sections:
+      - start_line: 27
+        end_line: 63
+        description: "atomic.Bool isActive, Start с DialContext — более современный вариант"
+
+  - id: "FILE-003"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/grpc_clients/funding_bot/client.go"
+    purpose: "singleflight + RWMutex + TTL-кэш для symbols. Эталон паттерна кэша для ValidateToken."
+    lines_read: 282
+    key_sections:
+      - start_line: 30
+        end_line: 64
+        description: "Struct: loaderClient, referenceClient, mu sync.RWMutex, cache map, sf singleflight.Group"
+      - start_line: 136
+        end_line: 189
+        description: "GetSymbol: fast-path RLock → slow-path sf.Do → mu.Lock double-check. Эталонный паттерн."
+      - start_line: 259
+        end_line: 281
+        description: "retryWithBackoff — exponential backoff без зависимости от grpc-middleware"
+
+  - id: "FILE-004"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/grpc_clients/interceptors/interceptors.go"
+    purpose: "gRPC UnaryClientInterceptor (logging + metrics) — эталон для interceptor_grpc.go в SDK"
+    lines_read: 91
+    key_sections:
+      - start_line: 46
+        end_line: 68
+        description: "LoggingUnaryInterceptor — сигнатура grpc.UnaryClientInterceptor, замер elapsed"
+      - start_line: 71
+        end_line: 90
+        description: "MetricsUnaryInterceptor — Prometheus CounterVec+HistogramVec через injected Registerer"
+
+  - id: "FILE-005"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/handlers/grpc/signal/interceptors.go"
+    purpose: "gRPC UnaryServerInterceptor (logging + metrics + recovery) — эталон для server-side interceptors"
+    lines_read: 120
+    key_sections:
+      - start_line: 24
+        end_line: 51
+        description: "NewLoggingInterceptor — чтение x-request-id из gRPC metadata"
+      - start_line: 99
+        end_line: 119
+        description: "NewRecoveryInterceptor — named return + defer recover + debug.Stack()"
+
+  - id: "FILE-006"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/domain/apperrors/signal_errors.go"
+    purpose: "Typed errors — sentinel pattern с errors.New на уровне package"
+    lines_read: 34
+
+  - id: "FILE-007"
+    path: "/Users/a.popov/Development/GOLANG/fundingbot/internal/bff/errors/grpc_mapper.go"
+    purpose: "gRPC → typed/HTTP error mapping через status.FromError + switch codes"
+    lines_read: 70
+
+  - id: "FILE-008"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/usecase/bff/error_mapping.go"
+    purpose: "statusFromError с errors.Unwrap chain — важен для SDK: gRPC ошибки могут быть обёрнуты"
+    lines_read: 48
+    key_sections:
+      - start_line: 38
+        end_line: 47
+        description: "statusFromError обходит errors.Unwrap chain — нужно в SDK для wrapped gRPC errors"
+
+  - id: "FILE-009"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/grpc_clients/signal_analyzer/client.go"
+    purpose: "Современный gRPC client: grpc.NewClient (не DialContext), conn передаётся из DI"
+    lines_read: 176
+    key_sections:
+      - start_line: 23
+        end_line: 35
+        description: "New(conn *grpc.ClientConn) — conn создаётся в FX, client только обёртка"
+      - start_line: 37
+        end_line: 40
+        description: "NewWithProtoClient для тестов — важный паттерн для SDK"
+
+  - id: "FILE-010"
+    path: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/fx/shows/fxs_grpc_clients/clients.go"
+    purpose: "grpc.NewClient с insecure.NewCredentials() + grpc_retry + WaitForReady — современный API"
+    lines_read: 94
+    key_sections:
+      - start_line: 44
+        end_line: 59
+        description: "grpc.NewClient (не DialContext!), grpc.WithDefaultCallOptions(grpc.WaitForReady(true)), grpc_retry.UnaryClientInterceptor"
+
+  - id: "FILE-011"
+    path: "/Users/a.popov/Development/TRADING/bots/auth-client-go/.claude/guides/golang/effective_standards.md"
+    purpose: "Правила ES-0051, ES-0053, ES-0062, ES-0120, ES-0140, ES-0141, ES-0142, ES-0143, ES-0171"
+    lines_read: 1496
+
+  - id: "FILE-012"
+    path: "/Users/a.popov/Development/TRADING/bots/auth-client-go/.claude/guides/golang/coding_style.md"
+    purpose: "Правила CS-0051, CS-0052, CS-0100, CS-0117"
+    lines_read: 853
+
+  - id: "FILE-013"
+    path: "/Users/a.popov/Development/TRADING/bots/auth-client-go/.claude/guides/golang/effective_concurrency.md"
+    purpose: "Правила EC-0034, EC-0056, EC-0060, EC-0062, EC-0063"
+    lines_read: 835
+
+  - id: "FILE-014"
+    path: "/Users/a.popov/Development/TRADING/bots/auth-client-go/Makefile"
+    purpose: "Инфраструктура: test, test-race, build-examples, generate-mocks, coverage"
+    lines_read: 126
+
+  - id: "FILE-015"
+    path: "/Users/a.popov/Development/TRADING/bots/auth-client-go/.memory_bank/dev_commands.yaml"
+    purpose: "Подтверждение: make test-integration отсутствует, отмечен как TODO в notes"
+    lines_read: 78
+
+findings:
+  - id: "FIND-001"
+    category: "pattern"
+    title: "gRPC Client: два варианта isActive guard — atomic.Bool vs sync.RWMutex"
+    importance: "high"
+    file: "/Users/a.popov/Development/GOLANG/fundingbot/internal/grpc/clients/grpc_balance_controller_client/client.go"
+    line: 27
+    description: |
+      Fundingbot использует два варианта:
+      1. screener_client.go: sync.RWMutex + bool isActive — защищает одновременно connection и isActive (EC-0063 корректно).
+      2. balance_controller_client.go: atomic.Bool — используется Swap(true) (EC-0062 — правильный паттерн).
+
+      Для SDK (auth-client-go) оба паттерна применимы. Рекомендуется atomic.Bool для isActive + отдельный sync.Mutex
+      только для защиты gRPC conn и pb-клиента при инициализации.
+      Auth-SDK не требует Start/Close lifecycle — conn создаётся в конструкторе New() как у signal-analyzer.
+
+  - id: "FIND-002"
+    category: "pattern"
+    title: "gRPC Client: Modern API — grpc.NewClient вместо устаревшего grpc.DialContext"
+    importance: "critical"
+    file: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/fx/shows/fxs_grpc_clients/clients.go"
+    line: 45
+    description: |
+      signal-analyzer использует grpc.NewClient() (актуальный API Go gRPC), а fundingbot — устаревший
+      grpc.DialContext (с nolint:staticcheck). В auth-client-go ОБЯЗАТЕЛЬНО использовать grpc.NewClient():
+        conn, err := grpc.NewClient(
+            addr,
+            grpc.WithTransportCredentials(insecure.NewCredentials()),
+            grpc.WithDefaultCallOptions(grpc.WaitForReady(true)),
+            grpc.WithUnaryInterceptor(chainedInterceptors...),
+        )
+      Keepalive параметры передаются через grpc.WithKeepaliveParams().
+
+  - id: "FIND-003"
+    category: "pattern"
+    title: "TTL-кэш + singleflight: эталонная реализация в funding_bot/client.go"
+    importance: "critical"
+    file: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/grpc_clients/funding_bot/client.go"
+    line: 136
+    description: |
+      Паттерн для lib/internal/cache/ ValidateToken:
+        1. Fast-path: mu.RLock → cache hit → return
+        2. Slow-path: sf.Do("validate:<token_hash>", func() { ... gRPC validate ... })
+        3. После sf.Do: mu.Lock → double-check → populate cache
+      
+      Ключевые отличия для auth-SDK:
+      - Кэш ValidateToken TTL-based: хранить (result, expiresAt time.Time), проверять time.Now().After(expiresAt).
+      - sf key = token hash (не сам токен в логах!).
+      - При получении ответа AUTH с новой token_version — инвалидировать кэш через short TTL (30s default).
+      - singleflight.Group — golang.org/x/sync/singleflight (добавить в go.mod).
+
+  - id: "FIND-004"
+    category: "pattern"
+    title: "Typed errors: sentinel vars + statusFromError с errors.Unwrap chain"
+    importance: "high"
+    file: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/usecase/bff/error_mapping.go"
+    line: 38
+    description: |
+      Два слоя:
+      1. Sentinel errors в lib/errors.go:
+           var ErrInvalidToken  = errors.New("invalid token")
+           var ErrExpired       = errors.New("token expired")
+           var ErrBlocked       = errors.New("user blocked")
+           var ErrRateLimited   = errors.New("rate limited")
+           var ErrUnavailable   = errors.New("auth service unavailable")
+      
+      2. Mapper gRPC → SDK error (внутренний, приватный):
+           func mapGRPCError(err error) error {
+               st, ok := statusFromWrappedError(err)   // обходит errors.Unwrap chain!
+               if !ok { return ErrUnavailable }
+               switch st.Code() {
+               case codes.Unauthenticated: return ErrInvalidToken или ErrExpired (по detail)
+               case codes.PermissionDenied: return ErrBlocked
+               case codes.ResourceExhausted: return ErrRateLimited
+               case codes.Unavailable: return ErrUnavailable
+               }
+           }
+      
+      ВАЖНО: statusFromError нужно реализовать с errors.Unwrap walk, т.к. в SDK ошибки будут обёрнуты
+      через fmt.Errorf("...: %w", grpcErr). Паттерн из signal-analyzer/usecase/bff/error_mapping.go:38.
+
+  - id: "FIND-005"
+    category: "pattern"
+    title: "gRPC UnaryClientInterceptor: logging + metrics через adapter-интерфейсы"
+    importance: "high"
+    file: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/grpc_clients/interceptors/interceptors.go"
+    line: 46
+    description: |
+      SDK не должен зависеть от конкретного логгера. Паттерн:
+        type Logger interface {
+            Debug(msg string, args ...any)
+            Info(msg string, args ...any)
+            Error(msg string, args ...any)
+        }
+      
+      LoggingUnaryInterceptor(logger Logger) grpc.UnaryClientInterceptor — замеряет elapsed, логирует method+code.
+      MetricsUnaryInterceptor принимает абстрактный MetricsRecorder (adapter), не prometheus напрямую.
+      
+      В signal-analyzer interceptors.go:46 используется *zap.Logger напрямую — это НЕ подходит для SDK.
+      SDK должен принимать adapter interface (ES-0143 noop defaults).
+
+  - id: "FIND-006"
+    category: "pattern"
+    title: "gRPC UnaryServerInterceptor: recovery с named return + defer recover"
+    importance: "medium"
+    file: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/handlers/grpc/signal/interceptors.go"
+    line: 99
+    description: |
+      NewRecoveryInterceptor использует named return (resp interface{}, err error) + defer func recover().
+      Этот паттерн нужен для interceptor_grpc.go SDK — server-side interceptor для защищённых gRPC сервисов.
+      Сигнатура interceptor_grpc.go SDK:
+        func (c *Client) UnaryServerInterceptor() grpc.UnaryServerInterceptor — проверяет JWT, помещает User в ctx.
+
+  - id: "FIND-007"
+    category: "pattern"
+    title: "HTTP middleware: func(next http.Handler) http.Handler через замыкание"
+    importance: "high"
+    file: "/Users/a.popov/Development/GOLANG/fundingbot/internal/bff/middleware/logging.go"
+    line: 1
+    description: |
+      Fundingbot использует ogen-специфичный middleware (ogenMiddleware.Middleware), неприменим для SDK.
+      Для HTTP middleware в auth-client-go нужен стандартный паттерн net/http:
+        func (c *Client) HTTPMiddleware() func(http.Handler) http.Handler {
+            return func(next http.Handler) http.Handler {
+                return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                    token := extractBearerToken(r)
+                    user, err := c.ValidateAccessToken(r.Context(), token, IPFromRequest(r), UserAgentFromRequest(r))
+                    if err != nil {
+                        // fail-closed: 401
+                        http.Error(w, "unauthorized", http.StatusUnauthorized)
+                        return
+                    }
+                    next.ServeHTTP(w, WithUser(r.Context(), user))
+                })
+            }
+        }
+      
+      Паттерн совместим с chi, gorilla/mux, fiber (через fiber.Handler адаптер), stdlib.
+
+  - id: "FIND-008"
+    category: "architecture"
+    title: "Разделение conn и proto client: New(conn) — DI создаёт conn, SDK только обёртка"
+    importance: "high"
+    file: "/Users/a.popov/Development/TRADING/bots/signal-analyzer/internal/infrastructure/grpc_clients/signal_analyzer/client.go"
+    line: 30
+    description: |
+      signal-analyzer Client.New(conn *grpc.ClientConn) — соединение создаётся в DI (FX), клиент только
+      создаёт pb-обёртку. Для SDK auth-client-go: конструктор New(addr string, opts ...Option) сам создаёт conn.
+      Consumer не управляет conn напрямую — это ответственность SDK.
+      
+      Для тестов: NewWithProtoClient(client pb.AuthServiceClient) — позволяет инжектировать mock
+      без реального gRPC.
+
+  - id: "FIND-009"
+    category: "implementation"
+    title: "scratch.yaml: integration_tests=true — dev/deployments/ и make test-integration отсутствуют"
+    importance: "critical"
+    file: "/Users/a.popov/Development/TRADING/bots/auth-client-go/scratch.yaml"
+    line: 5
+    description: |
+      scratch.yaml объявляет integration_tests: true, но dev_commands.yaml явно отмечает в notes:
+        "integration_tests scaffolding (test-integration target, dev/deployments/test.env,
+        docker-compose с AUTH-контейнером) генерится не автоматически — добавляется в REQ-001 TASK-001."
+      
+      Что НЕТ и нужно создать вручную:
+        - make test-integration target в Makefile
+        - dev/deployments/ директория (docker-compose.yaml с AUTH сервисом + auth-proto mock)
+        - dev/deployments/test.env (env-переменные для интеграционных тестов)
+        - lib/integration_test.go или lib/integration/ пакет с build tag //go:build integration
+      
+      Что УЖЕ ЕСТЬ из scratch:
+        - dev/tools/test-runner-main.go (кастомный test runner с прогресс-баром)
+        - make test, make test-race, make coverage
+        - make generate-mocks (mockery v3)
+        - make build-examples
+
+patterns:
+  - id: "PAT-001"
+    name: "gRPC Client с Start/Close lifecycle (fundingbot)"
+    type: "design_pattern"
+    files_count: 6
+    example_files:
+      - "internal/grpc/clients/grpc_funding_rates_screener_client/screener_client.go"
+      - "internal/grpc/clients/grpc_balance_controller_client/client.go"
+    description: |
+      Структура: Config + conn + isActive (atomic.Bool или RWMutex). Start() создаёт conn+pb-клиент.
+      Close() ждёт ctx.Done() или закрывает conn. Применим в SDK как альтернатива, но auth-SDK
+      предпочтёт создавать conn в конструкторе New() без Start/Close.
+    code_example: |
+      type Client struct {
+          isActive atomic.Bool
+          config   Config
+          conn     *grpc.ClientConn
+          client   services.AuthServiceClient
+      }
+      func (c *Client) Start(ctx context.Context) error {
+          if c.isActive.Swap(true) { return nil }
+          conn, err := grpc.NewClient(addr, opts...)
+          if err != nil { c.isActive.Store(false); return err }
+          c.conn = conn
+          c.client = services.NewAuthServiceClient(conn)
+          return nil
+      }
+
+  - id: "PAT-002"
+    name: "singleflight + RWMutex + map cache (check-lock-check)"
+    type: "design_pattern"
+    files_count: 1
+    example_files:
+      - "internal/infrastructure/grpc_clients/funding_bot/client.go"
+    description: |
+      Fast-path: RLock → check → return. Slow-path: sf.Do → gRPC call. После sf.Do:
+      Lock → double-check (другой горутин мог заполнить) → populate. Эталон для
+      lib/internal/cache/ в auth-SDK (ValidateToken TTL-кэш).
+    code_example: |
+      func (c *Client) get(ctx context.Context, key string) (Entry, error) {
+          c.mu.RLock()
+          if e, ok := c.cache[key]; ok && !e.expired() {
+              c.mu.RUnlock()
+              return e, nil
+          }
+          c.mu.RUnlock()
+
+          result, err, _ := c.sf.Do(key, func() (any, error) {
+              return c.remoteCall(ctx, key)
+          })
+          if err != nil { return Entry{}, err }
+
+          c.mu.Lock()
+          defer c.mu.Unlock()
+          if e, ok := c.cache[key]; ok && !e.expired() {
+              return e, nil // double-check
+          }
+          e := result.(Entry)
+          c.cache[key] = e
+          return e, nil
+      }
+
+  - id: "PAT-003"
+    name: "Sentinel errors + gRPC code mapper с Unwrap chain"
+    type: "design_pattern"
+    files_count: 3
+    example_files:
+      - "internal/domain/apperrors/signal_errors.go"
+      - "internal/usecase/bff/error_mapping.go"
+      - "internal/bff/errors/grpc_mapper.go"
+    description: |
+      Package-level var ErrXxx = errors.New(...). Mapper переводит gRPC codes → SDK errors.
+      КРИТИЧНО: statusFromError должен обходить errors.Unwrap chain, т.к. SDK оборачивает
+      gRPC ошибки через fmt.Errorf. Стандартный status.FromError не работает с обёрнутыми ошибками.
+    code_example: |
+      var (
+          ErrInvalidToken = errors.New("invalid token")
+          ErrExpired      = errors.New("token expired")
+          ErrUnavailable  = errors.New("auth unavailable")
+      )
+
+      func mapGRPCError(err error) error {
+          st, ok := statusFromWrapped(err)
+          if !ok { return ErrUnavailable }
+          switch st.Code() {
+          case codes.Unauthenticated: return ErrInvalidToken
+          case codes.Unavailable:     return ErrUnavailable
+          }
+          return ErrUnavailable
+      }
+
+      func statusFromWrapped(err error) (*status.Status, bool) {
+          for e := err; e != nil; e = errors.Unwrap(e) {
+              if st, ok := status.FromError(e); ok { return st, true }
+          }
+          return nil, false
+      }
+
+  - id: "PAT-004"
+    name: "Adapter interfaces для logger и metrics (noop defaults)"
+    type: "design_pattern"
+    files_count: 2
+    example_files:
+      - "internal/grpc/interceptors/metrics.go"
+    description: |
+      SDK не импортирует конкретный логгер или prometheus. Принимает adapter interface.
+      ES-0143: noop default в конструкторе вместо nil-checks в методах.
+    code_example: |
+      type Logger interface {
+          Debug(msg string, args ...any)
+          Info(msg string, args ...any)
+          Error(msg string, args ...any)
+      }
+
+      type noopLogger struct{}
+      func (noopLogger) Debug(_ string, _ ...any) {}
+      func (noopLogger) Info(_ string, _ ...any)  {}
+      func (noopLogger) Error(_ string, _ ...any) {}
+
+      func New(addr string, opts ...Option) (*Client, error) {
+          c := &Client{logger: noopLogger{}}
+          for _, o := range opts { o(c) }
+          ...
+      }
+
+architecture:
+  components:
+    - name: "lib/ (public SDK API)"
+      path: "lib/"
+      responsibility: |
+        client.go — Client constructor + dial + options.
+        validate.go — ValidateAccessToken + TTL cache coordinator.
+        auth.go — Login/Refresh/Logout/LogoutAll/ChangePassword/GetCurrentUser.
+        middleware_http.go — HTTP middleware (fail-closed by default).
+        interceptor_grpc.go — gRPC unary server interceptor.
+        context.go — WithUser, UserFromContext (EC-0056: typed context key).
+        cookies.go — SetRefreshCookie, ClearRefreshCookie.
+        errors.go — sentinel errors + gRPC mapper.
+        helpers.go — IPFromRequest, UserAgentFromRequest.
+      dependencies:
+        - "lib/internal/cache"
+        - "lib/internal/refresh"
+        - "github.com/webdelo/auth-proto/go/auth_v1"
+
+    - name: "lib/internal/cache/"
+      path: "lib/internal/cache/"
+      responsibility: |
+        TTL-кэш для ValidateToken. Хранит (UserInfo, expiresAt).
+        RWMutex + map + singleflight.Group.
+        Приватный — consumer не видит реализацию.
+
+    - name: "lib/internal/refresh/"
+      path: "lib/internal/refresh/"
+      responsibility: |
+        singleflight для refresh race serialization.
+        Когда несколько горутин одновременно пытаются обновить refresh-token,
+        только одна делает реальный gRPC-вызов.
+
+  data_flow:
+    - from: "Consumer HTTP handler"
+      to: "Client.HTTPMiddleware()"
+      description: "Middleware извлекает Bearer token, вызывает ValidateAccessToken, кладёт user в ctx"
+    - from: "ValidateAccessToken"
+      to: "lib/internal/cache"
+      description: "Проверка кэша, при miss — gRPC вызов к AUTH, запись в кэш с TTL"
+    - from: "lib/internal/cache (miss)"
+      to: "auth-proto gRPC stub"
+      description: "Реальный RPC вызов через pb-stub"
+
+recommendations:
+  - id: "REC-001"
+    priority: "high"
+    category: "implementation"
+    title: "Использовать grpc.NewClient вместо grpc.DialContext"
+    description: |
+      grpc.DialContext помечен deprecated в gRPC Go v1.60+. signal-analyzer уже перешёл на
+      grpc.NewClient с insecure.NewCredentials(). В auth-client-go использовать только NewClient.
+    rationale: "Актуальный API, не будет nolint:staticcheck, лучшая семантика non-blocking dial."
+    effort: "low"
+
+  - id: "REC-002"
+    priority: "high"
+    category: "architecture"
+    title: "statusFromError с Unwrap chain — отдельная приватная функция в errors.go"
+    description: |
+      Стандартный status.FromError не находит gRPC status в обёрнутых ошибках.
+      Нужна приватная statusFromWrapped(err error) (*status.Status, bool) с errors.Unwrap walk.
+      Паттерн взят из signal-analyzer/internal/usecase/bff/error_mapping.go:38.
+    rationale: "SDK оборачивает gRPC ошибки через fmt.Errorf для добавления контекста (ES-0061)."
+    effort: "low"
+
+  - id: "REC-003"
+    priority: "high"
+    category: "testing"
+    title: "Создать make test-integration + dev/deployments/ инфраструктуру"
+    description: |
+      scratch.yaml объявляет integration_tests=true, но инфраструктура отсутствует.
+      Нужно создать:
+        - dev/deployments/docker-compose.yaml с AUTH сервисом (из webdelo/auth)
+        - dev/deployments/test.env с адресом AUTH gRPC
+        - make test-integration target (теги //go:build integration)
+        - lib/client_integration_test.go
+    rationale: "TASK-007 описывает интеграционные тесты, без инфраструктуры их не запустить."
+    effort: "medium"
+
+  - id: "REC-004"
+    priority: "medium"
+    category: "architecture"
+    title: "NewWithProtoClient constructor для тестирования"
+    description: |
+      По аналогии с signal-analyzer/client.go:37, добавить конструктор:
+        func NewWithProtoClient(client auth_v1.AuthServiceClient, opts ...Option) *Client
+      Это позволит unit-тестировать SDK без реального gRPC сервера через mockery-генерированные моки.
+    rationale: "ES-0053: compile-time interface check. Позволяет тестировать middleware и interceptor изолированно."
+    effort: "low"
+
+  - id: "REC-005"
+    priority: "medium"
+    category: "architecture"
+    title: "Реализовать FailOpen option через functional options (ES-0120)"
+    description: |
+      По умолчанию middleware fail-closed (401 при недоступности AUTH).
+      Опция: WithFailOpen() — пропустить запрос при ErrUnavailable, не при ErrInvalidToken.
+      Реализовать через functional options:
+        func WithFailOpen() Option { return func(c *Client) { c.failOpen = true } }
+    rationale: "CLAUDE.md: Fail-closed by default. Override with FailOpen option."
+    effort: "low"
+
+summary:
+  files_analyzed_count: 15
+  findings_count: 9
+  patterns_count: 4
+  recommendations_count: 5
+  key_insight: |
+    Проект полностью пуст (только Version константа). Существующие паттерны из fundingbot и
+    signal-analyzer дают ясный blueprint для реализации:
+    (1) grpc.NewClient + keepalive + WaitForReady + chain interceptors в client.go,
+    (2) RWMutex + singleflight double-check в lib/internal/cache/,
+    (3) sentinel errors + statusFromWrapped в errors.go,
+    (4) стандартный func(http.Handler) http.Handler для middleware,
+    (5) grpc.UnaryServerInterceptor с named return + defer recover для server interceptor.
+    Из scratch-инфраструктуры присутствует всё кроме integration-test scaffolding — его нужно
+    добавить вручную (docker-compose + make target + build tag).
+  confidence_score: 9
+  confidence_reason: |
+    Все ключевые файлы прочитаны полностью, паттерны подтверждены несколькими файлами,
+    guide-правила изучены целиком. Небольшая неопределённость только в точной структуре
+    auth-proto protobuf (репо не клонировано локально).
+  next_steps:
+    - "Прочитать .memory_bank/tasks_list.yaml для уточнения порядка TASK-001..TASK-007"
+    - "Изучить go.mod для проверки текущих зависимостей"
+    - "Начать реализацию с lib/errors.go (FIND-004), затем lib/internal/cache/ (FIND-003), затем lib/client.go (FIND-001, FIND-002)"
+
+critical_rules_summary:
+  effective_standards:
+    - rule: "ES-0051"
+      description: "Interfaces at consumer. SDK экспортирует Logger/MetricsRecorder как adapter interfaces в lib/client.go."
+    - rule: "ES-0053"
+      description: "var _ auth_v1.AuthServiceClient = (*Client)(nil) или compile-time checks для impl."
+    - rule: "ES-0062"
+      description: "Sentinel errors: var ErrInvalidToken = errors.New(...). Используется с errors.Is()."
+    - rule: "ES-0120"
+      description: "Functional options для New(): WithLogger, WithMetrics, WithCacheTTL, WithFailOpen, WithKeepalive."
+    - rule: "ES-0140"
+      description: "Constructor name = New(). Не NewClient, не NewAuthClient."
+    - rule: "ES-0141"
+      description: "Dependencies struct если 3+ зависимостей. В SDK: Config + opts ...Option."
+    - rule: "ES-0142"
+      description: "Validate в конструкторе: addr не пустой, TTL > 0, и т.д."
+    - rule: "ES-0143"
+      description: "Noop defaults: если Logger не передан — noopLogger{}. Nil-checks в методах запрещены."
+    - rule: "ES-0171"
+      description: "nolint аннотации запрещены. Мигрировать на grpc.NewClient — нет необходимости в nolint."
+
+  coding_style:
+    - rule: "CS-0051"
+      description: "File structure: client.go = interfaces + Config + Client struct + New() + private helpers."
+    - rule: "CS-0100"
+      description: "Нет envDefault в Config. SDK не использует env tags вообще — конфигурация через functional options."
+    - rule: "CS-0117"
+      description: "UserInfo (возвращается из ValidateToken) — это DTO (открытые поля, boundary struct)."
+
+  effective_concurrency:
+    - rule: "EC-0034"
+      description: "RWMutex для кэша ValidateToken: RLock на чтение, Lock на запись."
+    - rule: "EC-0056"
+      description: "type userContextKey struct{} — unexported type key для context.WithValue(ctx, userContextKey{}, user)."
+    - rule: "EC-0060"
+      description: "atomic.Bool для isActive если нужен lifecycle (Start/Close). В SDK — не нужен."
+    - rule: "EC-0062"
+      description: "Swap(true) вместо Load+Store для entry guards."
+    - rule: "EC-0063"
+      description: "Не смешивать atomic и mutex для одного поля."
