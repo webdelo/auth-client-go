@@ -75,17 +75,17 @@ tidy: ## Tidy dependencies
 
 ##@ Build
 clean: ## Clean build artifacts
-	rm -rf $(COVERAGE_DIR) bin/
+	rm -rf $(COVERAGE_DIR) bin/ .temp/examples/
 
 build-examples: ## Build example programs
 	@echo "Building examples..."
-	@mkdir -p bin
+	@mkdir -p .temp/examples
 	@for dir in lib/examples/*/; do \
 		name=$$(basename $$dir); \
-		echo "  Building example-$$name..."; \
-		go build -o bin/example-$$name ./$$dir; \
+		echo "  Building $$name..."; \
+		go build -o .temp/examples/$$name ./$$dir; \
 	done
-	@echo "✅ Examples built in bin/"
+	@echo "✅ Examples built in .temp/examples/"
 
 ##@ Code Generation
 generate-mocks: $(mockery) ## Generate mocks using mockery

@@ -1,0 +1,363 @@
+review_id: REQ-001-TASK-006-CODE-REVIEW
+task_id: REQ-001-TASK-006
+date: "2026-05-19"
+reviewer: code-reviewer
+verdict: ALL_FIXED
+original_verdict: APPROVED_WITH_COMMENTS
+debug_completed_at: "2026-05-19"
+post_review_fixes:
+  - issue_id: 1
+    severity: WARNING
+    title: "Missing blank line after if-guard before defer (CS-0010)"
+    status: FIXED
+    fix_applied: "Added blank line after `if err != nil { return 1 }` blocks before `defer func()` in all three files: basic/main.go, http_middleware/main.go, grpc_interceptor/main.go (2 occurrences)."
+  - issue_id: 2
+    severity: WARNING
+    title: "Naked return in readEnv (CS-0002)"
+    status: FIXED
+    fix_applied: "Replaced naked `return` with explicit `return endpoint, email, password, ok` in basic/main.go and grpc_interceptor/main.go. Named return parameters kept (required by gocritic unnamedResult for functions with same-typed results)."
+  - issue_id: 3
+    severity: SUGGESTION
+    title: "Missing blank line in safeTrunc (CS-0010)"
+    status: FIXED
+    fix_applied: "Added blank line between `if` block and `return` in safeTrunc helper in basic/main.go."
+post_fix_validation:
+  build: pass
+  vet: pass (0 issues)
+  lint: pass (0 issues)
+  tests: 214/214 pass
+  race: pass
+  sanity_run: all three binaries exit 0 without ENV
+  go_sum_diff: empty
+summary: >
+  All three examples compile cleanly, pass go vet, golangci-lint, and all 214 unit tests (including
+  race detector). Public API surface is correct — no direct internal package imports. Error handling,
+  graceful shutdown, slog adapter, open-methods awareness, safeTrunc safety, idempotent logout, and
+  the exitAfterDefer pattern are all implemented correctly. Two style-level findings (CS-0002 naked
+  returns in readEnv and CS-0010 missing blank lines after guard blocks) prevent a clean APPROVED.
+  No critical or security issues.
+
+files_reviewed:
+  - path: lib/examples/basic/main.go
+    verdict: APPROVED_WITH_COMMENTS
+    notes: "CS-0010 missing blank line after if-guard at line 34; CS-0002 naked return in readEnv at line 83."
+
+  - path: lib/examples/basic/README.md
+    verdict: APPROVED
+    notes: "Accurate What/Run/Expected-output/Notes structure. safeTrunc truncation explained."
+
+  - path: lib/examples/http_middleware/main.go
+    verdict: APPROVED_WITH_COMMENTS
+    notes: "CS-0010 missing blank line after if-guard at line 43. All other checks pass."
+
+  - path: lib/examples/http_middleware/README.md
+    verdict: APPROVED
+    notes: "Cookie path-scoping caveat is correctly explained. curl vs browser difference is noted."
+
+  - path: lib/examples/grpc_interceptor/main.go
+    verdict: APPROVED_WITH_COMMENTS
+    notes: "CS-0010 missing blank line after if-guard at line 90; CS-0002 naked return in readEnv at line 139."
+
+  - path: lib/examples/grpc_interceptor/README.md
+    verdict: APPROVED
+    notes: "Correct statement about Health/Check and /Watch being open by default. Ephemeral port noted."
+
+  - path: Makefile
+    verdict: APPROVED
+    notes: "clean removes .temp/examples/; build-examples outputs to .temp/examples/<name>. Both correct."
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+    command: "go build ./lib/examples/..."
+
+  fmt:
+    status: pass
+    files_need_formatting: []
+    command: "gofmt -l lib/examples/*/main.go"
+
+  vet:
+    status: pass
+    errors: []
+    command: "go vet ./..."
+
+  lint:
+    status: pass
+    issues: []
+    command: "golangci-lint run ./... --timeout=5m"
+
+  tests:
+    status: pass
+    failed: []
+    coverage: "214 tests pass (0 failed)"
+    command: "make audit"
+
+issues:
+  critical: []
+
+  warnings:
+    - id: 1
+      severity: WARNING
+      category: STYLE
+      file: lib/examples/basic/main.go
+      line: 34
+      standard: "coding_style.md CS-0010"
+      title: "Missing blank line after if-guard block before defer"
+      description: >
+        The closing brace of `if err != nil` (authclient.New error guard, line 34) is
+        immediately followed by `defer func() {` on line 35 without a blank line.
+        CS-0010 requires an empty line after if/for/switch/select blocks.
+        The same pattern repeats in http_middleware (line 43) and grpc_interceptor (line 90).
+      current_code: |
+        client, err := authclient.New(authclient.Config{Endpoint: endpoint})
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "authclient.New: %v\n", err)
+            return 1
+        }
+        defer func() {   // <- missing blank line after closing brace above
+            if cerr := client.Close(); cerr != nil {
+                fmt.Fprintf(os.Stderr, "client.Close: %v\n", cerr)
+            }
+        }()
+      fix_recommendation: |
+        Add a blank line after the closing brace of the guard block:
+
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "authclient.New: %v\n", err)
+            return 1
+        }
+
+        defer func() {
+            if cerr := client.Close(); cerr != nil {
+                fmt.Fprintf(os.Stderr, "client.Close: %v\n", cerr)
+            }
+        }()
+
+        Apply the same fix at:
+          - lib/examples/http_middleware/main.go line 43
+          - lib/examples/grpc_interceptor/main.go line 90
+
+    - id: 2
+      severity: WARNING
+      category: STYLE
+      file: lib/examples/basic/main.go
+      line: 83
+      standard: "coding_style.md CS-0002"
+      title: "Naked return in readEnv() — identical violation in grpc_interceptor"
+      description: >
+        readEnv() uses named return parameters (endpoint, email, password string, ok bool)
+        and terminates with a bare `return` statement (line 83). CS-0002 forbids naked
+        returns. The identical function in lib/examples/grpc_interceptor/main.go:139
+        has the same violation.
+      current_code: |
+        func readEnv() (endpoint, email, password string, ok bool) {
+            endpoint = os.Getenv("AUTH_ENDPOINT")
+            email    = os.Getenv("AUTH_TEST_EMAIL")
+            password = os.Getenv("AUTH_TEST_PASSWORD")
+            ok = endpoint != "" && email != "" && password != ""
+            return   // <- naked return
+        }
+      fix_recommendation: |
+        Use an explicit return statement with the named values, or restructure to avoid
+        named returns entirely:
+
+        // Option A: explicit named-return (keep named params, add values):
+        func readEnv() (endpoint, email, password string, ok bool) {
+            endpoint = os.Getenv("AUTH_ENDPOINT")
+            email    = os.Getenv("AUTH_TEST_EMAIL")
+            password = os.Getenv("AUTH_TEST_PASSWORD")
+            ok = endpoint != "" && email != "" && password != ""
+            return endpoint, email, password, ok
+        }
+
+        // Option B: drop named returns (cleaner):
+        func readEnv() (string, string, string, bool) {
+            endpoint := os.Getenv("AUTH_ENDPOINT")
+            email    := os.Getenv("AUTH_TEST_EMAIL")
+            password := os.Getenv("AUTH_TEST_PASSWORD")
+            return endpoint, email, password, endpoint != "" && email != "" && password != ""
+        }
+
+        Apply the same fix at lib/examples/grpc_interceptor/main.go:139.
+
+  suggestions:
+    - id: 3
+      severity: SUGGESTION
+      category: STYLE
+      file: lib/examples/basic/main.go
+      line: 94
+      standard: "coding_style.md CS-0010"
+      title: "Missing blank line after if block in safeTrunc"
+      description: >
+        In the safeTrunc helper the closing brace of `if n > len(s)` (line 94)
+        is directly followed by the return statement on line 95 without a blank line.
+        CS-0010 applies here too, though safeTrunc is a tiny private helper and the
+        impact on readability is minimal.
+      current_code: |
+        func safeTrunc(s string, n int) string {
+            if n > len(s) {
+                n = len(s)
+            }
+            return s[:n] + "…"   // <- missing blank line after if block
+        }
+      fix_recommendation: |
+        func safeTrunc(s string, n int) string {
+            if n > len(s) {
+                n = len(s)
+            }
+
+            return s[:n] + "…"
+        }
+
+statistics:
+  critical: 0
+  warning: 2
+  suggestions: 1
+
+positive:
+  - "All three examples compile cleanly and pass full audit (vet + lint + 214 tests + race)."
+  - "No direct imports of lib/internal/* from examples — public API surface is clean."
+  - "exitAfterDefer pattern (main calls only os.Exit(run())) is applied correctly in all three files."
+  - "Error handling is thorough: client.Close, conn.Close, grpcSrv.Serve, srv.Shutdown, writeJSON encoder, and Logout are all handled explicitly — no silent discards."
+  - "slogAdapter in http_middleware correctly satisfies authclient.Logger: Error prepends the err argument before variadic fields, matching the interface signature exactly."
+  - "Graceful shutdown in http_middleware uses signal.NotifyContext + buffered serverErr channel + srv.Shutdown with timeout context — textbook EC-0080/EC-0082 pattern."
+  - "Goroutine in http_middleware has a clean exit path on both signal and error branches; no goroutine leak."
+  - "Goroutine in grpc_interceptor exits cleanly because grpcSrv.GracefulStop() (deferred) unblocks grpcSrv.Serve — no WaitGroup needed."
+  - "grpc_interceptor correctly uses Health/List as the protected method, with Check/Watch as the default open methods per SDK contract."
+  - "safeTrunc clamps n to len(s) before slicing — no out-of-bounds panic possible."
+  - "Idempotent logout in http_middleware logoutHandler correctly swallows ErrInvalidToken to avoid 500 on already-invalidated cookies."
+  - "No nolint directives anywhere in the examples."
+  - "All top-level identifiers are unexported (lowercase) — only main() is present as expected for a main package."
+  - "Package-level doc comment is present in all three main.go files describing what each example demonstrates."
+  - "Makefile build-examples outputs to .temp/examples/<name> and clean target removes .temp/examples/ — consistent with stated requirements."
+  - "README files are concise, accurate, and include What/Run/Expected-output/Notes sections."
+  - "Cookie path-scoping caveat in http_middleware README is technically correct and clearly explained."
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt clean
+      - "ES-0010"  # package names lowercase
+      - "ES-0011"  # exported vs unexported
+      - "ES-0014"  # one-method interface naming
+      - "ES-0015"  # MixedCaps
+      - "ES-0020"  # initialization in conditions
+      - "ES-0021"  # guard clauses / early return
+      - "ES-0022"  # minimize variable scope
+      - "ES-0040"  # return (value, error)
+      - "ES-0042"  # defer for resource cleanup
+      - "ES-0043"  # no defer inside loops
+      - "ES-0050"  # keep interfaces small
+      - "ES-0051"  # interface at consumer
+      - "ES-0052"  # type assertions comma-ok
+      - "ES-0053"  # compile-time assertion (var _ Logger = slogAdapter{})
+      - "ES-0054"  # no pointer to interface
+      - "ES-0055"  # no generalized interfaces in provider
+      - "ES-0060"  # handle errors explicitly
+      - "ES-0061"  # wrap errors with context
+      - "ES-0062"  # sentinel errors
+      - "ES-0063"  # no panic in production
+      - "ES-0080"  # doc comments
+      - "ES-0081"  # start doc comment with name
+      - "ES-0110"  # strconv vs fmt
+      - "ES-0120"  # functional options
+      - "ES-0130"  # import order
+      - "ES-0131"  # import aliases
+      - "ES-0140"  # constructor name New
+    critical_rules_checked:
+      - "ES-0051"  # Interface at consumer — N/A (main packages, no provider interfaces)
+      - "ES-0060"  # Handle errors explicitly — PASS
+      - "ES-0063"  # No panic — PASS
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "go func"
+      - "chan "
+      - "<-"
+      - "select {"
+    rules_applied:
+      - "EC-0010"  # goroutine lifecycle
+      - "EC-0011"  # cancel context
+      - "EC-0012"  # no goroutine leaks
+      - "EC-0013"  # check ctx.Done
+      - "EC-0020"  # buffered channel justification
+      - "EC-0050"  # context as first parameter
+      - "EC-0051"  # no context in struct
+      - "EC-0052"  # context.Background as root
+      - "EC-0053"  # reasonable timeouts
+      - "EC-0055"  # always call cancel
+      - "EC-0080"  # shutdown via context cancellation
+      - "EC-0081"  # wait for goroutines
+      - "EC-0082"  # handle OS signals
+      - "EC-0091"  # capture loop variables (N/A — no loops with goroutines)
+      - "EC-0092"  # no unprotected shared state
+    rules_skipped:
+      - "EC-0030"  # mutex zero value (no mutex used)
+      - "EC-0031"  # embedding mutex (no mutex used)
+      - "EC-0032"  # max 3 mutex per struct (no mutex)
+      - "EC-0033"  # defer mu.Unlock (no mutex)
+      - "EC-0034"  # RWMutex (no mutex)
+      - "EC-0040"  # wg.Add before go (no WaitGroup)
+      - "EC-0041"  # errgroup (no WaitGroup)
+      - "EC-0060"  # atomic for counters (no atomics)
+      - "EC-0061"  # atomic vs mutex (no atomics)
+      - "EC-0062"  # Swap for entry guards (no atomics)
+      - "EC-0063"  # don't mix atomic and mutex (no atomics)
+      - "EC-0064"  # max 1 mutex per method (no mutex)
+      - "EC-0070"  # fixed worker count (no worker pool)
+      - "EC-0071"  # semaphores (no concurrency limiting)
+      - "EC-0100"  # t.Parallel (not test files)
+      - "EC-0101"  # t.Parallel shared state (not test files)
+      - "EC-0102"  # synctest (not test files)
+    skip_reason: "mutex/atomic/WaitGroup not used; EC-01xx skipped — no test files in scope"
+    critical_rules_checked:
+      - "EC-0010"  # Goroutine lifecycle — PASS
+      - "EC-0012"  # No goroutine leaks — PASS
+      - "EC-0051"  # No context in struct — PASS
+      - "EC-0081"  # Wait for goroutines — PASS (GracefulStop blocks; buffered chan + close pattern)
+      - "EC-0091"  # Capture loop variables — N/A
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # line length <= 120 chars — PASS
+      - "CS-0002"  # explicit returns only — FAIL (readEnv naked returns)
+      - "CS-0003"  # no magic numbers — PASS (time durations in examples context is acceptable)
+      - "CS-0004"  # no global state — PASS
+      - "CS-0010"  # block spacing — FAIL (3 locations)
+      - "CS-0020"  # top-to-bottom readability — PASS
+      - "CS-0021"  # clear names — PASS
+      - "CS-0022"  # extract actions into functions — PASS
+      - "CS-0023"  # low cyclomatic complexity — PASS
+      - "CS-0024"  # no over-engineering — PASS
+      - "CS-0030"  # no linter config changes — PASS
+      - "CS-0031"  # no nolint without justification — PASS (no nolint at all)
+      - "CS-0040"  # anon functions <= 5 lines — PASS
+      - "CS-0050"  # entity in separate package — N/A (main packages)
+      - "CS-0060"  # godoc for public methods — PASS (package-level doc present)
+      - "CS-0061"  # gofmt + golangci-lint — PASS
+      - "CS-0070"  # English naming — PASS
+      - "CS-0071"  # meaningful variable names — PASS
+      - "CS-0072"  # idiomatic casing — PASS
+      - "CS-0082"  # function length < 80 lines — PASS
+      - "CS-0111"  # no restating-the-obvious inline comments — PASS
+      - "CS-0112"  # no decorative separators — PASS
+      - "CS-0110"  # no internal standard refs in comments — PASS
+
+  dba_rules:
+    checked: false
+    database: null
+    rules_applied: []
+    skip_reason: "No database code in scope — examples are pure gRPC/HTTP SDK wrappers."
+
+  devops_rules:
+    checked: false
+    rules_applied: []
+    skip_reason: "No Docker or Kubernetes manifests in scope."
