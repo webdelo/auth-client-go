@@ -47,9 +47,14 @@ func WithCookieMaxAge(maxAge time.Duration) CookieOption {
 	return func(c *http.Cookie) { c.MaxAge = int(maxAge.Seconds()) }
 }
 
-// WithCookieSameSite overrides the default SameSite=Strict. Lax weakens CSRF
-// protection — only use when SPA requires cross-site initial cookie delivery
-// (typically when login completes on a different origin and redirects).
+// WithCookieSameSite overrides the default SameSite=Strict.
+//
+// SECURITY WARNING: SameSite=Lax/None weakens CSRF protection. Default is
+// Strict. Use Lax only when an SPA requires cross-site initial cookie
+// delivery (e.g., login completes on a different origin and redirects) and
+// only after an explicit threat-model review. Never use None on a refresh
+// cookie unless paired with another anti-CSRF defense (CSRF token, Origin
+// header check).
 func WithCookieSameSite(mode http.SameSite) CookieOption {
 	return func(c *http.Cookie) { c.SameSite = mode }
 }

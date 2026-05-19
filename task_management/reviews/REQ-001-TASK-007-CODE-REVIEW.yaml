@@ -1,0 +1,521 @@
+review_type: code-review
+task: REQ-001-TASK-007
+title: "README + godoc + CHANGELOG + tag v0.1.0"
+package: "lib (documentation deliverables)"
+date: "2026-05-19"
+reviewer: code-reviewer (aggregated)
+branch: feature/req-001-task-007
+
+source_reports:
+  - path: ".memory_bank/agent_task_results/2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+    phase: original_execute_prp
+    verdict: CHANGES_REQUESTED
+  - path: ".memory_bank/agent_task_results/2026-05-19_code-review_REQ-001-TASK-007_lib_docs_fix-validation.yaml"
+    phase: fix_validation_1
+    verdict: APPROVED
+  - path: ".memory_bank/agent_task_results/2026-05-19_code-review_lib.yaml"
+    phase: fresh_review_code
+    verdict: APPROVED_WITH_COMMENTS
+  - path: ".memory_bank/agent_task_results/2026-05-19_code-review_lib_fix-validation-2.yaml"
+    phase: fix_validation_2
+    verdict: APPROVED
+
+files_reviewed:
+  - lib/doc.go
+  - lib/client.go
+  - lib/cookies.go
+  - README.md
+  - CHANGELOG.md
+
+static_analysis:
+  build:    { status: pass }
+  fmt:      { status: pass }
+  vet:      { status: pass }
+  lint:     { status: pass, issues: 0 }
+  tests:    { status: pass, total: 214, passed: 214, failed: 0 }
+  race:     { status: pass, total: 214 }
+  examples: { status: pass, built: [basic, http_middleware, grpc_interceptor] }
+  smoke:    { status: pass, note: "README Quickstart copy-paste compiles via replace-directive (3 smoke runs: smoke1 original, smoke2 after fix-validation-1, smoke3 after fix-validation-2)" }
+
+original_verdict: CHANGES_REQUESTED
+debug_verdict: APPROVED
+verdict: APPROVED
+
+issues:
+  critical:
+    - id: CR-001
+      original_id: C-001
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: FIXED
+      title: "Cache interface in README has wrong method signatures"
+      file: "README.md:175-179"
+      description: |
+        The Cache interface block in the README Adapter Interfaces section showed
+        signatures that do not exist in the actual lib/client.go Cache interface:
+
+        README showed:
+          Get(key string) (value any, ok bool)
+          Set(key string, value any, ttl time.Duration)
+          Delete(key string)
+
+        Actual Cache interface (lib/client.go:73-79) is:
+          Get(ctx context.Context, key string) (user User, ok bool)
+          Set(ctx context.Context, key string, user User, ttl time.Duration)
+          Delete(ctx context.Context, key string)
+
+        A consumer implementing a custom Cache (e.g. Redis-backed) from the README
+        example would write code that does NOT satisfy the interface and would get a
+        compile error. This was the most dangerous accuracy issue in the deliverable.
+      fix: |
+        Replaced the Cache interface block in README (## Adapter Interfaces → ### Cache)
+        with the correct signatures from lib/client.go:
+
+          type Cache interface {
+              Get(ctx context.Context, key string) (user User, ok bool)
+              Set(ctx context.Context, key string, user User, ttl time.Duration)
+              Delete(ctx context.Context, key string)
+          }
+
+        Fix verified at README.md:188-193 in fix-validation-1: actual file matches
+        the expected signatures exactly. A consumer implementing a Redis-backed Cache
+        from the README example will now produce code that satisfies the interface at
+        compile time.
+
+  warnings:
+    - id: CR-002
+      original_id: W-001
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: FIXED
+      title: "WithCache(nil) described as disabling caching — inaccurate"
+      file: "README.md:80"
+      description: |
+        README options table stated:
+          WithCache(c) | Overrides Config.Cache. nil disables caching (each call hits AUTH).
+
+        The actual code in lib/client.go:151-153 is:
+          func WithCache(cache Cache) Option {
+              return func(c *Client) { c.cache = cache }
+          }
+
+        Passing nil sets c.cache = nil, which causes New to fall through to
+        Config.Cache (if non-nil) or the default built-in MemoryCache. Nil does NOT
+        disable caching — the built-in MemoryCache is still created and used.
+
+        To truly disable caching the consumer must set Config.ValidateCacheTTL = 0,
+        which is correctly documented in the Configuration table and Known Limitations.
+        The WithCache(nil) claim contradicted the WithCache godoc which explicitly states
+        "Passing nil here is a no-op for the option".
+      fix: |
+        Functional-options table row updated to:
+          Overrides Config.Cache with a custom implementation. nil is a no-op (falls
+          through to Config.Cache or the built-in MemoryCache). To disable caching set
+          Config.ValidateCacheTTL = 0.
+
+        Verified at README.md:93 in fix-validation-1.
+
+    - id: CR-003
+      original_id: W-002
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: FIXED
+      title: "CHANGELOG AuthError field name wrong: RetryAfter vs RetryAfterHint"
+      file: "CHANGELOG.md:63"
+      description: |
+        The CHANGELOG v0.1.0 Added section read:
+          AuthError{Err, RetryAfter} wrapper.
+
+        The actual exported struct field in lib/errors.go:41-45 is named RetryAfterHint:
+          type AuthError struct {
+              Err            error
+              RetryAfterHint time.Duration
+          }
+
+        This was a factual inaccuracy in a release changelog that consumers reference
+        when looking up the AuthError struct.
+      fix: |
+        CHANGELOG line 63 updated to:
+          `AuthError{Err, RetryAfterHint}` wrapper.
+
+        Verified at CHANGELOG.md:63 in fix-validation-1: actual_in_file matches expected.
+
+    - id: CR-004
+      original_id: W-003
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: WONT_FIX
+      title: "CHANGELOG date is 2026-05-19 but PRP DOD specifies 2026-05-18"
+      file: "CHANGELOG.md:10"
+      decision: "option_b_accepted — actual release date supersedes PRP template literal"
+      description: |
+        The CHANGELOG header reads:
+          ## [v0.1.0] — 2026-05-19
+
+        The PRP DOD (task_management/plans/REQ-001-TASK-007-PRP.md:1048) requires:
+          ## [v0.1.0] — 2026-05-18
+
+        The PRP was authored on 2026-05-18 and specifies that date as the release date.
+        The CHANGELOG was written on 2026-05-19 (implementation day). This caused the
+        DOD checkbox to evaluate as FAILED against a literal grep for "2026-05-18".
+      fix: |
+        WONT_FIX by explicit team decision: option (b) accepted. The task specification
+        for fix-validation-1 explicitly endorsed keeping 2026-05-19 as the accurate
+        release date. Today's system date (2026-05-19) is the correct publication date,
+        and the PRP DOD literal 2026-05-18 is acknowledged as a template artifact written
+        before the actual implementation day. Keep-a-Changelog format prescribes the actual
+        release date.
+
+    - id: CR-005
+      original_id: LIB-W001
+      source_phase: fresh_review_code
+      source_report: "2026-05-19_code-review_lib.yaml"
+      status: FIXED
+      title: "README Config table claims ValidateCacheTTL default is 30s, but Go zero-value is 0 (cache disabled)"
+      file: "README.md:78"
+      description: |
+        The Configuration table in README.md showed:
+          | ValidateCacheTTL | 30s | ... |
+        A consumer reading only the table would conclude that omitting ValidateCacheTTL
+        activates a 30-second cache automatically. This is incorrect.
+
+        The actual behavior (from client.go applyDefaults):
+          - ValidateCacheTTL < 0  → SDK applies 30s (the explicit SDK default)
+          - ValidateCacheTTL == 0 → PRESERVED AS ZERO, meaning cache is disabled
+                                    (cache.Set is a no-op for TTL<=0)
+          - ValidateCacheTTL > 0  → used as-is
+
+        The Config struct's Go zero-value is 0, so:
+          authclient.New(authclient.Config{Endpoint: "auth:50051"})
+        produces a client with NO cache at all, not a 30s cache.
+
+        The same misleading "default 30s" phrasing appeared in:
+          - README.md line 78 (Config table Default column)
+          - README.md line 368 (Known Limitations: "(default 30s)")
+          - CHANGELOG.md line 25 ("positive-result TTL cache (default 30s)")
+
+        Note: The godoc on Config.ValidateCacheTTL was accurate:
+          "Defaults to 30s when negative. Zero means 'cache disabled'…"
+        The discrepancy was only in the README table and CHANGELOG description.
+      fix: |
+        README.md Config table Default column changed to `0 (cache disabled)`. Description
+        now explains both zero-value semantics (cache OFF) and how to activate the 30s
+        recommended TTL. README Known Limitations bullet also updated. Both disambiguation
+        sites in README corrected.
+
+        Verified at README.md:78 and README.md:379 in fix-validation-2.
+
+    - id: CR-006
+      original_id: LIB-W002
+      source_phase: fresh_review_code
+      source_report: "2026-05-19_code-review_lib.yaml"
+      status: FIXED
+      title: "README Fail Mode section: UserFromContext returns (User{}, false) — incorrect, actually returns (User{}, true)"
+      file: "README.md:104-105"
+      description: |
+        README.md Fail Mode section stated:
+          "Downstream code must treat `UserFromContext(...)` returning `(User{}, false)` as 'unauthenticated'."
+
+        This is factually wrong. In FailOpen mode the middleware executes:
+          next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), User{})))
+        which calls WithUser, which stores an empty User{} in context via context.WithValue.
+
+        UserFromContext then performs a type assertion:
+          user, ok := ctx.Value(userCtxKey{}).(User)
+        The key IS present (empty User{} was stored), so the type assertion succeeds and
+        ok = TRUE, not false.
+
+        The returned value is (User{}, true), not (User{}, false).
+
+        (User{}, false) would only happen if the middleware was bypassed entirely — i.e., when
+        the route is not wrapped with HTTPMiddleware at all and no user was ever stored.
+
+        The README itself already showed the correct idiom one paragraph above (line 61):
+          "user.IsZero() — true only if the middleware was skipped (FailOpen on AUTH-down)"
+        The IsZero() check is correct; the (User{}, false) claim was not.
+
+        The same pattern applies to the gRPC UnaryInterceptor FailOpen path, which also calls
+        handler(WithUser(ctx, User{}), req), so UserFromContext returns (User{}, true) there too.
+
+        Telling consumers to check `ok == false` to detect FailOpen pass-through would silently
+        break their auth check: ok is true, so the if-branch is skipped and the request proceeds
+        as if authenticated. user.IsZero() is the correct guard.
+      fix: |
+        README Fail Mode section updated to:
+          - `FailOpen` — pass the request through with an empty `User{}` in context. The middleware
+            calls `WithUser(ctx, User{})`, so `UserFromContext` returns `(User{}, true)` — the
+            boolean is `true` because the key is present. Use `user.IsZero()` to detect the
+            FailOpen pass-through:
+
+            ```go
+            user, _ := authclient.UserFromContext(r.Context())
+            if user.IsZero() {
+                // AUTH was unreachable and FailOpen is configured; treat as unauthenticated.
+                http.Error(w, "unauthorized", http.StatusUnauthorized)
+                return
+            }
+            ```
+
+        Verified at README.md:104-116 in fix-validation-2.
+
+  suggestions:
+    - id: CR-007
+      original_id: S-001
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: FIXED
+      title: "ValidateCacheTTL=0 description could clarify cache object is still allocated"
+      file: "README.md:65"
+      description: |
+        README config table said ValidateCacheTTL "0 disables cache entirely".
+        The actual behavior (from lib/client.go godoc): "New still allocates an
+        in-memory cache object, but Set is a no-op for TTL=0 so no entries are ever
+        stored. Effectively every ValidateAccessToken call reaches gRPC."
+
+        Practically indistinguishable from the consumer's perspective, but technically
+        the cache object exists. The observable effect matches the doc.
+      fix: |
+        Config table row updated: "0 makes every ValidateAccessToken call reach AUTH
+        (Set is a no-op for TTL=0)."
+
+        Verified at README.md:78 in fix-validation-1: actual_in_file matches expected.
+        (Note: this fix was superseded in scope by CR-005/LIB-W001 which replaced
+        the default column from "30s" to "0 (cache disabled)" with a fuller explanation.)
+
+    - id: CR-008
+      original_id: S-002
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: FIXED
+      title: "doc.go Quickstart uses user, _ (blank error) — may invite misuse"
+      file: "lib/doc.go:24"
+      description: |
+        The Quickstart code example in lib/doc.go used:
+          user, _ := authclient.UserFromContext(r.Context())
+
+        UserFromContext returns (User, bool) — the blank identifier on the bool is
+        intentional for brevity in a quickstart snippet. However, it teaches consumers
+        to ignore the ok signal that indicates whether a user is actually present in
+        context. Inside a middleware-protected handler the user will always be present,
+        so ignoring ok is safe here. But the pattern could be copied verbatim to
+        unprotected handlers.
+      fix: |
+        lib/doc.go Quickstart updated with lead-in comment:
+          // Inside the handler — the middleware guarantees the user is present, so the
+          // second return is safe to drop:
+          //
+          //	user, _ := authclient.UserFromContext(r.Context())
+
+        Verified at lib/doc.go:22-25 in fix-validation-1.
+
+    - id: CR-009
+      original_id: S-003
+      source_phase: original_execute_prp
+      source_report: "2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+      status: FIXED
+      title: "README does not mention IsZero / IsAdmin / HasRole User helper methods"
+      file: "README.md"
+      description: |
+        The public API includes three User convenience methods (lib/context.go:35-41):
+          func (u User) IsZero() bool
+          func (u User) IsAdmin() bool
+          func (u User) HasRole(role Role) bool
+
+        These are useful for handler authorization checks (e.g., gating admin endpoints)
+        but were not mentioned in README. The omission is not critical — go doc covers them
+        — but discoverability was low.
+      fix: |
+        README Quickstart section now includes the role-check helpers block:
+
+          `User` exposes three small helpers for role checks inside protected handlers:
+
+          ```go
+          user, _ := authclient.UserFromContext(r.Context())
+          if !user.IsAdmin() {
+              http.Error(w, "forbidden", http.StatusForbidden)
+              return
+          }
+          // user.HasRole(authclient.RoleUser) — exact-match role check.
+          // user.IsZero() — true only if the middleware was skipped (FailOpen on AUTH-down).
+          ```
+
+        Verified at README.md:52-62 in fix-validation-1.
+
+    - id: CR-010
+      original_id: LIB-S001
+      source_phase: fresh_review_code
+      source_report: "2026-05-19_code-review_lib.yaml"
+      status: FIXED
+      title: "CHANGELOG 'default 30s' phrasing mirrors the LIB-W001 README ambiguity"
+      file: "CHANGELOG.md:25"
+      description: |
+        CHANGELOG.md line 25 stated "positive-result TTL cache (default 30s)". This is
+        accurate as a description of the SDK-intended TTL value when caching is used, but
+        it mirrors the ambiguity from LIB-W001 (CR-005): it could be read as "30s is the
+        default when you omit ValidateCacheTTL", which is wrong (zero = disabled).
+      fix: |
+        CHANGELOG.md Updated to:
+          positive-result TTL cache (SDK-recommended TTL: `30s`; `Config.ValidateCacheTTL` Go
+          zero-value is `0` = cache disabled; key = `sha256(token)`).
+
+        CHANGELOG Known Limitations bullet also updated to match README wording. Both
+        disambiguation sites corrected. Verified at CHANGELOG.md:25-26 in fix-validation-2.
+
+    - id: CR-011
+      original_id: LIB-S002
+      source_phase: fresh_review_code
+      source_report: "2026-05-19_code-review_lib.yaml"
+      status: FIXED
+      title: "doc.go Quickstart uses mux.Handle (undeclared variable) vs README http.Handle"
+      file: "lib/doc.go:20"
+      description: |
+        The Quickstart example in doc.go used `mux.Handle(...)` but the code snippet
+        only contains a conceptual godoc block. The `mux` variable is undeclared and would
+        not compile as a standalone program. The README Quickstart correctly uses
+        `http.Handle(...)` (stdlib's DefaultServeMux). The inconsistency between doc.go
+        (mux.Handle) and README (http.Handle) creates confusion for consumers using
+        `go doc` as their primary reference.
+      fix: |
+        lib/doc.go Quickstart snippet updated to:
+          //	http.Handle("/api/secure", client.HTTPMiddleware(handler))
+
+        Matches README Quickstart exactly. No undeclared `mux` variable in the godoc snippet.
+        Verified at lib/doc.go:20 in fix-validation-2. Smoke test (smoke3) confirms
+        go build exit 0 with the corrected snippet.
+
+dod_verification:
+  - item: "lib/doc.go exists and contains package-level godoc (Task 1)"
+    status: PASS
+    note: "lib/doc.go starts with '// Package authclient is the official Go SDK…'; Quickstart and Related sections present. go doc output confirms rendering. ES-0081 compliant."
+
+  - item: "All exported types/functions/methods/constants/sentinel-errors have godoc comments (Task 2)"
+    status: PASS
+    note: "go doc ./lib output shows all exported identifiers are documented. gofmt and golangci-lint pass with 0 issues. Confirmed in both original_execute_prp and fresh_review_code phases."
+
+  - item: "README.md contains 14+ sections from WHAT §3 TASK-007 (Task 3)"
+    status: PASS
+    note: "16 sections confirmed (grep -c '^## ' README.md = 16). All 14 required PRP sections present plus Development and License."
+
+  - item: "README has CAPSLOCK security warning for FailOpen (Task 3)"
+    status: PASS
+    note: "Lines 107-111 contain blockquote SECURITY WARNING with all-caps text. grep -E 'SECURITY WARNING|FAILOPEN' README.md returns matches."
+
+  - item: "README has typed errors table and errors.Is example (Task 3)"
+    status: PASS
+    note: "## Typed Errors section has a 5-row table (ErrInvalidToken, ErrExpired, ErrBlocked, ErrRateLimited, ErrUnavailable) with all gRPC codes, HTTP statuses, and a complete switch/errors.Is code snippet."
+
+  - item: "CHANGELOG contains ## [v0.1.0] with Added, Known limitations, Acknowledgements (Task 4)"
+    status: PASS
+    note: "Entry dated 2026-05-19 (not 2026-05-18 as PRP template literal; team WONT_FIX decision — CR-004). All three subsections present: ### Added, ### Known limitations, ### Acknowledgements."
+
+  - item: "CHANGELOG footer-link [v0.1.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.1.0 (Task 4)"
+    status: PASS
+    note: "Both [Unreleased] and [v0.1.0] footer links are present and well-formed. Confirmed at CHANGELOG.md:104-105."
+
+  - item: "Public API surface matches ADR §API: 5 sentinels, 4 With* options, 4 WithCookie* options, 10 Client methods, 7 package-level funcs (Task 8)"
+    status: PASS
+    note: |
+      Verified via go doc ./lib in fresh_review_code phase:
+        5 sentinel errors: ErrInvalidToken, ErrExpired, ErrBlocked, ErrRateLimited, ErrUnavailable
+        4 With* options: WithCache, WithFailMode, WithLogger, WithOpenMethods
+        4 WithCookie* options: WithCookieDomain, WithCookieMaxAge, WithCookiePath, WithCookieSameSite
+        10 Client methods: Close, ValidateAccessToken, Login, Refresh, Logout, LogoutAll,
+          ChangePassword, GetCurrentUser, HTTPMiddleware, UnaryInterceptor
+        7 package-level funcs: ClearRefreshCookie, IPFromRequest, RetryAfter, SetRefreshCookie,
+          UserAgentFromRequest, UserFromContext, WithUser
+
+  - item: "git tag v0.1.0 published in webdelo/auth-client-go (Task 7)"
+    status: DEFERRED
+    note: "git ls-remote shows no v0.1.0 tag on origin at review time. PR not merged yet. Tag publication is post-merge and is an external state item — not a blocker for code review approval."
+
+  - item: "GOPROXY=direct go list -m github.com/webdelo/auth-client-go@v0.1.0 returns v0.1.0 (Task 7)"
+    status: DEFERRED
+    note: "Depends on tag publication. External state. Deferred."
+
+  - item: "BFF-validator assembled working middleware via go get @v0.1.0 in < 30 min (Task 9)"
+    status: DEFERRED
+    note: "task_management/results/REQ-001-TASK-007-bff-validation.md shows DEFERRED PENDING status. Self-review smoke test with replace-directive passed (exit 0, 17MB binary). External validator not assigned pending tag publication."
+
+  - item: "go mod why github.com/webdelo/auth-proto/go confirms direct dependency v0.1.0 (Task 6)"
+    status: PASS
+    note: "Orchestrator verified; make audit exit 0 includes mod verify. go.mod has direct require for auth_v1 subpackage without // indirect."
+
+  - item: "make audit + make build-examples pass (Task 6)"
+    status: PASS
+    note: "Confirmed in fresh_review_code phase: make audit 214/214, lint 0, make build-examples 3/3. Repeated in fix-validation-2."
+
+  - item: "make test-integration green (Task 6)"
+    status: DEFERRED
+    note: "Skipped — external blocker: webdelo/auth Dockerfile requires Go 1.25, local Docker has Go 1.24. Documented in original_execute_prp and fresh_review_code phases. Not a blocker for SDK approval."
+
+  - item: "Umbrella DOD from REQ-001 fully closed (Task 6)"
+    status: DEFERRED
+    note: "Depends on tag publication (Task 7) and BFF-validator (Task 9). All code-quality items are PASS."
+
+positive:
+  - "Package godoc in doc.go is concise, accurate, and ES-0081 compliant ('Package authclient is the official Go SDK…')."
+  - "CAPSLOCK FailOpen security warning in README is prominently placed in a blockquote and accurately describes the threat."
+  - "WithCookieSameSite SECURITY WARNING in cookies.go godoc is thorough: clearly states the threat model (CSRF), the at-risk scenario (Lax/None), and the required mitigations (threat-model review + anti-CSRF token). Above-standard for a library security notice."
+  - "Duplicate package-doc comment cleanly removed from lib/client.go with no residue — the old block had been verbatim text that would have conflicted with doc.go and produced a confusing go doc heading."
+  - "CHANGELOG v0.1.0 entry is comprehensive: every public API element is listed with signature and behavior, all 5 known limitations are documented with mitigation guidance, and Acknowledgements cite specific OWASP references with URLs."
+  - "README.md has 16 well-structured consumer-facing sections. TLS Setup, Troubleshooting, and Known Limitations are especially thorough and address predictable friction points (NAT/CGNAT, gRPC keepalive, multi-replica FailOpen)."
+  - "Public API surface matches the ADR exactly (5 sentinels, 4+4 options, 10 Client methods, 7 pkg-level funcs — verified via go doc -all)."
+  - "All 214 unit tests pass with race detector enabled (0 failures, 0 races detected)."
+  - "golangci-lint reports 0 issues; gofmt reports no files needing formatting."
+  - "Three runnable examples build cleanly and are cross-referenced from README and CHANGELOG."
+  - "Cache interface accuracy fix (CR-001) eliminates the risk of consumers writing non-compiling Cache adapters from the README example."
+  - "The LIB-W002/CR-006 fix correctly shows the http.Error guard pattern with user.IsZero() inline, not just as prose — a consumer can copy-paste it directly."
+  - "CHANGELOG Known Limitations and README Known Limitations now use identical phrasing for the cache invalidation lag bullet, eliminating internal inconsistency between the two documents."
+  - "The fingerprint-binding rationale in HTTP Request Helpers is clear and actionable."
+
+summary: |
+  Aggregated outcome across 4 review phases (original /execute-prp review, first
+  fix-validation, fresh /review-code at commit 3b90aa0, second fix-validation).
+
+  The original review (CHANGES_REQUESTED) found 1 critical issue (C-001: Cache interface
+  wrong signatures in README — would cause compile errors for consumers implementing a
+  custom Cache adapter), 3 warnings (W-001: WithCache(nil) inaccuracy; W-002: wrong
+  AuthError field name in CHANGELOG; W-003: CHANGELOG date mismatch), and 3 suggestions
+  (S-001/S-002/S-003). Fix-validation-1 confirmed all 6 actionable issues FIXED;
+  W-003 accepted as WONT_FIX by explicit team decision (actual release date supersedes
+  PRP template literal).
+
+  The fresh /review-code on the post-fix state found 2 additional documentation-accuracy
+  warnings (LIB-W001: README Config table listed "30s" as default for ValidateCacheTTL
+  when Go zero-value 0 actually disables the cache; LIB-W002: Fail Mode section claimed
+  UserFromContext returns (User{}, false) on FailOpen, but it returns (User{}, true)
+  because WithUser stores empty User{} in context) and 2 suggestions (LIB-S001/LIB-S002).
+  Fix-validation-2 confirmed all 4 issues FIXED with no new issues introduced.
+
+  Of 11 total issues across all phases, 10 are FIXED and 1 is WONT_FIX by explicit
+  team decision (CR-004: CHANGELOG date). No code defects remain. All static analysis
+  gates pass. Branch ready to merge; v0.1.0 ready to tag.
+
+issue_counts:
+  total: 11
+  critical: 1    # CR-001 (FIXED)
+  warnings: 5    # CR-002, CR-003, CR-004, CR-005, CR-006
+  suggestions: 5 # CR-007, CR-008, CR-009, CR-010, CR-011
+  fixed: 10
+  wont_fix: 1    # CR-004
+  not_fixed: 0
+
+execution_metrics:
+  total_agents: 4
+  per_agent:
+    - phase: original_execute_prp
+      agent: code-reviewer
+      duration_ms: ~300000
+      tokens: ~80000
+    - phase: fix_validation_1
+      agent: code-reviewer
+      duration_ms: ~80000
+      tokens: ~50000
+    - phase: fresh_review_code
+      agent: code-reviewer
+      duration_ms: ~406000
+      tokens: ~105000
+    - phase: fix_validation_2
+      agent: code-reviewer
+      duration_ms: ~80000
+      tokens: ~50000
