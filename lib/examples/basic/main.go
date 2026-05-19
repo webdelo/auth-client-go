@@ -91,8 +91,8 @@ func usage() {
 }
 
 func safeTrunc(s string, n int) string {
-	if n > len(s) {
-		n = len(s)
+	if len(s) <= n {
+		return s
 	}
 
 	return s[:n] + "…"

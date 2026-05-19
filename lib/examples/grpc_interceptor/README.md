@@ -8,7 +8,7 @@ Single-process gRPC server + client demo of `client.UnaryInterceptor()`:
   and wires the SDK's unary interceptor.
 - An in-process client fires three RPCs and the program exits 0 on success.
 
-`/grpc.health.v1.Health/Check` and `/Watch` are in the SDK's default open-methods
+`/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch` are in the SDK's default open-methods
 registry (no auth needed). `/grpc.health.v1.Health/List` is **not** in that
 registry, so the interceptor enforces a valid Bearer token in gRPC metadata.
 

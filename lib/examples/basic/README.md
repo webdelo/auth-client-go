@@ -33,6 +33,8 @@ step 4: Logout ok
 step 5: Close ok (deferred)
 ```
 
+*Note: the `step 5: Close ok (deferred)` line is printed before `client.Close()` runs — the actual Close happens after `run()` returns, inside the deferred closure.*
+
 Tokens are truncated to 8 chars + ellipsis for safety.
 
 ## Notes

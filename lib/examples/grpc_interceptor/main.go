@@ -28,6 +28,12 @@ import (
 	authclient "github.com/webdelo/auth-client-go/lib"
 )
 
+const (
+	loginTimeout  = 10 * time.Second
+	rpcTimeout    = 5 * time.Second
+	logoutTimeout = 5 * time.Second
+)
+
 func main() {
 	os.Exit(run())
 }
@@ -51,7 +57,7 @@ func run() int {
 		}
 	}()
 
-	loginCtx, cancelLogin := context.WithTimeout(context.Background(), 10*time.Second)
+	loginCtx, cancelLogin := context.WithTimeout(context.Background(), loginTimeout)
 	defer cancelLogin()
 
 	out, err := client.Login(loginCtx, authclient.LoginInput{
@@ -98,7 +104,7 @@ func run() int {
 
 	hc := grpc_health_v1.NewHealthClient(conn)
 
-	rpcCtx, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+	rpcCtx, cancelRPC := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancelRPC()
 
 	resp1, err := hc.Check(rpcCtx, &grpc_health_v1.HealthCheckRequest{})
@@ -123,9 +129,13 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "RPC3 Health/List without token: expected Unauthenticated, got %v\n", err)
 		return 1
 	}
+
 	fmt.Printf("RPC3 Health/List (no metadata) → %s (as expected)\n", st.Code())
 
-	if lerr := client.Logout(rpcCtx, out.RefreshToken); lerr != nil {
+	logoutCtx, cancelLogout := context.WithTimeout(context.Background(), logoutTimeout)
+	defer cancelLogout()
+
+	if lerr := client.Logout(logoutCtx, out.RefreshToken); lerr != nil {
 		fmt.Fprintf(os.Stderr, "warn: Logout failed: %v\n", lerr)
 	}
 

@@ -1,363 +1,479 @@
 review_id: REQ-001-TASK-006-CODE-REVIEW
 task_id: REQ-001-TASK-006
 date: "2026-05-19"
-reviewer: code-reviewer
-verdict: ALL_FIXED
-original_verdict: APPROVED_WITH_COMMENTS
-debug_completed_at: "2026-05-19"
-post_review_fixes:
-  - issue_id: 1
-    severity: WARNING
-    title: "Missing blank line after if-guard before defer (CS-0010)"
-    status: FIXED
-    fix_applied: "Added blank line after `if err != nil { return 1 }` blocks before `defer func()` in all three files: basic/main.go, http_middleware/main.go, grpc_interceptor/main.go (2 occurrences)."
-  - issue_id: 2
-    severity: WARNING
-    title: "Naked return in readEnv (CS-0002)"
-    status: FIXED
-    fix_applied: "Replaced naked `return` with explicit `return endpoint, email, password, ok` in basic/main.go and grpc_interceptor/main.go. Named return parameters kept (required by gocritic unnamedResult for functions with same-typed results)."
-  - issue_id: 3
-    severity: SUGGESTION
-    title: "Missing blank line in safeTrunc (CS-0010)"
-    status: FIXED
-    fix_applied: "Added blank line between `if` block and `return` in safeTrunc helper in basic/main.go."
-post_fix_validation:
-  build: pass
-  vet: pass (0 issues)
-  lint: pass (0 issues)
-  tests: 214/214 pass
-  race: pass
-  sanity_run: all three binaries exit 0 without ENV
-  go_sum_diff: empty
+reviewer: code-reviewer (aggregated)
+verdict: APPROVED_WITH_COMMENTS
+
+previous_review_history:
+  - pass: 1
+    date: "2026-05-19"
+    verdict: ALL_FIXED
+    note: >
+      First-pass review during /execute-prp: 2 WARNING + 1 SUGGESTION (CS-0010 missing blank
+      lines, CS-0002 naked return in readEnv); all fixed in commit cde5e5f.
+
 summary: >
-  All three examples compile cleanly, pass go vet, golangci-lint, and all 214 unit tests (including
-  race detector). Public API surface is correct — no direct internal package imports. Error handling,
-  graceful shutdown, slog adapter, open-methods awareness, safeTrunc safety, idempotent logout, and
-  the exitAfterDefer pattern are all implemented correctly. Two style-level findings (CS-0002 naked
-  returns in readEnv and CS-0010 missing blank lines after guard blocks) prevent a clean APPROVED.
-  No critical or security issues.
+  All three example packages (basic, http_middleware, grpc_interceptor) pass static analysis —
+  build, gofmt, go vet, and golangci-lint are clean, and the full 214-test suite passes with no
+  race conditions. No critical issues were found in any package. The http_middleware example has
+  four CS-0010 block-spacing warnings (missing blank lines after if/switch blocks) and one
+  ES-0110 suggestion (fmt.Sprintf to strconv.Itoa for the Retry-After header). The
+  grpc_interceptor example has one CS-0010 warning and three low-priority suggestions covering
+  magic timeout constants, a shared RPC context reused for Logout, and an abbreviated gRPC method
+  path in the README. The basic example is cleanest, with only two cosmetic suggestions:
+  safeTrunc appending an ellipsis even when no truncation occurs, and a README clarification
+  about deferred Close ordering. All functional concerns — graceful shutdown, goroutine lifecycle,
+  error handling, interceptor wiring, SDK public-API usage — are correctly implemented in every
+  package.
 
 files_reviewed:
-  - path: lib/examples/basic/main.go
-    verdict: APPROVED_WITH_COMMENTS
-    notes: "CS-0010 missing blank line after if-guard at line 34; CS-0002 naked return in readEnv at line 83."
-
-  - path: lib/examples/basic/README.md
-    verdict: APPROVED
-    notes: "Accurate What/Run/Expected-output/Notes structure. safeTrunc truncation explained."
-
-  - path: lib/examples/http_middleware/main.go
-    verdict: APPROVED_WITH_COMMENTS
-    notes: "CS-0010 missing blank line after if-guard at line 43. All other checks pass."
-
-  - path: lib/examples/http_middleware/README.md
-    verdict: APPROVED
-    notes: "Cookie path-scoping caveat is correctly explained. curl vs browser difference is noted."
-
-  - path: lib/examples/grpc_interceptor/main.go
-    verdict: APPROVED_WITH_COMMENTS
-    notes: "CS-0010 missing blank line after if-guard at line 90; CS-0002 naked return in readEnv at line 139."
-
-  - path: lib/examples/grpc_interceptor/README.md
-    verdict: APPROVED
-    notes: "Correct statement about Health/Check and /Watch being open by default. Ephemeral port noted."
-
-  - path: Makefile
-    verdict: APPROVED
-    notes: "clean removes .temp/examples/; build-examples outputs to .temp/examples/<name>. Both correct."
+  - lib/examples/basic/main.go
+  - lib/examples/basic/README.md
+  - lib/examples/http_middleware/main.go
+  - lib/examples/http_middleware/README.md
+  - lib/examples/grpc_interceptor/main.go
+  - lib/examples/grpc_interceptor/README.md
+  - Makefile
 
 static_analysis:
   build:
     status: pass
+    command: "make build-examples"
+    note: "All 3 example binaries built into .temp/examples/ — confirmed across all three sub-agents."
     errors: []
-    command: "go build ./lib/examples/..."
-
   fmt:
     status: pass
-    files_need_formatting: []
     command: "gofmt -l lib/examples/*/main.go"
-
+    files_need_formatting: []
   vet:
     status: pass
+    command: "go vet ./lib/examples/..."
     errors: []
-    command: "go vet ./..."
-
   lint:
     status: pass
+    command: "golangci-lint run ./lib/examples/... --timeout=5m"
     issues: []
-    command: "golangci-lint run ./... --timeout=5m"
-
   tests:
     status: pass
-    failed: []
-    coverage: "214 tests pass (0 failed)"
     command: "make audit"
+    total: 214
+    passed: 214
+    failed: []
+    coverage: "n/a (example binaries — no test files)"
 
 issues:
   critical: []
 
   warnings:
-    - id: 1
+    - id: CR-001
+      original_id: HTTPM-W001
+      source_package: lib/examples/http_middleware
       severity: WARNING
       category: STYLE
-      file: lib/examples/basic/main.go
-      line: 34
       standard: "coding_style.md CS-0010"
-      title: "Missing blank line after if-guard block before defer"
+      file: lib/examples/http_middleware/main.go
+      line: 32
+      title: "Missing blank line after guard-clause if block (CS-0010)"
       description: >
-        The closing brace of `if err != nil` (authclient.New error guard, line 34) is
-        immediately followed by `defer func() {` on line 35 without a blank line.
-        CS-0010 requires an empty line after if/for/switch/select blocks.
-        The same pattern repeats in http_middleware (line 43) and grpc_interceptor (line 90).
+        The guard clause `if endpoint == "" { ... return 0 }` is immediately followed by
+        `addr := getenvOr(...)` on the next line with no blank line separating them.
+        CS-0010 requires an empty line after every `if` block. The exception applies
+        only to `if err != nil` error-check pairs, not to arbitrary guard clauses.
       current_code: |
-        client, err := authclient.New(authclient.Config{Endpoint: endpoint})
-        if err != nil {
-            fmt.Fprintf(os.Stderr, "authclient.New: %v\n", err)
-            return 1
+        if endpoint == "" {
+            usage()
+            return 0
         }
-        defer func() {   // <- missing blank line after closing brace above
-            if cerr := client.Close(); cerr != nil {
-                fmt.Fprintf(os.Stderr, "client.Close: %v\n", cerr)
-            }
-        }()
-      fix_recommendation: |
-        Add a blank line after the closing brace of the guard block:
-
-        if err != nil {
-            fmt.Fprintf(os.Stderr, "authclient.New: %v\n", err)
-            return 1
+        addr := getenvOr("HTTP_ADDR", ":8080")
+      recommended_fix: |
+        if endpoint == "" {
+            usage()
+            return 0
         }
 
-        defer func() {
-            if cerr := client.Close(); cerr != nil {
-                fmt.Fprintf(os.Stderr, "client.Close: %v\n", cerr)
-            }
-        }()
+        addr := getenvOr("HTTP_ADDR", ":8080")
 
-        Apply the same fix at:
-          - lib/examples/http_middleware/main.go line 43
-          - lib/examples/grpc_interceptor/main.go line 90
-
-    - id: 2
+    - id: CR-002
+      original_id: HTTPM-W002
+      source_package: lib/examples/http_middleware
       severity: WARNING
       category: STYLE
-      file: lib/examples/basic/main.go
-      line: 83
-      standard: "coding_style.md CS-0002"
-      title: "Naked return in readEnv() — identical violation in grpc_interceptor"
+      standard: "coding_style.md CS-0010"
+      file: lib/examples/http_middleware/main.go
+      line: 146
+      title: "Missing blank line after switch block (CS-0010)"
       description: >
-        readEnv() uses named return parameters (endpoint, email, password string, ok bool)
-        and terminates with a bare `return` statement (line 83). CS-0002 forbids naked
-        returns. The identical function in lib/examples/grpc_interceptor/main.go:139
-        has the same violation.
+        The `switch` block handling login errors (lines 130-146) is immediately followed
+        by `authclient.SetRefreshCookie(...)` on line 147 with no blank line.
+        CS-0010 requires an empty line after switch blocks.
       current_code: |
-        func readEnv() (endpoint, email, password string, ok bool) {
-            endpoint = os.Getenv("AUTH_ENDPOINT")
-            email    = os.Getenv("AUTH_TEST_EMAIL")
-            password = os.Getenv("AUTH_TEST_PASSWORD")
-            ok = endpoint != "" && email != "" && password != ""
-            return   // <- naked return
+        switch {
+        case errors.Is(err, authclient.ErrInvalidToken):
+            http.Error(w, "invalid credentials", http.StatusUnauthorized)
+            return
+        // ... other cases ...
+        case err != nil:
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
         }
-      fix_recommendation: |
-        Use an explicit return statement with the named values, or restructure to avoid
-        named returns entirely:
-
-        // Option A: explicit named-return (keep named params, add values):
-        func readEnv() (endpoint, email, password string, ok bool) {
-            endpoint = os.Getenv("AUTH_ENDPOINT")
-            email    = os.Getenv("AUTH_TEST_EMAIL")
-            password = os.Getenv("AUTH_TEST_PASSWORD")
-            ok = endpoint != "" && email != "" && password != ""
-            return endpoint, email, password, ok
+        authclient.SetRefreshCookie(w, out.RefreshToken)
+      recommended_fix: |
+        switch {
+        // ... cases unchanged ...
+        case err != nil:
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
         }
 
-        // Option B: drop named returns (cleaner):
-        func readEnv() (string, string, string, bool) {
-            endpoint := os.Getenv("AUTH_ENDPOINT")
-            email    := os.Getenv("AUTH_TEST_EMAIL")
-            password := os.Getenv("AUTH_TEST_PASSWORD")
-            return endpoint, email, password, endpoint != "" && email != "" && password != ""
+        authclient.SetRefreshCookie(w, out.RefreshToken)
+
+    - id: CR-003
+      original_id: HTTPM-W003
+      source_package: lib/examples/http_middleware
+      severity: WARNING
+      category: STYLE
+      standard: "coding_style.md CS-0010"
+      file: lib/examples/http_middleware/main.go
+      line: 181
+      title: "Missing blank line after guard-clause if block in profileHandler (CS-0010)"
+      description: >
+        In `profileHandler`, the guard `if !ok { http.Error(...); return }` (lines 178-181)
+        is immediately followed by `writeJSON(...)` on line 182 with no blank line.
+        CS-0010 requires an empty line after if blocks; the exception covers only
+        `if err != nil` error-check pairs, not boolean-flag guards.
+      current_code: |
+        user, ok := authclient.UserFromContext(r.Context())
+        if !ok {
+            http.Error(w, "no user", http.StatusInternalServerError)
+            return
+        }
+        writeJSON(w, http.StatusOK, map[string]string{
+      recommended_fix: |
+        user, ok := authclient.UserFromContext(r.Context())
+        if !ok {
+            http.Error(w, "no user", http.StatusInternalServerError)
+            return
         }
 
-        Apply the same fix at lib/examples/grpc_interceptor/main.go:139.
+        writeJSON(w, http.StatusOK, map[string]string{
+
+    - id: CR-004
+      original_id: HTTPM-W004
+      source_package: lib/examples/http_middleware
+      severity: WARNING
+      category: STYLE
+      standard: "coding_style.md CS-0010"
+      file: lib/examples/http_middleware/main.go
+      line: 200
+      title: "Missing blank line after if block in getenvOr (CS-0010)"
+      description: >
+        In `getenvOr`, the if block (lines 198-200) is immediately followed by
+        `return def` on line 201 with no blank line. CS-0010 applies to all if blocks.
+      current_code: |
+        func getenvOr(key, def string) string {
+            if v := os.Getenv(key); v != "" {
+                return v
+            }
+            return def
+        }
+      recommended_fix: |
+        func getenvOr(key, def string) string {
+            if v := os.Getenv(key); v != "" {
+                return v
+            }
+
+            return def
+        }
+
+    - id: CR-005
+      original_id: GRPC-W001
+      source_package: lib/examples/grpc_interceptor
+      severity: WARNING
+      category: STYLE
+      standard: "coding_style.md CS-0010"
+      file: lib/examples/grpc_interceptor/main.go
+      line: 125
+      title: "CS-0010: Missing empty line after if guard clause (line 125)"
+      description: >
+        The closing brace of the RPC3 assertion guard clause (line 125) is immediately
+        followed by a fmt.Printf call on line 126 without an intervening empty line.
+        CS-0010 requires an empty line after every if/switch/select/for block, including
+        guard clauses.
+      current_code: |
+        if !ok || st.Code() != codes.Unauthenticated {
+            fmt.Fprintf(os.Stderr, "RPC3 Health/List without token: expected Unauthenticated, got %v\n", err)
+            return 1
+        }
+        fmt.Printf("RPC3 Health/List (no metadata) -> %s (as expected)\n", st.Code())
+      recommended_fix: |
+        if !ok || st.Code() != codes.Unauthenticated {
+            fmt.Fprintf(os.Stderr, "RPC3 Health/List without token: expected Unauthenticated, got %v\n", err)
+            return 1
+        }
+
+        fmt.Printf("RPC3 Health/List (no metadata) -> %s (as expected)\n", st.Code())
 
   suggestions:
-    - id: 3
+    - id: CR-006
+      original_id: BASIC-S001
+      source_package: lib/examples/basic
       severity: SUGGESTION
-      category: STYLE
+      category: LOGIC
       file: lib/examples/basic/main.go
-      line: 94
-      standard: "coding_style.md CS-0010"
-      title: "Missing blank line after if block in safeTrunc"
+      line: 93
+      title: "safeTrunc appends ellipsis even when string is not truncated"
       description: >
-        In the safeTrunc helper the closing brace of `if n > len(s)` (line 94)
-        is directly followed by the return statement on line 95 without a blank line.
-        CS-0010 applies here too, though safeTrunc is a tiny private helper and the
-        impact on readability is minimal.
+        When the input string is shorter than n (e.g. a token of length 3 with n=8),
+        the guard clamps n to len(s) and returns s[:len(s)] + "..." — i.e. the full
+        string with an appended ellipsis. The ellipsis is only semantically correct when
+        actual truncation occurred. In the current demo the access token will always be a
+        full JWT (100+ chars) so this never triggers in practice, but the function
+        contract is subtly wrong and would mislead a future reader or reuser.
       current_code: |
+        // existing: clamps n but still appends ellipsis unconditionally
+      recommended_fix: |
         func safeTrunc(s string, n int) string {
-            if n > len(s) {
-                n = len(s)
-            }
-            return s[:n] + "…"   // <- missing blank line after if block
-        }
-      fix_recommendation: |
-        func safeTrunc(s string, n int) string {
-            if n > len(s) {
-                n = len(s)
+            if len(s) <= n {
+                return s
             }
 
-            return s[:n] + "…"
+            return s[:n] + "..."
         }
+
+    - id: CR-007
+      original_id: BASIC-S002
+      source_package: lib/examples/basic
+      severity: SUGGESTION
+      category: DOCUMENTATION
+      file: lib/examples/basic/README.md
+      line: 33
+      title: "README expected output prints 'Close ok' before Close actually executes"
+      description: >
+        Line 75 of main.go prints "step 5: Close ok (deferred)" while still inside run(),
+        before the deferred client.Close() has fired. The README reproduces this line in
+        the expected output without a clarifying note, which could confuse a reader into
+        thinking the print is emitted by or after the Close call. The parenthetical
+        "(deferred)" in the message itself partially mitigates this, but the README
+        expected-output block has no note about the ordering.
+      recommended_fix: |
+        Add a brief comment in the ## Expected output section, for example:
+
+            step 5: Close ok (deferred)
+
+        *(This line is printed before `client.Close()` runs; the actual Close happens
+        after `run()` returns, inside the deferred closure.)*
+
+        Alternatively rename the log message in main.go to be less ambiguous:
+            fmt.Println("step 5: defer Close registered -- will run on exit")
+
+    - id: CR-008
+      original_id: HTTPM-S001
+      source_package: lib/examples/http_middleware
+      severity: SUGGESTION
+      category: PERFORMANCE
+      standard: "effective_standards.md ES-0110"
+      file: lib/examples/http_middleware/main.go
+      line: 136
+      title: "Use strconv.Itoa instead of fmt.Sprintf for Retry-After header value (ES-0110)"
+      description: >
+        `fmt.Sprintf("%d", int(d.Seconds()))` performs an integer-to-string conversion.
+        ES-0110 recommends `strconv.Itoa` or `strconv.FormatInt` over `fmt.Sprintf` for
+        numeric conversions — it is faster, allocates less, and expresses intent clearly.
+        The `strconv` package is already available as a stdlib import.
+      current_code: |
+        w.Header().Set("Retry-After", fmt.Sprintf("%d", int(d.Seconds())))
+      recommended_fix: |
+        w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())))
+        // Add "strconv" to the import block.
+
+    - id: CR-009
+      original_id: GRPC-S001
+      source_package: lib/examples/grpc_interceptor
+      severity: SUGGESTION
+      category: STYLE
+      standard: "coding_style.md CS-0003"
+      file: lib/examples/grpc_interceptor/main.go
+      line: 54
+      title: "CS-0003: Inline timeout durations are magic numbers"
+      description: >
+        The literal values 10*time.Second (loginCtx, line 54) and 5*time.Second (rpcCtx,
+        line 101) are magic numbers. CS-0003 permits 0, 1, 2, and 0.5 without a constant,
+        but all other numeric literals should be named. In an SDK example this adds clarity
+        about the intended purpose of each timeout (login vs. in-process RPC).
+      current_code: |
+        loginCtx, cancelLogin := context.WithTimeout(context.Background(), 10*time.Second)
+        // ...
+        rpcCtx, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+      recommended_fix: |
+        const (
+            loginTimeout = 10 * time.Second
+            rpcTimeout   = 5 * time.Second
+        )
+
+        loginCtx, cancelLogin := context.WithTimeout(context.Background(), loginTimeout)
+        // ...
+        rpcCtx, cancelRPC := context.WithTimeout(context.Background(), rpcTimeout)
+
+    - id: CR-010
+      original_id: GRPC-S002
+      source_package: lib/examples/grpc_interceptor
+      severity: SUGGESTION
+      category: LOGIC
+      standard: "effective_concurrency.md EC-0053"
+      file: lib/examples/grpc_interceptor/main.go
+      line: 128
+      title: "Logout reuses rpcCtx shared with 3 preceding RPCs"
+      description: >
+        client.Logout at line 128 reuses rpcCtx, which was created with a 5-second timeout
+        at line 101. By the time Logout is called, the context may have only seconds (or
+        less) of budget remaining, depending on how long the three RPCs took. For an
+        in-process example this is unlikely to cause a real timeout, but it is a pattern
+        mismatch: login is given its own 10-second context while Logout, which is
+        semantically a separate I/O operation, piggybacks on the shared RPC context.
+      current_code: |
+        rpcCtx, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancelRPC()
+        // ... three RPCs ...
+        if lerr := client.Logout(rpcCtx, out.RefreshToken); lerr != nil {
+      recommended_fix: |
+        // Separate timeout for the cleanup logout call
+        logoutCtx, cancelLogout := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancelLogout()
+        if lerr := client.Logout(logoutCtx, out.RefreshToken); lerr != nil {
+
+    - id: CR-011
+      original_id: GRPC-S003
+      source_package: lib/examples/grpc_interceptor
+      severity: SUGGESTION
+      category: DOCUMENTATION
+      standard: "coding_style.md CS-0021"
+      file: lib/examples/grpc_interceptor/README.md
+      line: 11
+      title: "README: /Watch full method path is inconsistently abbreviated"
+      description: >
+        Line 11 reads: "`/grpc.health.v1.Health/Check` and `/Watch` are in the SDK's
+        default open-methods registry". The second method is written as `/Watch` instead
+        of its full path `/grpc.health.v1.Health/Watch`. The full method string is what
+        the SDK registers in defaultOpenMethods (lib/client.go) and what consumers would
+        use in WithOpenMethods calls. Abbreviated forms may confuse readers who call
+        WithOpenMethods with the short form, which would not match.
+      current_code: |
+        `/grpc.health.v1.Health/Check` and `/Watch` are in the SDK's default open-methods
+        registry (no auth needed).
+      recommended_fix: |
+        `/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch` are in the
+        SDK's default open-methods registry (no auth needed).
 
 statistics:
   critical: 0
-  warning: 2
-  suggestions: 1
+  warning: 5
+  suggestions: 6
+  packages_reviewed: 3
 
-positive:
-  - "All three examples compile cleanly and pass full audit (vet + lint + 214 tests + race)."
-  - "No direct imports of lib/internal/* from examples — public API surface is clean."
-  - "exitAfterDefer pattern (main calls only os.Exit(run())) is applied correctly in all three files."
-  - "Error handling is thorough: client.Close, conn.Close, grpcSrv.Serve, srv.Shutdown, writeJSON encoder, and Logout are all handled explicitly — no silent discards."
-  - "slogAdapter in http_middleware correctly satisfies authclient.Logger: Error prepends the err argument before variadic fields, matching the interface signature exactly."
-  - "Graceful shutdown in http_middleware uses signal.NotifyContext + buffered serverErr channel + srv.Shutdown with timeout context — textbook EC-0080/EC-0082 pattern."
-  - "Goroutine in http_middleware has a clean exit path on both signal and error branches; no goroutine leak."
-  - "Goroutine in grpc_interceptor exits cleanly because grpcSrv.GracefulStop() (deferred) unblocks grpcSrv.Serve — no WaitGroup needed."
-  - "grpc_interceptor correctly uses Health/List as the protected method, with Check/Watch as the default open methods per SDK contract."
-  - "safeTrunc clamps n to len(s) before slicing — no out-of-bounds panic possible."
-  - "Idempotent logout in http_middleware logoutHandler correctly swallows ErrInvalidToken to avoid 500 on already-invalidated cookies."
-  - "No nolint directives anywhere in the examples."
-  - "All top-level identifiers are unexported (lowercase) — only main() is present as expected for a main package."
-  - "Package-level doc comment is present in all three main.go files describing what each example demonstrates."
-  - "Makefile build-examples outputs to .temp/examples/<name> and clean target removes .temp/examples/ — consistent with stated requirements."
-  - "README files are concise, accurate, and include What/Run/Expected-output/Notes sections."
-  - "Cookie path-scoping caveat in http_middleware README is technically correct and clearly explained."
+positive_by_package:
+  lib/examples/basic:
+    - "exitAfterDefer pattern is correctly implemented: main() does only os.Exit(run()),
+      ensuring all defers in run() fire before process exit."
+    - "client.Close() error is fully handled inside the deferred closure, satisfying ES-0060."
+    - "No //nolint directives anywhere in the file."
+    - "No lib/internal/* imports; the example uses only the public authclient.* surface."
+    - "Token logging safety: safeTrunc correctly clamps n to len(s) before slicing,
+      preventing index-out-of-range panics and limiting token exposure to 8 chars."
+    - "Package doc present at line 1 and starts with 'Package main' as required."
+    - "No exported identifiers other than main; all helpers are unexported."
+    - "CS-0002 confirmed resolved: readEnv() uses named return params with explicit return
+      values — not a naked return."
+    - "CS-0010 confirmed resolved: all if/switch blocks from the first-pass review are
+      followed by a blank line."
+    - "README is 43 lines (under 50-line limit) and contains all five required sections:
+      What, Prerequisites, Run, Expected output, Notes."
+    - "ErrInvalidToken and ErrRateLimited are handled with typed switch in Login error path,
+      demonstrating proper use of SDK sentinel errors."
+    - "30-second context timeout and '127.0.0.1' demo IP are clearly annotated as demo-only
+      values; no unexplained magic numbers."
 
-rules_verified:
-  effective_standards:
-    checked: true
-    total_rules: 45
-    rules_applied:
-      - "ES-0001"  # gofmt clean
-      - "ES-0010"  # package names lowercase
-      - "ES-0011"  # exported vs unexported
-      - "ES-0014"  # one-method interface naming
-      - "ES-0015"  # MixedCaps
-      - "ES-0020"  # initialization in conditions
-      - "ES-0021"  # guard clauses / early return
-      - "ES-0022"  # minimize variable scope
-      - "ES-0040"  # return (value, error)
-      - "ES-0042"  # defer for resource cleanup
-      - "ES-0043"  # no defer inside loops
-      - "ES-0050"  # keep interfaces small
-      - "ES-0051"  # interface at consumer
-      - "ES-0052"  # type assertions comma-ok
-      - "ES-0053"  # compile-time assertion (var _ Logger = slogAdapter{})
-      - "ES-0054"  # no pointer to interface
-      - "ES-0055"  # no generalized interfaces in provider
-      - "ES-0060"  # handle errors explicitly
-      - "ES-0061"  # wrap errors with context
-      - "ES-0062"  # sentinel errors
-      - "ES-0063"  # no panic in production
-      - "ES-0080"  # doc comments
-      - "ES-0081"  # start doc comment with name
-      - "ES-0110"  # strconv vs fmt
-      - "ES-0120"  # functional options
-      - "ES-0130"  # import order
-      - "ES-0131"  # import aliases
-      - "ES-0140"  # constructor name New
-    critical_rules_checked:
-      - "ES-0051"  # Interface at consumer — N/A (main packages, no provider interfaces)
-      - "ES-0060"  # Handle errors explicitly — PASS
-      - "ES-0063"  # No panic — PASS
+  lib/examples/http_middleware:
+    - "Correct gocritic exitAfterDefer pattern: main() contains only os.Exit(run()); all
+      defers in run() execute normally."
+    - "Compile-time interface assertion var _ authclient.Logger = slogAdapter{} catches
+      signature drift at build time."
+    - "slogAdapter.Error correctly prepends the err as a structured 'error' key before
+      variadic fields, matching the SDK Logger contract."
+    - "Graceful shutdown is textbook: signal.NotifyContext + buffered(1) serverErr channel
+      + srv.Shutdown with 5s timeout context."
+    - "Buffered channel serverErr(1) prevents the server goroutine from blocking if nobody
+      drains after srv.Shutdown returns."
+    - "Idempotent logout: errors.Is(lerr, authclient.ErrInvalidToken) correctly swallows
+      the stale-cookie error."
+    - "ReadHeaderTimeout: 5s protects against Slowloris without requiring external middleware."
+    - "Method-prefixed mux routing (POST /auth/login, GET /api/profile) leverages Go 1.22+
+      enhanced ServeMux safely on go 1.25."
+    - "Package doc comment is present, starts with 'Package main', and describes all three
+      endpoints plus the demonstrated patterns."
+    - "README is accurate: cookie path /auth/refresh claim verified against
+      lib/cookies.go defaultRefreshCookiePath; curl examples are runnable."
+    - "No exported identifiers in an example package — correct since it is package main."
+    - "No //nolint directives — clean lint posture maintained."
 
-  effective_concurrency:
-    checked: true
-    total_rules: 35
-    concurrency_detected: true
-    trigger_found:
-      - "go func"
-      - "chan "
-      - "<-"
-      - "select {"
-    rules_applied:
-      - "EC-0010"  # goroutine lifecycle
-      - "EC-0011"  # cancel context
-      - "EC-0012"  # no goroutine leaks
-      - "EC-0013"  # check ctx.Done
-      - "EC-0020"  # buffered channel justification
-      - "EC-0050"  # context as first parameter
-      - "EC-0051"  # no context in struct
-      - "EC-0052"  # context.Background as root
-      - "EC-0053"  # reasonable timeouts
-      - "EC-0055"  # always call cancel
-      - "EC-0080"  # shutdown via context cancellation
-      - "EC-0081"  # wait for goroutines
-      - "EC-0082"  # handle OS signals
-      - "EC-0091"  # capture loop variables (N/A — no loops with goroutines)
-      - "EC-0092"  # no unprotected shared state
-    rules_skipped:
-      - "EC-0030"  # mutex zero value (no mutex used)
-      - "EC-0031"  # embedding mutex (no mutex used)
-      - "EC-0032"  # max 3 mutex per struct (no mutex)
-      - "EC-0033"  # defer mu.Unlock (no mutex)
-      - "EC-0034"  # RWMutex (no mutex)
-      - "EC-0040"  # wg.Add before go (no WaitGroup)
-      - "EC-0041"  # errgroup (no WaitGroup)
-      - "EC-0060"  # atomic for counters (no atomics)
-      - "EC-0061"  # atomic vs mutex (no atomics)
-      - "EC-0062"  # Swap for entry guards (no atomics)
-      - "EC-0063"  # don't mix atomic and mutex (no atomics)
-      - "EC-0064"  # max 1 mutex per method (no mutex)
-      - "EC-0070"  # fixed worker count (no worker pool)
-      - "EC-0071"  # semaphores (no concurrency limiting)
-      - "EC-0100"  # t.Parallel (not test files)
-      - "EC-0101"  # t.Parallel shared state (not test files)
-      - "EC-0102"  # synctest (not test files)
-    skip_reason: "mutex/atomic/WaitGroup not used; EC-01xx skipped — no test files in scope"
-    critical_rules_checked:
-      - "EC-0010"  # Goroutine lifecycle — PASS
-      - "EC-0012"  # No goroutine leaks — PASS
-      - "EC-0051"  # No context in struct — PASS
-      - "EC-0081"  # Wait for goroutines — PASS (GracefulStop blocks; buffered chan + close pattern)
-      - "EC-0091"  # Capture loop variables — N/A
+  lib/examples/grpc_interceptor:
+    - "exitAfterDefer pattern correctly implemented: main() is a single os.Exit(run()) call."
+    - "All three error-producing defers (client.Close, conn.Close, grpcSrv.GracefulStop) are
+      properly handled without silent discards — satisfies ES-0060."
+    - "Goroutine lifecycle is clean: Serve goroutine is guaranteed to unblock via
+      defer grpcSrv.GracefulStop() registered immediately after launch (EC-0012)."
+    - "grpc.Server.Serve() returns nil (not ErrServerStopped) during normal GracefulStop
+      — no spurious stderr output on happy path."
+    - "Ephemeral port 127.0.0.1:0 is the correct choice for CI-parallelism."
+    - "Metadata key 'authorization' is lowercase — gRPC HTTP/2 header compliance verified."
+    - "readEnv() uses named return values WITH explicit return (not naked return) —
+      CS-0002 satisfied."
+    - "SetServingStatus(\"\", SERVING) correctly enables Health/Check to return SERVING for
+      the empty-string (default) service."
+    - "RPC3 assertion uses status.FromError idiom correctly — handles both nil error
+      (ok=true, code=OK != Unauthenticated) and non-status error (ok=false) paths."
+    - "Import order (stdlib / external grpc / internal authclient) is correct per ES-0130."
+    - "Makefile targets use tab indentation exclusively — verified via od output."
+    - "build-examples target names binaries .temp/examples/<name> (no example- prefix) and
+      clean removes the same path."
+    - "No //nolint annotations anywhere in scope."
+    - "make audit passes: 214/214 tests, 0 lint issues, go.sum unchanged."
 
-  coding_style:
-    checked: true
-    total_rules: 30
-    rules_applied:
-      - "CS-0001"  # line length <= 120 chars — PASS
-      - "CS-0002"  # explicit returns only — FAIL (readEnv naked returns)
-      - "CS-0003"  # no magic numbers — PASS (time durations in examples context is acceptable)
-      - "CS-0004"  # no global state — PASS
-      - "CS-0010"  # block spacing — FAIL (3 locations)
-      - "CS-0020"  # top-to-bottom readability — PASS
-      - "CS-0021"  # clear names — PASS
-      - "CS-0022"  # extract actions into functions — PASS
-      - "CS-0023"  # low cyclomatic complexity — PASS
-      - "CS-0024"  # no over-engineering — PASS
-      - "CS-0030"  # no linter config changes — PASS
-      - "CS-0031"  # no nolint without justification — PASS (no nolint at all)
-      - "CS-0040"  # anon functions <= 5 lines — PASS
-      - "CS-0050"  # entity in separate package — N/A (main packages)
-      - "CS-0060"  # godoc for public methods — PASS (package-level doc present)
-      - "CS-0061"  # gofmt + golangci-lint — PASS
-      - "CS-0070"  # English naming — PASS
-      - "CS-0071"  # meaningful variable names — PASS
-      - "CS-0072"  # idiomatic casing — PASS
-      - "CS-0082"  # function length < 80 lines — PASS
-      - "CS-0111"  # no restating-the-obvious inline comments — PASS
-      - "CS-0112"  # no decorative separators — PASS
-      - "CS-0110"  # no internal standard refs in comments — PASS
+execution_metrics:
+  agents:
+    - package: lib/examples/basic
+      agent: code-reviewer
+      duration_ms: 109941
+      tokens: 43509
+    - package: lib/examples/http_middleware
+      agent: code-reviewer
+      duration_ms: 248376
+      tokens: 97001
+    - package: lib/examples/grpc_interceptor
+      agent: code-reviewer
+      duration_ms: 297003
+      tokens: 95077
+  total:
+    duration_ms: 655320
+    tokens: 235587
 
-  dba_rules:
-    checked: false
-    database: null
-    rules_applied: []
-    skip_reason: "No database code in scope — examples are pure gRPC/HTTP SDK wrappers."
+verdict_reason: >
+  No critical issues across all three packages. Five CS-0010 block-spacing warnings require
+  blank lines after if/switch blocks (four in http_middleware, one in grpc_interceptor). Six
+  low-priority suggestions cover safeTrunc edge-case (CR-006), README Close ordering
+  clarification (CR-007), strconv.Itoa for Retry-After (CR-008), named timeout constants
+  (CR-009), per-call context budget for Logout (CR-010), and full gRPC method path in README
+  (CR-011). All functional concerns are correctly implemented. Spacing warnings should be
+  addressed before merge.
 
-  devops_rules:
-    checked: false
-    rules_applied: []
-    skip_reason: "No Docker or Kubernetes manifests in scope."
+next_actions:
+  - "Fix CR-001 through CR-005: add missing blank lines after if/switch blocks (CS-0010) in
+    http_middleware/main.go (lines 32, 146, 181, 200) and grpc_interceptor/main.go (line 125)."
+  - "Consider CR-008: replace fmt.Sprintf with strconv.Itoa for Retry-After header in
+    http_middleware/main.go:136."
+  - "Consider CR-006: fix safeTrunc to return the original string without ellipsis when no
+    truncation occurs (basic/main.go:93)."
+  - "Consider CR-009 + CR-010: extract named timeout constants and give Logout its own context
+    in grpc_interceptor/main.go."
+  - "Consider CR-007 + CR-011: clarify README ordering note for deferred Close
+    (basic/README.md:33) and expand /Watch to full method path
+    (grpc_interceptor/README.md:11)."

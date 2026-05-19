@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -30,6 +31,7 @@ func run() int {
 		usage()
 		return 0
 	}
+
 	addr := getenvOr("HTTP_ADDR", ":8080")
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
@@ -133,7 +135,7 @@ func loginHandler(c *authclient.Client) http.HandlerFunc {
 			return
 		case errors.Is(err, authclient.ErrRateLimited):
 			if d := authclient.RetryAfter(err); d > 0 {
-				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(d.Seconds())))
+				w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())))
 			}
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return
@@ -144,6 +146,7 @@ func loginHandler(c *authclient.Client) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 		authclient.SetRefreshCookie(w, out.RefreshToken)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"access_token":       out.AccessToken,
@@ -179,6 +182,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no user", http.StatusInternalServerError)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
 		"uuid": user.UUID,
 		"role": string(user.Role),
@@ -198,6 +202,7 @@ func getenvOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
+
 	return def
 }
 
