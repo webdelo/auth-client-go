@@ -64,6 +64,30 @@ func TestIPFromRequest(t *testing.T) {
 			remoteAddr: "192.0.2.1:54321",
 			want:       "203.0.113.1",
 		},
+		"x_real_ip_with_whitespace_trimmed": {
+			xRealIP: " 203.0.113.1 ",
+			want:    "203.0.113.1",
+		},
+		"x_real_ip_invalid_falls_through_to_xff": {
+			xRealIP: "not-an-ip",
+			xff:     "198.51.100.7",
+			want:    "198.51.100.7",
+		},
+		"x_real_ip_invalid_falls_through_to_remote_addr": {
+			xRealIP:    "not-an-ip",
+			remoteAddr: "192.0.2.1:54321",
+			want:       "192.0.2.1",
+		},
+		"xff_invalid_falls_through_to_remote_addr": {
+			xff:        "not-an-ip",
+			remoteAddr: "192.0.2.1:54321",
+			want:       "192.0.2.1",
+		},
+		"x_real_ip_empty_after_trim_falls_through": {
+			xRealIP:    "   ",
+			remoteAddr: "192.0.2.1:54321",
+			want:       "192.0.2.1",
+		},
 	}
 
 	for name, tc := range tests {

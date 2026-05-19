@@ -37,6 +37,12 @@ func WithCookiePath(path string) CookieOption {
 // to integer seconds via maxAge.Seconds(); fractional seconds are truncated.
 // Negative durations expire the cookie immediately — use ClearRefreshCookie
 // to delete instead of passing a negative duration here.
+//
+// Zero duration produces a session cookie (MaxAge=0 means "unset" per
+// RFC 6265 §5.2.2 and the net/http Cookie godoc), which expires when the
+// browser session ends rather than after 14 days. To restore the 14-day
+// default, do not call WithCookieMaxAge at all. To expire immediately,
+// use a negative duration or call ClearRefreshCookie instead.
 func WithCookieMaxAge(maxAge time.Duration) CookieOption {
 	return func(c *http.Cookie) { c.MaxAge = int(maxAge.Seconds()) }
 }

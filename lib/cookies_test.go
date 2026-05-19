@@ -119,6 +119,16 @@ func TestSetRefreshCookie(t *testing.T) {
 				assert.True(t, c.HttpOnly)
 			},
 		},
+		"base64url_token_value": {
+			token: "AbCdEf123-_.=+/xYz",
+			opts:  nil,
+			want: func(t *testing.T, c *http.Cookie) {
+				assert.Equal(t, "AbCdEf123-_.=+/xYz", c.Value,
+					"base64url-shaped tokens with - _ . = + / must round-trip through Result().Cookies() without corruption")
+				assert.True(t, c.Secure)
+				assert.True(t, c.HttpOnly)
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -204,6 +214,40 @@ func TestClearRefreshCookie(t *testing.T) {
 			cookies := rec.Result().Cookies()
 			require.Len(t, cookies, 1, "exactly one Set-Cookie header expected")
 			tc.want(t, cookies[0])
+		})
+	}
+}
+
+func TestSetRefreshCookie_SecurityRegressionGuard(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		opts []authclient.CookieOption
+	}{
+		"happy_path": {opts: nil},
+		"with_many_options_still_secure": {
+			opts: []authclient.CookieOption{
+				authclient.WithCookieDomain(".webdelo.trade"),
+				authclient.WithCookiePath("/x"),
+				authclient.WithCookieMaxAge(time.Hour),
+				authclient.WithCookieSameSite(http.SameSiteLaxMode),
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			authclient.SetRefreshCookie(rec, "tok", tc.opts...)
+
+			cookies := rec.Result().Cookies()
+			require.Len(t, cookies, 1)
+			assert.True(t, cookies[0].Secure, "Secure must always be true regardless of options")
+			assert.True(t, cookies[0].HttpOnly, "HttpOnly must always be true regardless of options")
 		})
 	}
 }

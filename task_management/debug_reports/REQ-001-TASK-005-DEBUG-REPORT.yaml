@@ -1,0 +1,200 @@
+metadata:
+  task_id: REQ-001-TASK-005
+  report_date: "2026-05-19"
+  source_report: task_management/reviews/REQ-001-TASK-005-CODE-REVIEW.yaml
+  rerun_report: .memory_bank/agent_task_results/2026-05-19_code-review-rerun_REQ-001-TASK-005_lib.yaml
+  branch: feature/req-001-task-005
+  worktree: .worktrees/REQ-001-TASK-005
+  packages:
+    - lib
+
+pre_validation:
+  build: PASS  # make build target not defined for lib-type project; go vet covers
+  test: PASS   # 165/165
+  lint: PASS   # 0 issues
+  race: PASS   # 165/165
+  notes: "Baseline clean before fixes. Initial code review had 0 critical / 0 warning / 6 suggestions."
+
+execution_plan:
+  approach: "Two waves with cross-dependency: CR-005 (test cases for new validation) depends on CR-003 (source code adds the validation)."
+  waves:
+    - wave: 1
+      agents:
+        - agent: unit-test-writer
+          model: sonnet
+          scope: lib/cookies_test.go
+          issues: [CR-002]
+          rationale: "Standalone security regression test, independent of source changes."
+        - agent: code-writer
+          model: sonnet
+          scope: lib/helpers.go
+          issues: [CR-003]
+          rationale: "Source-code change; CR-005 tests must follow."
+        - agent: refactorer
+          model: haiku
+          scope: lib/cookies.go
+          issues: [CR-006]
+          rationale: "Godoc-only change, no logic. Independent of other fixes."
+    - wave: 2
+      agents:
+        - agent: unit-test-writer
+          model: sonnet
+          scope: lib/cookies_test.go
+          issues: [CR-004]
+          rationale: "Add base64url round-trip test case to TestSetRefreshCookie."
+        - agent: unit-test-writer
+          model: sonnet
+          scope: lib/helpers_test.go
+          issues: [CR-005]
+          rationale: "5 new test cases exercising the validation paths added by CR-003."
+
+fixes:
+  - id: CR-002
+    original_id: TR-LIB-002
+    severity: SUGGESTION
+    file: lib/cookies_test.go
+    status: FIXED
+    agent: unit-test-writer
+    summary: |
+      Added standalone TestSetRefreshCookie_SecurityRegressionGuard with 2 subtests
+      (happy_path, with_many_options_still_secure). Both assert Secure==true and
+      HttpOnly==true with descriptive failure messages. t.Parallel() at top-level
+      and in each subtest.
+
+  - id: CR-003
+    original_id: SA-LIB-001
+    severity: SUGGESTION
+    original_severity: LOW
+    file: lib/helpers.go
+    status: FIXED
+    agent: code-writer
+    summary: |
+      IPFromRequest now whitespace-trims and validates via net.ParseIP both
+      X-Real-IP and X-Forwarded-For first-entry values. Invalid (non-IP) or
+      empty-after-trim values fall through to the next source instead of being
+      forwarded to AUTH. r.RemoteAddr branch unchanged (stdlib guarantees
+      well-formed value). Godoc extended; SECURITY: paragraph preserved and
+      clarified to note ParseIP only rejects syntactic invalidity — spoofed
+      but syntactically valid IPs still require a trusted proxy.
+
+  - id: CR-004
+    original_id: SA-LIB-002
+    severity: SUGGESTION
+    original_severity: INFO
+    file: lib/cookies_test.go
+    status: FIXED
+    agent: unit-test-writer
+    summary: |
+      Added "base64url_token_value" case to TestSetRefreshCookie with token
+      "AbCdEf123-_.=+/xYz". Asserts c.Value round-trip equality via
+      rec.Result().Cookies(), guarding against future stdlib cookie-quoting
+      changes for refresh tokens containing base64url special characters.
+
+  - id: CR-005
+    original_id: SA-LIB-003
+    severity: SUGGESTION
+    original_severity: INFO
+    file: lib/helpers_test.go
+    status: FIXED
+    agent: unit-test-writer
+    summary: |
+      Added 5 new test cases to TestIPFromRequest exercising the new validation
+      paths from CR-003:
+        - x_real_ip_with_whitespace_trimmed
+        - x_real_ip_invalid_falls_through_to_xff
+        - x_real_ip_invalid_falls_through_to_remote_addr
+        - xff_invalid_falls_through_to_remote_addr
+        - x_real_ip_empty_after_trim_falls_through
+
+  - id: CR-006
+    original_id: SA-LIB-004
+    severity: SUGGESTION
+    original_severity: INFO
+    file: lib/cookies.go
+    status: FIXED
+    agent: refactorer
+    summary: |
+      Extended WithCookieMaxAge godoc with paragraph documenting that
+      MaxAge=0 produces a session cookie (per RFC 6265 §5.2.2 and net/http
+      Cookie godoc), and explaining how to restore default vs. expire
+      immediately. Function body unchanged.
+
+skipped:
+  - id: CR-001
+    original_id: TR-LIB-001
+    severity: SUGGESTION
+    reason: |
+      Original finding description explicitly states "No action is required" —
+      package-level test function naming (TestSetRefreshCookie, etc.) is
+      idiomatic Go and matches the PRP code patterns. The UT-0010
+      Test<Type>_<Method> convention applies only when the tested symbol is
+      a method on a named type; these helpers are package-level functions.
+      Finding was flagged "for traceability only".
+    user_consent: GRANTED
+    consent_evidence: |
+      User selected "Пропустить с фиксацией в репорте" via AskUserQuestion
+      on 2026-05-19. Explicit consent recorded.
+
+summary:
+  total_issues: 6
+  fixed: 5
+  skipped: 1
+  failed: 0
+  by_severity:
+    critical: 0/0
+    warning: 0/0
+    suggestion: 5/6 fixed, 1/6 skipped with consent
+
+final_validation:
+  build: PASS
+  test: PASS         # 174/174 (was 165, +9 new subtests)
+  lint: PASS         # 0 issues
+  race: PASS         # 174/174
+  vet: PASS
+  coverage:
+    lib_cookies_go: 100.0
+    lib_helpers_go: 100.0
+    lib_package: 97.1
+  go_mod_unchanged: true
+  go_sum_unchanged: true
+  nolint_count: 0
+
+code_review_rerun:
+  report: .memory_bank/agent_task_results/2026-05-19_code-review-rerun_REQ-001-TASK-005_lib.yaml
+  verdict: APPROVED
+  new_findings:
+    critical: 0
+    warning: 0
+    suggestion: 0
+  fixes_verified:
+    CR-002: PASS
+    CR-003: PASS
+    CR-004: PASS
+    CR-005: PASS
+    CR-006: PASS
+
+dod_validation:
+  status: PASS
+  criteria_checked: 15
+  criteria_met: 15
+  notes: |
+    All DOD criteria from TASK-005.md re-verified. Coverage of new files now
+    100% (still ≥90% threshold). Public API surface unchanged. Security
+    invariants (HttpOnly/Secure re-asserted after opts) preserved. PRP §G7
+    spoofing risk addressed deeper than initially planned via net.ParseIP
+    syntactic validation (does not replace trusted-proxy requirement).
+
+incidental_changes:
+  files:
+    - lib/client_test.go
+    - lib/interceptor_grpc_test.go
+    - lib/middleware_http_test.go
+    - lib/validate_integration_test.go
+    - lib/validate_test.go
+  description: |
+    `make fmt` (goimports) applied alphabetical reordering of imports within
+    third-party group ("github.com/stretchr/..." now before
+    "github.com/webdelo/..."). Import-only changes verified via code-reviewer.
+    No logic touched. Style cleanup, not regression.
+
+verdict: ALL_FIXED  # 5 fixed + 1 skipped with explicit user consent
