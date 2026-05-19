@@ -1,20 +1,11 @@
 metadata:
   template_version: '1.0'
-  updated_at: '2026-05-18T17:12:23Z'
-  total_pending: 3
+  updated_at: '2026-05-19T06:35:20Z'
+  total_pending: 2
   total_active: 0
-  total_completed: 4
+  total_completed: 5
   total_blocked: 0
 pending_tasks:
-- task_id: REQ-001-TASK-005
-  branch: feature/req-001-task-005
-  description: Context helpers + Cookie helpers + HTTP request helpers (IP/User-Agent)
-  task_file: task_management/tasks/REQ-001-TASK-005.md
-  status: prp_ready
-  priority: medium
-  depends_on:
-  - REQ-001-TASK-002
-  prp_file: task_management/plans/REQ-001-TASK-005-PRP.md
 - task_id: REQ-001-TASK-006
   branch: feature/req-001-task-006
   description: Examples — basic, http_middleware, grpc_interceptor
@@ -109,6 +100,7 @@ completed_tasks:
   prp_file: task_management/plans/REQ-001-TASK-003-PRP.md
   code_review_files:
   - task_management/reviews/REQ-001-TASK-003-CODE-REVIEW.yaml
+  - task_management/reviews/REQ-001-TASK-003-CODE-REVIEW-FIX-VALIDATION.yaml
   lifecycle:
     execution:
       completed: true
@@ -140,28 +132,39 @@ completed_tasks:
   depends_on:
   - REQ-001-TASK-002
   prp_file: task_management/plans/REQ-001-TASK-004-PRP.md
+  result_report: task_management/results/REQ-001-TASK-004-result-report.md
   code_review_files:
-  - /Users/a.popov/Development/TRADING/bots/auth-client-go/task_management/reviews/REQ-001-TASK-004-CODE-REVIEW.yaml
+  - task_management/reviews/REQ-001-TASK-004-CODE-REVIEW.yaml
+  completed_at: '2026-05-18T16:38:53Z'
+- task_id: REQ-001-TASK-005
+  branch: feature/req-001-task-005
+  description: Context helpers + Cookie helpers + HTTP request helpers (IP/User-Agent)
+  task_file: task_management/tasks/REQ-001-TASK-005.md
+  status: completed
+  priority: medium
+  depends_on:
+  - REQ-001-TASK-002
+  prp_file: task_management/plans/REQ-001-TASK-005-PRP.md
+  code_review_files:
+  - task_management/reviews/REQ-001-TASK-005-CODE-REVIEW.yaml
   lifecycle:
     execution:
-      completed: true
-      completed_at: '2026-05-18T16:38:42Z'
+      completed: false
     code_review:
       completed: true
       completed_at: '2026-05-18'
       verdict: ALL_FIXED
       original_verdict: APPROVED_WITH_COMMENTS
       critical_issues: 0
-      warning_issues: 2
-      suggestion_issues: 1
-      debug_completed_at: '2026-05-18'
+      warning_issues: 0
+      suggestion_issues: 6
+      debug_completed_at: null
     bug_fixing:
       has_bugs: false
       bugs_fixed: true
       debug_verdict: ALL_FIXED
-  result_report: /Users/a.popov/Development/TRADING/bots/auth-client-go/task_management/results/REQ-001-TASK-004-result-report.md
   debug_report_files:
-  - task_management/debug_reports/REQ-001-TASK-004-DEBUG-REPORT.yaml
+  - task_management/debug_reports/REQ-001-TASK-005-DEBUG-REPORT.yaml
 blocked_tasks: []
 status_reference:
   feature_tasks:

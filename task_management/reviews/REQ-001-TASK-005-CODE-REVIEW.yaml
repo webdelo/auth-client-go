@@ -1,0 +1,401 @@
+task_id: REQ-001-TASK-005
+review_date: "2026-05-18"
+verdict: APPROVED_WITH_COMMENTS
+verdict_reason: >
+  0 critical, 0 warning, 6 suggestions. Code is production-ready.
+  All suggestions are optional improvements (test coverage gaps and
+  documentation clarity) with no blocking issues.
+
+scope:
+  packages:
+    - lib
+  files:
+    - lib/cookies.go
+    - lib/helpers.go
+    - lib/cookies_test.go
+    - lib/helpers_test.go
+
+sub_agents:
+  - agent: code-reviewer
+    report: .memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-005_lib.yaml
+    findings: 0
+    verdict: APPROVED
+  - agent: test-reviewer
+    report: .memory_bank/agent_task_results/2026-05-18_test-review_REQ-001-TASK-005_lib.yaml
+    findings: 2
+    verdict: APPROVED_WITH_COMMENTS
+  - agent: security-auditor
+    report: .memory_bank/agent_task_results/2026-05-18_security-audit_REQ-001-TASK-005_lib.yaml
+    findings: 4
+    verdict: APPROVED_WITH_COMMENTS
+
+issues_by_severity:
+  critical: 0
+  warning: 0
+  suggestion: 6
+
+metadata:
+  date: "2026-05-18"
+  task_id: REQ-001-TASK-005
+
+issues:
+  # --- test-reviewer findings (CR-001, CR-002) ---
+
+  - id: CR-001
+    original_id: TR-LIB-001
+    source_agent: test-reviewer
+    source_package: lib
+    severity: SUGGESTION
+    original_severity: SUGGESTION
+    category: structure
+    file: lib/cookies_test.go
+    line: 14
+    rule: "UT-0010 (test_scope.md §UT-0010)"
+    title: >
+      Test function names use TestFuncName format (no underscore) for package-level functions
+    description: |
+      UT-0010 specifies the format Test<Type>_<Method>. The four test functions
+      (TestSetRefreshCookie, TestClearRefreshCookie, TestIPFromRequest,
+      TestUserAgentFromRequest) have no underscore separator because the tested
+      symbols are package-level functions, not methods on a named type.
+
+      This is correct idiomatic Go for standalone functions and is explicitly
+      sanctioned by the PRP which prescribes these exact names in its code
+      patterns and DOD inventory. No action is required.
+
+      Flagging for traceability only: if a future refactor wraps these helpers
+      in a type, the test function names must be updated to TestType_Method.
+    suggestion: |
+      No change needed for current code. If helpers are ever promoted to methods
+      on a type (e.g., CookieHelper.SetRefresh), rename to TestCookieHelper_Set,
+      TestCookieHelper_Clear per UT-0010.
+    impact: null
+    references: []
+
+  - id: CR-002
+    original_id: TR-LIB-002
+    source_agent: test-reviewer
+    source_package: lib
+    severity: SUGGESTION
+    original_severity: SUGGESTION
+    category: structure
+    file: lib/cookies_test.go
+    line: 14
+    rule: "PRP §Task 2 Required Test Cases (REQ-001-TASK-005-PRP.md:542)"
+    title: >
+      TestSetRefreshCookie_SecurityRegressionGuard is not a standalone test function
+    description: |
+      The PRP task description (line 542-544) listed a separate test function
+      TestSetRefreshCookie_SecurityRegressionGuard with two cases:
+        - happy_path: Secure==true && HttpOnly==true after default opts
+        - with_many_options_still_secure: all 4 opts combined → Secure+HttpOnly remain true
+
+      This function was NOT included in the final DOD inventory
+      (REQ-001-TASK-005-PRP.md:1093-1104), which enumerates only
+      TestSetRefreshCookie (9 cases) and TestClearRefreshCookie (5 cases).
+
+      The security invariants themselves ARE verified: every test case in
+      TestSetRefreshCookie that applies options also asserts c.Secure and
+      c.HttpOnly (20 total Secure/HttpOnly assertions across cookies_test.go).
+      The all_options_combined case (line 74-91) directly covers the
+      "with_many_options_still_secure" scenario.
+
+      The DOD is satisfied. The omission of the standalone guard function is a
+      minor consistency gap between early PRP drafting and the final DOD.
+    suggestion: |
+      Optional: add a dedicated TestSetRefreshCookie_SecurityRegressionGuard
+      function as a named regression anchor, making the security invariant
+      discoverable by name via 'go test -run SecurityRegression'. Example:
+
+        func TestSetRefreshCookie_SecurityRegressionGuard(t *testing.T) {
+            t.Parallel()
+            tests := map[string]struct {
+                opts []authclient.CookieOption
+            }{
+                "happy_path": {opts: nil},
+                "with_many_options_still_secure": {
+                    opts: []authclient.CookieOption{
+                        authclient.WithCookieDomain(".webdelo.trade"),
+                        authclient.WithCookiePath("/x"),
+                        authclient.WithCookieMaxAge(time.Hour),
+                        authclient.WithCookieSameSite(http.SameSiteLaxMode),
+                    },
+                },
+            }
+            for name, tc := range tests {
+                tc := tc
+                t.Run(name, func(t *testing.T) {
+                    t.Parallel()
+                    rec := httptest.NewRecorder()
+                    authclient.SetRefreshCookie(rec, "tok", tc.opts...)
+                    cookies := rec.Result().Cookies()
+                    require.Len(t, cookies, 1)
+                    assert.True(t, cookies[0].Secure, "Secure must be true always")
+                    assert.True(t, cookies[0].HttpOnly, "HttpOnly must be true always")
+                })
+            }
+        }
+    impact: null
+    references: []
+
+  # --- security-auditor findings (CR-003..CR-006) ---
+
+  - id: CR-003
+    original_id: SA-LIB-001
+    source_agent: security-auditor
+    source_package: lib
+    severity: SUGGESTION
+    original_severity: LOW
+    category: input_validation
+    file: lib/helpers.go
+    line: 33
+    rule: N/A
+    title: X-Real-IP returned verbatim without syntax validation
+    description: |
+      IPFromRequest returns the value of the X-Real-IP header as-is without
+      any net.ParseIP validation. A malicious client (or misconfigured proxy)
+      can inject a syntactically invalid string such as "not-an-ip", an IPv6
+      address with zone IDs ("::1%eth0"), or an excessively long string
+      (thousands of bytes). This string is then forwarded to the AUTH service
+      as the ClientIP field. AUTH computes the fingerprint from it; a
+      structurally malformed value will not match any real /24 block.
+      The immediate damage is limited because AUTH's fingerprint check is a
+      detection hint (ADR §R2), not a hard block — a stolen refresh token
+      from a different /24 is still rejected. However:
+      - If AUTH passes the raw value into a log line without escaping,
+        log-injection is possible (newline characters in the header value).
+      - If a future AUTH version trusts the IP field for rate-limiting or
+        geo-blocking, the forged value matters more.
+      Go's net/http server does strip bare CR/LF when reading request headers
+      (RFC 7230 §3.5), so newline injection via X-Real-IP is NOT possible in
+      practice on the server side. However, the function is also usable in
+      test/proxy contexts where the request is constructed manually, and the
+      upstream AUTH service owns all downstream risk.
+      Severity assessed as LOW because: (a) SECURITY godoc is present and
+      explicit, (b) AUTH fingerprint is a hint not a hard gate, (c) Go stdlib
+      rejects CRLF in headers on the receiving HTTP path.
+    suggestion: |
+      Add an optional net.ParseIP validation pass before returning X-Real-IP
+      and XFF-extracted values. If the parsed value is nil, fall through to
+      the next source. This is a two-line change:
+
+        if v := r.Header.Get("X-Real-IP"); v != "" {
+            if net.ParseIP(v) != nil {
+                return v
+            }
+        }
+
+      Apply the same pattern to the XFF first-entry result. Do NOT apply to
+      r.RemoteAddr — Go's HTTP server guarantees that value is well-formed.
+      This change is backward-compatible: real proxies always set a valid IP.
+      If the change is deferred to v0.2.0 (with WithTrustedProxies), document
+      it explicitly in a TODO comment referencing the ticket.
+    impact: |
+      Syntactically invalid IP forwarded to AUTH service; potential for
+      AUTH-side log injection if AUTH logs the field without sanitisation;
+      future misuse if AUTH adds IP-based controls.
+    references:
+      - "OWASP Input Validation Cheat Sheet"
+      - "RFC 7230 §3.5 (CRLF in headers)"
+      - "REQ-001-ADR §A12"
+
+  - id: CR-004
+    original_id: SA-LIB-002
+    source_agent: security-auditor
+    source_package: lib
+    severity: SUGGESTION
+    original_severity: INFO
+    category: other
+    file: lib/cookies_test.go
+    line: 23
+    rule: N/A
+    title: No test for base64url / special-character token values in SetRefreshCookie
+    description: |
+      The PRP Gotcha G12 explicitly specifies a test case: "token with
+      base64url value (AbCdEf123-_.=) correctly serialises." The
+      cookies_test.go uses only "abc.def.ghi" (JWT-shaped but ASCII-only with
+      dots) for all SetRefreshCookie test cases. A base64url token containing
+      "+" or "=" would be percent-encoded or quoted by http.Cookie.String(),
+      and the test does not verify round-trip fidelity.
+      In practice, Go's net/http SetCookie correctly quotes special characters
+      per RFC 6265 and the round-trip is safe. This is a test-coverage gap,
+      not a production defect. However, since cookie defaults are intended to
+      FREEZE at v1.0.0, the missing regression test means a future Go stdlib
+      change or a dependency shimming http.Cookie could silently break token
+      delivery.
+    suggestion: |
+      Add a test case in TestSetRefreshCookie:
+
+        "base64url_token_value": {
+            token: "AbCdEf123-_.=+/xYz",
+            opts:  nil,
+            want: func(t *testing.T, c *http.Cookie) {
+                assert.Equal(t, "AbCdEf123-_.=+/xYz", c.Value)
+                assert.True(t, c.Secure)
+                assert.True(t, c.HttpOnly)
+            },
+        },
+
+      This verifies http.SetCookie round-trips the token through
+      rec.Result().Cookies()[0].Value without corruption.
+    impact: |
+      If a future Go stdlib update changes cookie serialisation for tokens
+      containing "+", "=", or "/" (standard base64 alphabet), there is no
+      regression test to catch it. Refresh flow would silently fail for those
+      token values.
+    references:
+      - "RFC 6265 §4.1.1 (cookie-value grammar)"
+      - "REQ-001-TASK-005-PRP §Gotchas G12"
+
+  - id: CR-005
+    original_id: SA-LIB-003
+    source_agent: security-auditor
+    source_package: lib
+    severity: SUGGESTION
+    original_severity: INFO
+    category: other
+    file: lib/helpers_test.go
+    line: 12
+    rule: N/A
+    title: No test for X-Real-IP containing whitespace or invalid IP syntax
+    description: |
+      TestIPFromRequest covers valid IPs (IPv4, IPv6, XFF multi-hop) but does
+      not include cases for:
+      1. X-Real-IP with leading/trailing whitespace (e.g., " 203.0.113.1 ") —
+         the function returns it verbatim, not trimmed, unlike the XFF branch
+         which calls strings.TrimSpace.
+      2. X-Real-IP with an invalid value (e.g., "not-an-ip") — returned
+         verbatim.
+      The asymmetry between X-Real-IP (no trim) and XFF (trim) is a subtle
+      inconsistency that a test case would expose and document as intentional
+      or trigger a fix.
+    suggestion: |
+      Add test cases:
+
+        "x_real_ip_with_whitespace": {
+            xRealIP: " 203.0.113.1 ",
+            want:    "203.0.113.1",  // after trim — or document as "203.0.113.1 " if no-trim is intentional
+        },
+        "x_real_ip_invalid_syntax": {
+            xRealIP: "not-an-ip",
+            want:    "",  // if validation added per SA-LIB-001; or "not-an-ip" documenting pass-through
+        },
+
+      If the current no-trim behaviour is intentional, add a code comment in
+      IPFromRequest explaining the asymmetry.
+    impact: |
+      If a reverse proxy emits X-Real-IP with surrounding whitespace, the
+      SDK forwards " 203.0.113.1 " to AUTH. AUTH fingerprint uses the raw
+      string; if AUTH does its own trimming the result is the same, but if
+      AUTH does not trim, the fingerprint computed at login and at validate
+      would differ — causing spurious 401s.
+    references:
+      - "RFC 7239 §4 (Forwarded header whitespace rules)"
+      - "OWASP Input Validation Cheat Sheet"
+
+  - id: CR-006
+    original_id: SA-LIB-004
+    source_agent: security-auditor
+    source_package: lib
+    severity: SUGGESTION
+    original_severity: INFO
+    category: other
+    file: lib/cookies.go
+    line: 40
+    rule: N/A
+    title: WithCookieMaxAge with zero duration produces session cookie silently
+    description: |
+      WithCookieMaxAge(0) sets cookie.MaxAge = 0. Per RFC 6265 and Go's
+      http.Cookie, MaxAge == 0 means "unset" (session cookie — expires when
+      browser closes), not "expire immediately". The godoc says "fractional
+      seconds are truncated" and warns about negative durations, but does not
+      explicitly document the zero-duration edge case.
+      This is unlikely to cause a security incident (a session cookie for a
+      refresh token is worse than a persistent one, but not catastrophic), but
+      a consumer who writes WithCookieMaxAge(someConfig.TTL) and passes 0 by
+      accident will produce a session cookie silently instead of an error or
+      the SDK default 14-day cookie.
+    suggestion: |
+      Extend the godoc of WithCookieMaxAge to explicitly state:
+
+        // Zero duration produces a session cookie (MaxAge=0 = unset per
+        // RFC 6265 §5.2.2). To restore the 14-day default, do not call
+        // WithCookieMaxAge at all. To expire immediately, use a negative
+        // duration or call ClearRefreshCookie instead.
+
+      Optionally, treat 0 as "use default" by not applying the option when
+      maxAge == 0, but this is a behaviour change requiring a CHANGELOG entry.
+    impact: |
+      Silent downgrade from 14-day persistent refresh cookie to session
+      cookie, causing users to be logged out on every browser close.
+      Not a confidentiality or integrity risk, but a usability regression that
+      a consumer will not detect without inspecting Set-Cookie headers.
+    references:
+      - "RFC 6265 §5.2.2 (Max-Age attribute)"
+      - "Go net/http Cookie.MaxAge godoc"
+
+test_run:
+  command: make test-race
+  result: pass
+  total_tests: 152
+  coverage_lib_cookies_go: 100.0
+  coverage_lib_helpers_go: 100.0
+  coverage_lib_package: 97.0
+
+execution_metrics:
+  per_agent:
+    - agent: code-reviewer
+      duration_seconds: 0
+      tokens_used: 0
+      cost_usd: 0
+    - agent: test-reviewer
+      duration_seconds: 95
+      tokens_used: "~12000"
+      cost_usd: "~0.04"
+    - agent: security-auditor
+      duration_seconds: 95
+      tokens_used: 0
+      cost_usd: 0
+  totals:
+    duration_seconds: 190
+    tokens_used: null
+    cost_usd: null
+
+validation:
+  status: PASSED
+  checks:
+    - name: All code-reviewer reports processed
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: All test-reviewer reports processed
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: All security-auditor reports processed
+      expected: 1
+      actual: 1
+      status: PASS
+    - name: Total findings count
+      expected: 6
+      actual: 6
+      status: PASS
+    - name: Severity counts reconcile (critical+warning+suggestion == findings)
+      expected: 6
+      actual: 6
+      status: PASS
+    - name: No findings dropped from code-reviewer
+      expected: 0
+      actual: 0
+      status: PASS
+    - name: No findings dropped from test-reviewer
+      expected: 2
+      actual: 2
+      status: PASS
+    - name: No findings dropped from security-auditor
+      expected: 4
+      actual: 4
+      status: PASS
+    - name: Severity mapping applied (LOW->SUGGESTION, INFO->SUGGESTION)
+      status: PASS
+      detail: "SA-LIB-001 LOW->SUGGESTION, SA-LIB-002/003/004 INFO->SUGGESTION"
