@@ -17,7 +17,7 @@
 //		log.Fatal(err)
 //	}
 //	defer client.Close()
-//	mux.Handle("/api/secure", client.HTTPMiddleware(handler))
+//	http.Handle("/api/secure", client.HTTPMiddleware(handler))
 //
 // Inside the handler — the middleware guarantees the user is present, so the
 // second return is safe to drop:

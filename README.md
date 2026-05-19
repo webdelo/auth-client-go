@@ -75,7 +75,7 @@ curl -H 'Authorization: Bearer <ACCESS_TOKEN>' http://localhost:8080/api/me
 | Field              | Default                      | Description                                                                                                |
 |--------------------|------------------------------|------------------------------------------------------------------------------------------------------------|
 | `Endpoint`         | (required)                   | gRPC host:port of AUTH (e.g. `auth:50051`, `auth.example.com:443`).                                        |
-| `ValidateCacheTTL` | `30s`                        | Positive-result TTL of the in-memory `ValidateToken` cache. `0` makes every `ValidateAccessToken` call reach AUTH (`Set` is a no-op for `TTL=0`). |
+| `ValidateCacheTTL` | `0` (cache disabled)         | Positive-result TTL of the in-memory `ValidateToken` cache. The Go zero-value is `0` — caching is OFF until you set this explicitly. Set to `30 * time.Second` for the SDK-recommended TTL, or to a negative value to apply that recommended default automatically. `0` keeps every call reaching AUTH (`Set` is a no-op for `TTL=0`). |
 | `FailMode`         | `FailClosed`                 | Behaviour when AUTH is unavailable — see [Fail Mode](#fail-mode).                                          |
 | `ValidateTimeout`  | `2s`                         | Per-call deadline for `ValidateToken` / `LogoutAll` / `GetCurrentUser`.                                    |
 | `LoginTimeout`     | `5s`                         | Per-call deadline for `Login` / `ChangePassword` (bcrypt ~100ms upstream).                                 |
@@ -101,8 +101,19 @@ or returns transient errors.
 - `FailClosed` (default) — return `503 Service Unavailable` (HTTP) /
   `codes.Unavailable` (gRPC). The downstream handler is **never** called. This is the
   OWASP-recommended behaviour ([A07:2025 — Authentication Failures](https://owasp.org/Top10/)).
-- `FailOpen` — pass the request through with an empty `User` in context. Downstream code must
-  treat `UserFromContext(...)` returning `(User{}, false)` as "unauthenticated".
+- `FailOpen` — pass the request through with an empty `User{}` in context. The middleware
+  calls `WithUser(ctx, User{})`, so `UserFromContext` returns `(User{}, true)` — the
+  boolean is `true` because the key is present. Use `user.IsZero()` to detect the
+  FailOpen pass-through:
+
+  ```go
+  user, _ := authclient.UserFromContext(r.Context())
+  if user.IsZero() {
+      // AUTH was unreachable and FailOpen is configured; treat as unauthenticated.
+      http.Error(w, "unauthorized", http.StatusUnauthorized)
+      return
+  }
+  ```
 
 > ⚠️ **SECURITY WARNING — FAILOPEN MODE**
 >
@@ -365,8 +376,9 @@ log the user out. Mitigations:
   `ValidateTokenResponse`. Use `GetCurrentUser` for the full profile.
 - **Cache invalidation lag** — after AUTH bumps `token_version`
   (`LogoutAll` / `BlockUser` / `ChangePassword`), an old access token remains valid in the
-  SDK cache for up to `ValidateCacheTTL` (default 30s). Set `Config.ValidateCacheTTL = 0` to
-  disable cache entirely.
+  SDK cache for up to the configured `ValidateCacheTTL` (the Go zero-value is `0` /
+  cache disabled; the SDK-recommended value is `30s`). Setting `Config.ValidateCacheTTL = 0`
+  disables the cache entirely (every call reaches AUTH).
 - **`make release` is interactive** — reads version from `/dev/tty`. No `--version=X.Y.Z`
   flag yet.
 

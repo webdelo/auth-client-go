@@ -22,7 +22,8 @@ Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth
 
 - **Token validation**:
   - `(*Client).ValidateAccessToken(ctx, accessToken) (User, error)` — gRPC `ValidateToken` with
-    positive-result TTL cache (default 30s; key = `sha256(token)`).
+    positive-result TTL cache (SDK-recommended TTL: `30s`; `Config.ValidateCacheTTL` Go
+    zero-value is `0` = cache disabled; key = `sha256(token)`).
   - Built-in in-memory cache (`lib/internal/cache.MemoryCache`) with background sweep;
     swappable via `Cache` interface.
 
@@ -85,8 +86,9 @@ Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth
 - **`User.Email` empty after `ValidateAccessToken`** — `ValidateTokenResponse`
   (auth-proto v0.1.0) does not carry it. Use `GetCurrentUser` for the full profile.
 - **Cache invalidation lag** — after AUTH bumps `token_version` (LogoutAll / BlockUser /
-  ChangePassword), the old access token remains valid in the SDK cache for up to
-  `ValidateCacheTTL` (default 30s). Set `ValidateCacheTTL: 0` to disable cache entirely.
+  ChangePassword), an old access token remains valid in the SDK cache for up to the
+  configured `ValidateCacheTTL` (Go zero-value `0` = cache disabled; SDK-recommended
+  value `30s`). Set `ValidateCacheTTL: 0` to disable cache entirely.
 - **`make release` is interactive** — no `--version=X.Y.Z` flag yet; the release script reads
   from `/dev/tty`.
 

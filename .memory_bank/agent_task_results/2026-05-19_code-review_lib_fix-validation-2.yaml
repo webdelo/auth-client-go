@@ -1,0 +1,192 @@
+review_type: fix-validation
+task: REQ-001-TASK-007
+package: lib
+date: "2026-05-19"
+reviewer: code-reviewer
+branch: feature/req-001-task-007
+original_review: ".memory_bank/agent_task_results/2026-05-19_code-review_lib.yaml"
+
+files_inspected:
+  - README.md
+  - CHANGELOG.md
+  - lib/doc.go
+
+static_analysis:
+  build:
+    status: pass
+    note: "Orchestrator confirmed: make audit 214/214 pass, lint 0."
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: 0
+  tests:
+    status: pass
+    total: 214
+    passed: 214
+    failed: 0
+  race:
+    status: pass
+    total: 214
+    passed: 214
+  examples_build:
+    status: pass
+    built:
+      - .temp/examples/basic
+      - .temp/examples/grpc_interceptor
+      - .temp/examples/http_middleware
+  smoke_test:
+    status: pass
+    note: "README Quickstart block with new user.IsZero() example: go build in /tmp/authclient-smoke3 (replace directive) → exit 0, 17MB binary."
+
+fix_verification:
+  - id: "LIB-W001"
+    original_severity: "WARNING"
+    title: "README Config table claims ValidateCacheTTL default is 30s, but Go zero-value is 0 (cache disabled)"
+    status: FIXED
+    evidence:
+      file: "README.md"
+      line: 78
+      verified_text: |
+        | `ValidateCacheTTL` | `0` (cache disabled) | Positive-result TTL of the in-memory
+        `ValidateToken` cache. The Go zero-value is `0` — caching is OFF until you set this
+        explicitly. Set to `30 * time.Second` for the SDK-recommended TTL, or to a negative
+        value to apply that recommended default automatically. `0` keeps every call reaching
+        AUTH (`Set` is a no-op for `TTL=0`). |
+      known_limitations_line: 379
+      known_limitations_text: |
+        **Cache invalidation lag** — after AUTH bumps `token_version`
+        (`LogoutAll` / `BlockUser` / `ChangePassword`), an old access token remains valid in
+        the SDK cache for up to the configured `ValidateCacheTTL` (the Go zero-value is `0` /
+        cache disabled; the SDK-recommended value is `30s`). Setting
+        `Config.ValidateCacheTTL = 0` disables the cache entirely (every call reaches AUTH).
+    notes: |
+      Default column is now `0 (cache disabled)`. Description explains both the zero-value
+      semantics (cache OFF) and how to activate the 30s recommended TTL. Known Limitations
+      bullet updated to match. Both locations from the original issue are corrected.
+
+  - id: "LIB-W002"
+    original_severity: "WARNING"
+    title: "README Fail Mode section: UserFromContext returns (User{}, false) — incorrect, actually returns (User{}, true)"
+    status: FIXED
+    evidence:
+      file: "README.md"
+      lines: 104-116
+      verified_text: |
+        - `FailOpen` — pass the request through with an empty `User{}` in context. The middleware
+          calls `WithUser(ctx, User{})`, so `UserFromContext` returns `(User{}, true)` — the
+          boolean is `true` because the key is present. Use `user.IsZero()` to detect the
+          FailOpen pass-through:
+
+          ```go
+          user, _ := authclient.UserFromContext(r.Context())
+          if user.IsZero() {
+              // AUTH was unreachable and FailOpen is configured; treat as unauthenticated.
+              http.Error(w, "unauthorized", http.StatusUnauthorized)
+              return
+          }
+          ```
+    notes: |
+      The incorrect `(User{}, false)` claim has been replaced with the accurate `(User{}, true)`
+      explanation. The `user.IsZero()` guard is now the stated idiom. The example block
+      `http.Error(w, "unauthorized", ...)` is present as required. The gRPC interceptor FailOpen
+      path (also calls `handler(WithUser(ctx, User{}), req)`) is implicitly covered by the same
+      explanation, as the middleware and interceptor share the same WithUser semantics.
+
+  - id: "LIB-S001"
+    original_severity: "SUGGESTION"
+    title: "CHANGELOG 'default 30s' phrasing is consistent with the README issue (LIB-W001)"
+    status: FIXED
+    evidence:
+      file: "CHANGELOG.md"
+      lines: 25-26
+      verified_text: |
+        positive-result TTL cache (SDK-recommended TTL: `30s`; `Config.ValidateCacheTTL` Go
+        zero-value is `0` = cache disabled; key = `sha256(token)`).
+      known_limitations_lines: 88-91
+      known_limitations_text: |
+        **Cache invalidation lag** — after AUTH bumps `token_version` (LogoutAll / BlockUser /
+        ChangePassword), an old access token remains valid in the SDK cache for up to the
+        configured `ValidateCacheTTL` (Go zero-value `0` = cache disabled; SDK-recommended
+        value `30s`). Set `ValidateCacheTTL: 0` to disable cache entirely.
+    notes: |
+      ValidateToken description in ### Added now reads "SDK-recommended TTL: 30s;
+      Config.ValidateCacheTTL Go zero-value is 0 = cache disabled". Known limitations bullet
+      also updated. Both disambiguation sites in CHANGELOG are corrected and consistent with
+      the fixed README wording.
+
+  - id: "LIB-S002"
+    original_severity: "SUGGESTION"
+    title: "doc.go Quickstart uses mux variable that is not imported or declared"
+    status: FIXED
+    evidence:
+      file: "lib/doc.go"
+      line: 20
+      verified_text: |
+        //	http.Handle("/api/secure", client.HTTPMiddleware(handler))
+    notes: |
+      The `mux.Handle(...)` call has been replaced with `http.Handle(...)` (stdlib DefaultServeMux),
+      matching the README Quickstart exactly. No undeclared `mux` variable in the godoc snippet.
+
+summary:
+  total_issues_from_original: 4
+  fixed: 4
+  not_fixed: 0
+  wont_fix: 0
+  new_issues_found: 0
+
+positive:
+  - "All four fixes are precise and consistent — README, CHANGELOG, and doc.go wording now agree."
+  - "The LIB-W002 fix correctly shows the http.Error guard pattern with user.IsZero() inline, not just as prose — a consumer can copy-paste it directly."
+  - "CHANGELOG Known Limitations and README Known Limitations now use identical phrasing for the cache invalidation lag bullet, eliminating the internal inconsistency between the two documents."
+  - "lib/doc.go Quickstart is now a clean, concise, non-ambiguous snippet that compiles against the standard library."
+  - "Static analysis and smoke-test remain green after all edits (make audit 214/214, lint 0, build-examples 3/3, smoke-test exit 0)."
+
+verdict: APPROVED
+verdict_reason: |
+  All 4 issues from the original APPROVED_WITH_COMMENTS review (LIB-W001, LIB-W002, LIB-S001,
+  LIB-S002) are FIXED. No new issues introduced. Static analysis and smoke tests confirmed green
+  by the orchestrator. The documentation is now accurate, internally consistent, and safe for
+  consumer use.
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 18
+    rules_applied:
+      - "ES-0001"  # gofmt — pass (no .go files changed)
+      - "ES-0080"  # Doc comments precede declaration — doc.go unchanged structurally
+      - "ES-0081"  # Start doc with identifier name — doc.go first line still correct
+    critical_rules_checked:
+      - "ES-0051"  # Interface at consumer — n/a for doc-only changes
+      - "ES-0060"  # Handle errors — n/a
+      - "ES-0063"  # No panic — n/a
+    note: "This is a fix-validation review of documentation-only changes (README.md, CHANGELOG.md, lib/doc.go). No Go logic code modified."
+
+  effective_concurrency:
+    checked: false
+    concurrency_detected: false
+    trigger_found: []
+    skip_reason: "No concurrency primitives in the changed files. Doc-only edits."
+
+  coding_style:
+    checked: true
+    total_rules: 5
+    rules_applied:
+      - "CS-0060"  # Godoc for public methods — pass (doc.go still valid)
+      - "CS-0061"  # gofmt + golangci-lint — pass (0 issues, orchestrator confirmed)
+      - "CS-0110"  # No internal refs in code comments — pass
+      - "CS-0111"  # No restating-obvious comments — pass
+      - "CS-0112"  # No decorative separators — pass
+
+  dba_rules:
+    checked: false
+    skip_reason: "SDK has no database layer."
+
+  devops_rules:
+    checked: false
+    skip_reason: "No Docker or K8s files in this diff."
