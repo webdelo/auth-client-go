@@ -41,3 +41,5 @@ dev/deployments/local.dev.env
 
 # Scratch/temp work area (per CLAUDE.md policy — never write to project root)
 .temp/
+
+/.worktrees/
