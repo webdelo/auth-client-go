@@ -12,9 +12,6 @@ on:
         type: boolean
         default: false
 
-env:
-  GOPRIVATE: github.com/webdelo/*
-
 jobs:
   lint:
     name: Lint
@@ -25,9 +22,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Configure git for private modules
-        run: git config --global url."https://${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
@@ -44,9 +38,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Configure git for private modules
-        run: git config --global url."https://${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
-
       - name: Run unit tests
         run: go test -v -race ./lib/...
 
@@ -60,9 +51,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Configure git for private modules
-        run: git config --global url."https://${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
 
       - name: Build library
         run: go build ./lib/...
