@@ -1,0 +1,200 @@
+review_id: REQ-001-TASK-006-code-review-lib_examples_basic
+task_id: REQ-001-TASK-006
+package: lib/examples/basic
+date: "2026-05-19"
+reviewer: code-reviewer
+verdict: APPROVED_WITH_COMMENTS
+summary: >
+  The basic example is well-structured and demonstrates the SDK happy-path correctly.
+  All previously required fixes (CS-0010 blank lines, CS-0002 naked return) are confirmed
+  resolved. Two minor suggestions are raised: a cosmetic edge-case in safeTrunc where "…"
+  is appended even when nothing is truncated, and a slightly misleading README expected-output
+  line about Close. No critical or warning-level issues found.
+
+files_reviewed:
+  - path: lib/examples/basic/main.go
+    verdict: APPROVED_WITH_COMMENTS
+  - path: lib/examples/basic/README.md
+    verdict: APPROVED_WITH_COMMENTS
+
+static_analysis:
+  build:
+    status: pass
+    command: "make build-examples"
+    output: "All 3 example binaries built into .temp/examples/"
+    errors: []
+  fmt:
+    status: pass
+    command: "gofmt -l lib/examples/basic/main.go"
+    files_need_formatting: []
+  vet:
+    status: pass
+    command: "go vet ./lib/examples/basic/..."
+    errors: []
+  lint:
+    status: pass
+    command: "golangci-lint run ./lib/examples/basic/... --timeout=5m"
+    issues: []
+  tests:
+    status: pass
+    command: "make audit"
+    failed: []
+    total: 214
+    passed: 214
+    coverage: "n/a (examples package, no test files)"
+  binary_without_env:
+    status: pass
+    command: "AUTH_ENDPOINT='' .temp/examples/basic"
+    output: "usage: AUTH_ENDPOINT=host:port AUTH_TEST_EMAIL=... AUTH_TEST_PASSWORD=... basic"
+    exit_code: 0
+
+issues:
+  critical: []
+
+  warnings: []
+
+  suggestions:
+    - id: 1
+      severity: SUGGESTION
+      file: lib/examples/basic/main.go
+      line: 93
+      title: "safeTrunc appends ellipsis even when string is not truncated"
+      description: >
+        When the input string is shorter than n (e.g. a token of length 3 with n=8),
+        the guard clamps n to len(s) and the function returns s[:len(s)] + "…" — i.e. the
+        full string with an appended ellipsis. The ellipsis is only semantically correct
+        when actual truncation occurred. In the current demo the access token will always
+        be a full JWT (100+ chars) so this never triggers in practice, but the function
+        contract is subtly wrong and would mislead a future reader or reuser.
+      fix_recommendation: |
+        func safeTrunc(s string, n int) string {
+            if len(s) <= n {
+                return s
+            }
+
+            return s[:n] + "…"
+        }
+
+    - id: 2
+      severity: SUGGESTION
+      file: lib/examples/basic/README.md
+      line: 33
+      title: "README expected output prints 'Close ok' before Close actually executes"
+      description: >
+        Line 75 of main.go prints "step 5: Close ok (deferred)" while still inside run(),
+        before the deferred client.Close() has fired. The README reproduces this line in
+        the expected output without any clarifying note, which could confuse a reader into
+        thinking the print is emitted by or after the Close call. The parenthetical
+        "(deferred)" in the message itself partially mitigates this, but the README
+        expected-output block has no note about the ordering.
+      fix_recommendation: |
+        Add a brief comment in the ## Expected output section, for example:
+
+        ```
+        step 5: Close ok (deferred)
+        ```
+        *(This line is printed before `client.Close()` runs; the actual Close happens
+        after `run()` returns, inside the deferred closure.)*
+
+        Alternatively rename the log message in main.go to be less ambiguous:
+            fmt.Println("step 5: defer Close registered — will run on exit")
+
+statistics:
+  critical: 0
+  warning: 0
+  suggestions: 2
+
+positive:
+  - "exitAfterDefer pattern is correctly implemented: main() does only os.Exit(run()),
+    ensuring all defers in run() fire before process exit."
+  - "client.Close() error is fully handled inside the deferred closure (lines 37-39),
+    satisfying ES-0060 for the one previously flagged silent discard."
+  - "No //nolint directives anywhere in the file."
+  - "No lib/internal/* imports; the example uses only the public authclient.* surface."
+  - "Token logging safety: safeTrunc correctly clamps n to len(s) before slicing,
+    preventing index-out-of-range panics and limiting token exposure to 8 chars."
+  - "Package doc present at line 1 and starts with 'Package main' as required."
+  - "No exported identifiers other than main; all helpers (run, readEnv, usage, safeTrunc)
+    are unexported."
+  - "CS-0002 confirmed resolved: readEnv() uses named return params with explicit return
+    values (return endpoint, email, password, ok) — not a naked return."
+  - "CS-0010 confirmed resolved: all if/switch blocks are followed by a blank line."
+  - "README is 43 lines (under 50-line limit) and contains all five required sections:
+    What, Prerequisites, Run, Expected output, Notes."
+  - "ErrInvalidToken and ErrRateLimited are handled with typed switch in Login error path,
+    demonstrating proper use of SDK sentinel errors."
+  - "30-second context timeout and '127.0.0.1' demo IP are clearly annotated as
+    demo-only values; no unexplained magic numbers."
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt — pass
+      - "ES-0002"  # tabs — pass
+      - "ES-0003"  # brace placement — pass
+      - "ES-0010"  # package name lowercase — pass (package main)
+      - "ES-0011"  # exported/unexported — pass
+      - "ES-0015"  # MixedCaps — pass
+      - "ES-0016"  # function naming — pass
+      - "ES-0020"  # init in conditions — pass
+      - "ES-0021"  # guard clauses — pass
+      - "ES-0022"  # minimize scope — pass
+      - "ES-0040"  # return (value, error) — pass
+      - "ES-0041"  # named return params — pass (readEnv uses them correctly)
+      - "ES-0042"  # defer for cleanup — pass (defer cancel, defer Close)
+      - "ES-0043"  # no defer in loops — pass
+      - "ES-0051"  # interface at consumer — n/a (no interfaces defined)
+      - "ES-0055"  # no generalized interfaces in provider — n/a
+      - "ES-0060"  # handle errors explicitly — pass
+      - "ES-0061"  # wrap errors with context — pass (fmt.Fprintf with %v)
+      - "ES-0063"  # no panic — pass
+      - "ES-0080"  # doc comments — pass
+      - "ES-0081"  # doc starts with name — pass
+      - "ES-0130"  # import order — pass (stdlib then external)
+      - "ES-0131"  # no unnecessary aliases — pass (authclient alias is intentional for clarity)
+    critical_rules_checked:
+      - "ES-0051"  # Interface at consumer — n/a (no interfaces defined in example)
+      - "ES-0060"  # Handle errors explicitly — PASS
+      - "ES-0063"  # No panic — PASS
+
+  effective_concurrency:
+    checked: false
+    concurrency_detected: false
+    trigger_found: []
+    total_rules: 35
+    rules_applied: []
+    skip_reason: >
+      No concurrency primitives detected in lib/examples/basic/main.go.
+      Searched for: go func, sync.Mutex, sync.RWMutex, sync.WaitGroup, atomic.,
+      chan , <-, select { — none found.
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # line length <= 120 — pass
+      - "CS-0002"  # explicit returns — pass (readEnv returns explicitly)
+      - "CS-0003"  # no magic numbers — pass (30s and 8 are demo-contextual)
+      - "CS-0004"  # no global state — pass
+      - "CS-0010"  # empty line after if/switch blocks — pass (verified all occurrences)
+      - "CS-0020"  # code reads top-to-bottom — pass
+      - "CS-0021"  # clear meaningful names — pass
+      - "CS-0023"  # low cyclomatic complexity — pass
+      - "CS-0031"  # nolint requires justification — pass (no nolint directives)
+      - "CS-0060"  # godoc for public methods — n/a (only unexported helpers)
+      - "CS-0070"  # English-only naming — pass
+      - "CS-0082"  # function length < 80 lines — pass (run() is 57 lines)
+      - "CS-0090"  # nil checks — pass
+      - "CS-0111"  # no restating-the-obvious comments — pass
+      - "CS-0112"  # no decorative separators — pass
+      - "CS-0110"  # no internal standard refs in comments — pass
+
+  dba_rules:
+    checked: false
+    skip_reason: "No database layer in this package."
+
+  devops_rules:
+    checked: false
+    skip_reason: "No Docker or Kubernetes manifests in this package."

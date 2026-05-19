@@ -1,0 +1,387 @@
+review_id: REQ-001-TASK-006-code-review-lib_examples_grpc_interceptor
+task_id: REQ-001-TASK-006
+package: lib/examples/grpc_interceptor
+date: "2026-05-19"
+reviewer: code-reviewer
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Static Analysis
+# ─────────────────────────────────────────────────────────────────────────────
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+  tests:
+    status: pass
+    failed: []
+    coverage: "n/a (example binary — no test files)"
+    note: "make audit — 214 tests pass, 0 issues from golangci-lint"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Issues
+# ─────────────────────────────────────────────────────────────────────────────
+issues:
+  critical: []
+
+  warnings:
+    - id: GRPC-W001
+      category: STYLE
+      title: "CS-0010: Missing empty line after if guard clause (line 125)"
+      file: lib/examples/grpc_interceptor/main.go
+      line: 125
+      standard: "coding_style.md CS-0010"
+      description: |
+        The closing brace of the RPC3 assertion guard clause (line 125) is
+        immediately followed by a fmt.Printf call on line 126 without an
+        intervening empty line. CS-0010 requires an empty line after every
+        if/switch/select/for block, including guard clauses.
+      current_code: |
+        if !ok || st.Code() != codes.Unauthenticated {
+            fmt.Fprintf(os.Stderr, "RPC3 Health/List without token: expected Unauthenticated, got %v\n", err)
+            return 1
+        }
+        fmt.Printf("RPC3 Health/List (no metadata) → %s (as expected)\n", st.Code())
+      recommended_fix: |
+        if !ok || st.Code() != codes.Unauthenticated {
+            fmt.Fprintf(os.Stderr, "RPC3 Health/List without token: expected Unauthenticated, got %v\n", err)
+            return 1
+        }
+
+        fmt.Printf("RPC3 Health/List (no metadata) → %s (as expected)\n", st.Code())
+      reason: "Block spacing is required after every if block per CS-0010."
+
+  suggestions:
+    - id: GRPC-S001
+      category: STYLE
+      title: "CS-0003: Inline timeout durations are magic numbers"
+      file: lib/examples/grpc_interceptor/main.go
+      line: 54
+      standard: "coding_style.md CS-0003"
+      description: |
+        The literal values 10*time.Second (loginCtx, line 54) and 5*time.Second
+        (rpcCtx, line 101) are magic numbers. CS-0003 permits 0, 1, 2, and 0.5
+        without a constant, but all other numeric literals should be named.
+        In an SDK example this adds clarity about the intended purpose of each
+        timeout (login vs. in-process RPC).
+      current_code: |
+        loginCtx, cancelLogin := context.WithTimeout(context.Background(), 10*time.Second)
+        // ...
+        rpcCtx, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+      recommended_fix: |
+        const (
+            loginTimeout = 10 * time.Second
+            rpcTimeout   = 5 * time.Second
+        )
+
+        loginCtx, cancelLogin := context.WithTimeout(context.Background(), loginTimeout)
+        // ...
+        rpcCtx, cancelRPC := context.WithTimeout(context.Background(), rpcTimeout)
+      reason: "Named constants make intent explicit and prevent future copy-paste errors."
+
+    - id: GRPC-S002
+      category: LOGIC
+      title: "Logout uses rpcCtx shared with 3 preceding RPCs"
+      file: lib/examples/grpc_interceptor/main.go
+      line: 128
+      standard: "effective_concurrency.md EC-0053"
+      description: |
+        client.Logout at line 128 reuses rpcCtx, which was created with a 5-second
+        timeout at line 101. By the time Logout is called, the context may have only
+        seconds (or less) of budget remaining, depending on how long the three RPCs
+        took. For an in-process example this is unlikely to cause a real timeout, but
+        it is a pattern mismatch: login is given its own 10-second context while
+        Logout, which is semantically a separate I/O operation, piggybacks on the
+        shared RPC context.
+      current_code: |
+        rpcCtx, cancelRPC := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancelRPC()
+        // ... three RPCs ...
+        if lerr := client.Logout(rpcCtx, out.RefreshToken); lerr != nil {
+      recommended_fix: |
+        // Separate timeout for the cleanup logout call
+        logoutCtx, cancelLogout := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancelLogout()
+        if lerr := client.Logout(logoutCtx, out.RefreshToken); lerr != nil {
+      reason: |
+        Each remote call should have its own context budget (EC-0053).
+        Sharing one timeout across multiple independent operations obscures
+        which operation exhausted the deadline and may cause premature cancellation.
+
+    - id: GRPC-S003
+      category: STYLE
+      title: "README: /Watch full method path is inconsistently abbreviated"
+      file: lib/examples/grpc_interceptor/README.md
+      line: 11
+      standard: "coding_style.md CS-0021"
+      description: |
+        Line 11 reads: "`/grpc.health.v1.Health/Check` and `/Watch` are in the
+        SDK's default open-methods registry". The second method is written as
+        `/Watch` instead of its full path `/grpc.health.v1.Health/Watch`.
+        The full method string is what the SDK registers in defaultOpenMethods
+        (lib/client.go) and what consumers would use in WithOpenMethods calls.
+        Abbreviated forms may confuse readers who look at the SDK source or call
+        WithOpenMethods with the short form, which would not match.
+      current_code: |
+        `/grpc.health.v1.Health/Check` and `/Watch` are in the SDK's default open-methods
+        registry (no auth needed).
+      recommended_fix: |
+        `/grpc.health.v1.Health/Check` and `/grpc.health.v1.Health/Watch` are in the
+        SDK's default open-methods registry (no auth needed).
+      reason: "Accuracy: consumers copy these strings into WithOpenMethods calls."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task-specific checklist (from review brief)
+# ─────────────────────────────────────────────────────────────────────────────
+task_checklist:
+  public_api_usage:
+    result: pass
+    notes: "Only authclient.* from lib/ is used for SDK calls. grpc sub-packages
+      (google.golang.org/grpc/*) are already in go.mod and are legitimate direct imports."
+
+  health_list_as_protected_method:
+    result: pass
+    notes: "Check and Watch are the only methods in defaultOpenMethods (client.go:335-340).
+      Health/List is NOT in the open set, so the interceptor correctly enforces auth for RPC2/RPC3."
+
+  error_handling_es0060:
+    client_close: pass
+    conn_close: pass
+    grpc_serve_goroutine: pass
+    logout: pass
+    notes: |
+      All error paths are handled. client.Close() and conn.Close() are wrapped in
+      defer func with explicit error reporting. grpcSrv.Serve() error is checked
+      inside the goroutine. client.Logout error is checked with warning output.
+      No errors are silently discarded.
+
+  goroutine_cleanup_ec0012:
+    result: pass
+    notes: "defer grpcSrv.GracefulStop() is registered immediately after the goroutine
+      is launched (line 84), guaranteeing that Serve() unblocks when run() returns.
+      grpc.Server.Serve() returns nil (not ErrServerStopped) when GracefulStop is called
+      while Serve is actively running — verified in grpc@v1.79.3/server.go:888-891."
+
+  ephemeral_port:
+    result: pass
+    notes: "net.Listen(\"tcp\", \"127.0.0.1:0\") on line 68 requests OS-assigned port.
+      Safe for parallel CI execution."
+
+  set_serving_status:
+    result: pass
+    notes: "healthSrv.SetServingStatus(\"\", grpc_health_v1.HealthCheckResponse_SERVING)
+      on line 76 registers the empty-string service. Health/Check (which queries the
+      empty-string service) returns SERVING as expected by RPC1."
+
+  metadata_key_case:
+    result: pass
+    notes: "metadata.Pairs(\"authorization\", ...) on line 111 uses lowercase key,
+      matching the HTTP/2 header requirement. The interceptor reads the same key
+      via md.Get(\"authorization\") — exact match confirmed."
+
+  three_rpc_self_test:
+    result: pass
+    notes: |
+      RPC1 (Check, no metadata): interceptor skips auth (open method) → SERVING.
+      RPC2 (List, Bearer): interceptor validates token → success, len(statuses)==1.
+      RPC3 (List, no metadata): interceptor returns codes.Unauthenticated → asserted
+      via status.FromError. Any deviation causes return 1 (non-zero exit).
+
+  exit_after_defer_pattern:
+    result: pass
+    notes: "main() contains only os.Exit(run()). All logic and cleanup are in run()."
+
+  readenv_cs0002_named_returns_explicit:
+    result: pass
+    notes: "readEnv() uses named return params AND explicit return statement:
+      return endpoint, email, password, ok. No naked return. CS-0002 satisfied."
+
+  package_doc_comment:
+    result: pass
+    notes: "Line 1: '// Package main is the grpc_interceptor authclient SDK example...'
+      Starts with 'Package main' per ES-0081."
+
+  makefile_clean_target:
+    result: pass
+    notes: "clean target: 'rm -rf $(COVERAGE_DIR) bin/ .temp/examples/' — correctly
+      adds .temp/examples/ to the cleanup. Syntactically valid (tab-indented)."
+
+  makefile_build_examples_target:
+    result: pass
+    notes: "Outputs binaries to .temp/examples/<name>/ (no 'example-' prefix).
+      mkdir -p .temp/examples ensures directory exists. Loop over lib/examples/*/
+      is syntactically valid with proper tab indentation. Verified with od output."
+
+  no_nolint:
+    result: pass
+    notes: "Searched main.go and Makefile — no //nolint annotations found."
+
+  cs0010_earlier_review_fixes:
+    result: partial
+    notes: "Earlier ALL_FIXED review resolved prior CS-0010 violations. One new
+      CS-0010 violation remains at line 125-126 (see GRPC-W001)."
+
+  readme_structure:
+    result: pass
+    notes: "README contains all required sections: What, Prerequisites, Run,
+      Expected output, Notes. Line count: 46 (< 50 limit)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Statistics
+# ─────────────────────────────────────────────────────────────────────────────
+statistics:
+  critical: 0
+  warning: 1
+  suggestions: 3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Positives
+# ─────────────────────────────────────────────────────────────────────────────
+positive:
+  - "exitAfterDefer pattern correctly implemented: main() is a single os.Exit(run()) call."
+  - "All three error-producing defers (client.Close, conn.Close, grpcSrv.GracefulStop)
+    are properly handled without silent discards — satisfies ES-0060."
+  - "Goroutine lifecycle is clean: Serve goroutine is guaranteed to unblock via
+    defer grpcSrv.GracefulStop() registered immediately after launch (EC-0012)."
+  - "grpc.Server.Serve() returns nil (not ErrServerStopped) during normal GracefulStop
+    — no spurious stderr output on happy path."
+  - "Ephemeral port 127.0.0.1:0 is the correct choice for CI-parallelism."
+  - "Metadata key 'authorization' is lowercase — gRPC HTTP/2 header compliance verified."
+  - "readEnv() uses named return values WITH explicit return (not naked return) — CS-0002 satisfied."
+  - "SetServingStatus(\"\", SERVING) correctly enables Health/Check to return SERVING
+    for the empty-string (default) service."
+  - "RPC3 assertion uses status.FromError idiom correctly — handles both nil error
+    (ok=true, code=OK != Unauthenticated) and non-status error (ok=false) paths."
+  - "Import order (stdlib / external grpc / internal authclient) is correct per ES-0130."
+  - "Makefile targets use tab indentation exclusively — verified via od output."
+  - "build-examples target names binaries .temp/examples/<name> (no example- prefix)
+    and clean removes the same path."
+  - "No //nolint annotations anywhere in scope."
+  - "make audit passes: 214/214 tests, 0 lint issues, go.sum unchanged."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Verdict
+# ─────────────────────────────────────────────────────────────────────────────
+verdict: APPROVED_WITH_COMMENTS
+verdict_reason: |
+  No critical issues. One CS-0010 warning (missing blank line at line 125-126)
+  and three low-priority suggestions. The core logic — interceptor wiring,
+  3-RPC self-test, goroutine cleanup, error handling, Makefile targets — is
+  all correct. The warning is a minor style fix that should be applied before merge.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rules Verified
+# ─────────────────────────────────────────────────────────────────────────────
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - ES-0001  # gofmt — pass (gofmt -l output empty)
+      - ES-0002  # tabs — pass
+      - ES-0003  # brace placement — pass
+      - ES-0010  # package names lowercase — pass (main)
+      - ES-0011  # exported/unexported — pass
+      - ES-0015  # MixedCaps — pass
+      - ES-0016  # function naming — pass (run, readEnv, usage)
+      - ES-0020  # init in conditions — pass
+      - ES-0021  # early return — pass
+      - ES-0022  # minimal scope — pass
+      - ES-0030  # slices over arrays — n/a
+      - ES-0032  # composite literals — pass
+      - ES-0040  # return (value, error) — pass
+      - ES-0041  # named return params — pass (readEnv, interceptor)
+      - ES-0042  # defer for cleanup — pass
+      - ES-0043  # no defer in loops — pass (no loops)
+      - ES-0044  # <= 3 return values — pass
+      - ES-0050  # small interfaces — n/a (no interfaces in example)
+      - ES-0051  # interface at consumer — n/a
+      - ES-0052  # comma-ok type assertion — pass (status.FromError)
+      - ES-0060  # handle errors explicitly — pass
+      - ES-0061  # wrap errors with context — pass (fmt.Errorf with %v for logging)
+      - ES-0063  # no panic — pass
+      - ES-0080  # doc comments — pass (package doc, usage, readEnv)
+      - ES-0081  # doc starts with name — pass
+      - ES-0110  # strconv vs fmt — n/a (no numeric conversions)
+      - ES-0120  # functional options — n/a (no complex config)
+      - ES-0130  # import order — pass (stdlib / external / internal)
+      - ES-0131  # import aliases — pass (authclient alias required)
+      - ES-0171  # no nolint — pass
+      - ES-0173  # no unclear abbreviations — pass (serr, cerr, lerr are acceptable single-use)
+    critical_rules_checked:
+      - ES-0051  # interface at consumer — n/a (no interfaces defined in example)
+      - ES-0060  # handle errors explicitly — pass
+      - ES-0063  # no panic — pass
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "go func"
+    rules_applied:
+      - EC-0010  # goroutine lifecycle — pass (Serve goroutine exits via GracefulStop)
+      - EC-0011  # cancel contexts — pass (cancelLogin, cancelRPC both deferred)
+      - EC-0012  # no goroutine leaks — pass
+      - EC-0013  # ctx.Done in long-running — n/a (Serve managed by grpc internally)
+      - EC-0050  # ctx as first param — pass
+      - EC-0051  # no ctx in struct — pass
+      - EC-0052  # context.Background() root — pass
+      - EC-0053  # set reasonable timeouts — pass (warning GRPC-S002 noted)
+      - EC-0055  # always call cancel — pass (both defer cancelLogin, defer cancelRPC)
+      - EC-0080  # shutdown via cancel — pass (GracefulStop is the shutdown mechanism)
+      - EC-0081  # wait for goroutines — pass (GracefulStop waits for Serve)
+      - EC-0091  # capture loop variables — n/a (no loop goroutines)
+      - EC-0092  # no unsynchronized shared state — pass
+    critical_rules_checked:
+      - EC-0010  # goroutine lifecycle — pass
+      - EC-0012  # no goroutine leaks — pass
+      - EC-0051  # no ctx in struct — pass
+      - EC-0062  # Swap for entry guards — n/a (no atomic flags in example)
+      - EC-0063  # no atomic+mutex mixing — n/a
+      - EC-0064  # max 1 mutex per method — n/a (no mutexes in example)
+      - EC-0081  # wait for goroutines — pass
+      - EC-0091  # capture loop variables — n/a
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - CS-0001  # 120 char limit — pass (all lines in main.go within limit)
+      - CS-0002  # explicit returns — pass (readEnv uses explicit named return)
+      - CS-0003  # no magic numbers — suggestion GRPC-S001 raised
+      - CS-0004  # no global state — pass (no package-level vars)
+      - CS-0010  # block spacing — WARNING GRPC-W001 (line 125-126)
+      - CS-0020  # top-to-bottom readability — pass
+      - CS-0021  # meaningful names — pass
+      - CS-0022  # extract meaningful functions — pass (readEnv, usage extracted)
+      - CS-0023  # low cyclomatic complexity — pass
+      - CS-0024  # no over-engineering — pass
+      - CS-0030  # no linter config changes — pass
+      - CS-0031  # nolint requires justification — n/a (no nolint)
+      - CS-0040  # anon func <= 5 lines — pass
+      - CS-0050  # entity in separate package — n/a
+      - CS-0060  # godoc for public methods — n/a (no public API in example)
+      - CS-0070  # English naming — pass
+      - CS-0071  # meaningful names — pass
+      - CS-0082  # function length — pass (run() ~100 lines, borderline but acceptable for example)
+      - CS-0110  # no internal standard refs in comments — pass
+      - CS-0111  # no obvious inline comments — pass
+      - CS-0112  # no decorative separators — pass
+
+  dba_rules:
+    checked: false
+    database: null
+    rules_applied: []
+
+  devops_rules:
+    checked: false
+    rules_applied: []

@@ -1,0 +1,67 @@
+review_id: REQ-001-TASK-006-CODE-REVIEW-PASS2
+task_id: REQ-001-TASK-006
+date: "2026-05-19"
+reviewer: code-reviewer (verification pass)
+verdict: APPROVED
+summary: >
+  All 11 issues from the original code-review report have been correctly fixed. Static analysis
+  is fully clean: build, gofmt, golangci-lint (0 issues), and the 214-test suite all pass with
+  no regressions. No new issues were introduced by the fixes.
+
+verification:
+  CR-001:
+    status: FIXED
+    evidence: "lib/examples/http_middleware/main.go:33 — blank line present between `}` (end of `if endpoint == \"\"`) and `addr := getenvOr(...)` at line 35"
+
+  CR-002:
+    status: FIXED
+    evidence: "lib/examples/http_middleware/main.go:148-150 — switch closes at line 148, blank line at 149, `authclient.SetRefreshCookie` at line 150"
+
+  CR-003:
+    status: FIXED
+    evidence: "lib/examples/http_middleware/main.go:181-186 — `if !ok` closes at line 184, blank line at 185, `writeJSON` at line 186"
+
+  CR-004:
+    status: FIXED
+    evidence: "lib/examples/http_middleware/main.go:201-207 — `getenvOr` if-block closes at line 204, blank line at 205, `return def` at line 206"
+
+  CR-005:
+    status: FIXED
+    evidence: "lib/examples/grpc_interceptor/main.go:128-133 — `if !ok || st.Code() != codes.Unauthenticated` closes at line 131, blank line at 132, `fmt.Printf` at line 133"
+
+  CR-006:
+    status: FIXED
+    evidence: "lib/examples/basic/main.go:93-98 — `safeTrunc` returns `s` directly (no ellipsis) when `len(s) <= n`; ellipsis appended only when truncation actually occurs"
+
+  CR-007:
+    status: FIXED
+    evidence: "lib/examples/basic/README.md:36 — clarifying note added inline after expected-output block: `*Note: the step 5 line is printed before client.Close() runs — the actual Close happens after run() returns, inside the deferred closure.*`"
+
+  CR-008:
+    status: FIXED
+    evidence: "lib/examples/http_middleware/main.go:138 — `strconv.Itoa(int(d.Seconds()))` replaces `fmt.Sprintf(\"%d\", ...)`. `strconv` added to imports at line 17; `fmt` import retained for Fprintf/Fprintln calls"
+
+  CR-009:
+    status: FIXED
+    evidence: "lib/examples/grpc_interceptor/main.go:31-35 — const block declares `loginTimeout = 10*time.Second`, `rpcTimeout = 5*time.Second`, `logoutTimeout = 5*time.Second`; used at lines 60, 107, 135 respectively"
+
+  CR-010:
+    status: FIXED
+    evidence: "lib/examples/grpc_interceptor/main.go:135-138 — `logoutCtx, cancelLogout := context.WithTimeout(context.Background(), logoutTimeout)` + `defer cancelLogout()` used exclusively for `client.Logout`; `rpcCtx` is no longer shared with Logout"
+
+  CR-011:
+    status: FIXED
+    evidence: "lib/examples/grpc_interceptor/README.md:11 — `/Watch` expanded to `/grpc.health.v1.Health/Watch` (full gRPC method path)"
+
+regressions: []
+
+static_analysis:
+  build: pass
+  lint: pass (0 issues)
+  test: pass (214/214)
+  gofmt: pass
+
+new_issues:
+  critical: []
+  warnings: []
+  suggestions: []

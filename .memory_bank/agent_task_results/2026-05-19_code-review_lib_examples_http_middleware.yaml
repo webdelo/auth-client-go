@@ -1,0 +1,401 @@
+review_id: REQ-001-TASK-006-code-review-lib_examples_http_middleware
+task_id: REQ-001-TASK-006
+package: lib/examples/http_middleware
+date: "2026-05-19"
+reviewer: code-reviewer
+files_reviewed:
+  - lib/examples/http_middleware/main.go
+  - lib/examples/http_middleware/README.md
+
+# ─────────────────────────────────────────────
+# Static Analysis
+# ─────────────────────────────────────────────
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+    note: "golangci-lint 0 issues"
+  tests:
+    status: pass
+    note: "make audit — 0 issues, 214 tests pass (per task background); race: clean"
+
+# ─────────────────────────────────────────────
+# Checklist Results (from task spec)
+# ─────────────────────────────────────────────
+checklist_results:
+  public_api_only:
+    result: pass
+    note: "Only authclient.* used; no lib/internal/* imports."
+
+  error_handling_ES0060:
+    result: pass
+    details:
+      - "client.Close() — wrapped in defer with explicit error check and Fprintf. PASS."
+      - "srv.Shutdown() — error checked and printed. PASS."
+      - "writeJSON encoder error — caught and printed after headers are written (best-effort, correct). PASS."
+      - "client.Logout — ErrInvalidToken swallowed intentionally via errors.Is. PASS."
+      - "fmt.Fprintf(os.Stderr,...) return values unassigned — errcheck linter passes; universally accepted idiom. PASS."
+
+  slogAdapter_correctness:
+    result: pass
+    details:
+      - "Compile-time assertion: var _ authclient.Logger = slogAdapter{} at line 95. PASS."
+      - "Error method: prepends ('error', err) before fields, matching SDK Logger contract. PASS."
+      - "Value receiver on slogAdapter — holds *slog.Logger pointer; copy is cheap. PASS."
+
+  graceful_shutdown:
+    result: pass
+    details:
+      - "signal.NotifyContext with SIGINT/SIGTERM — EC-0082. PASS."
+      - "serverErr channel buffered(1) — prevents goroutine leak if nobody drains after Shutdown — EC-0020. PASS."
+      - "shutCtx with 5s timeout + defer cancel() — EC-0055/EC-0080. PASS."
+
+  goroutine_lifecycle:
+    result: pass
+    details:
+      - "Server goroutine exits when ListenAndServe returns after Shutdown. Buffered channel prevents send-block. EC-0012. PASS."
+      - "No WaitGroup needed: srv.Shutdown() guarantees active connections drained before returning. EC-0081 satisfied idiomatically."
+
+  idempotent_logout:
+    result: pass
+    note: "!errors.Is(lerr, authclient.ErrInvalidToken) at line 167 swallows invalidated-cookie error. PASS."
+
+  read_header_timeout:
+    result: pass
+    note: "ReadHeaderTimeout: 5 * time.Second at line 59. Slowloris mitigation present. PASS."
+
+  mux_method_patterns:
+    result: pass
+    note: "POST /auth/login, POST /auth/logout, GET /api/profile — Go 1.22+ method-prefixed patterns. go.mod is go 1.25.0. PASS."
+
+  gocritic_exit_after_defer:
+    result: pass
+    note: "main() calls os.Exit(run()). Defers inside run() execute when run() returns; no exitAfterDefer issue. PASS."
+
+  package_doc:
+    result: pass
+    note: "Line 1: '// Package main is the http_middleware authclient SDK example:...' — correctly starts with 'Package main'. PASS."
+
+  no_exported_identifiers:
+    result: pass
+    note: "All identifiers unexported: slogAdapter, loginHandler, logoutHandler, profileHandler, writeJSON, getenvOr, usage. PASS."
+
+  no_nolint_directives:
+    result: pass
+    note: "No //nolint anywhere in main.go. PASS."
+
+  readme:
+    result: pass
+    note: "Sections: What / Prerequisites / Run / Expected output / Notes — all present. 46 lines (< 50). Cookie path /auth/refresh claim accurate per lib/cookies.go. PASS."
+
+# ─────────────────────────────────────────────
+# Issues
+# ─────────────────────────────────────────────
+issues:
+  critical: []
+
+  warnings:
+    - id: HTTPM-W001
+      category: STYLE
+      title: "Missing blank line after guard-clause if block (CS-0010)"
+      file: lib/examples/http_middleware/main.go
+      line: 32
+      standard: "coding_style.md CS-0010"
+      description: |
+        The guard clause `if endpoint == "" { ... return 0 }` is immediately followed by
+        `addr := getenvOr(...)` on the next line with no blank line separating them.
+        CS-0010 requires an empty line after every `if` block. The exception applies
+        only to `if err != nil` error-check pairs, not to arbitrary guard clauses.
+      current_code: |
+        if endpoint == "" {
+            usage()
+            return 0
+        }
+        addr := getenvOr("HTTP_ADDR", ":8080")
+      recommended_fix: |
+        if endpoint == "" {
+            usage()
+            return 0
+        }
+
+        addr := getenvOr("HTTP_ADDR", ":8080")
+      reason: "CS-0010 block spacing improves visual separation between guard clauses and subsequent logic."
+
+    - id: HTTPM-W002
+      category: STYLE
+      title: "Missing blank line after switch block (CS-0010)"
+      file: lib/examples/http_middleware/main.go
+      line: 146
+      standard: "coding_style.md CS-0010"
+      description: |
+        The `switch` block handling login errors (lines 130–146) is immediately followed
+        by `authclient.SetRefreshCookie(...)` on line 147 with no blank line.
+        CS-0010 requires an empty line after switch blocks.
+      current_code: |
+        switch {
+        case errors.Is(err, authclient.ErrInvalidToken):
+            http.Error(w, "invalid credentials", http.StatusUnauthorized)
+            return
+        // ... other cases
+        case err != nil:
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+        authclient.SetRefreshCookie(w, out.RefreshToken)
+      recommended_fix: |
+        switch {
+        // ... cases unchanged
+        case err != nil:
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        authclient.SetRefreshCookie(w, out.RefreshToken)
+      reason: "CS-0010 block spacing — blank line after switch separates error dispatch from success path."
+
+    - id: HTTPM-W003
+      category: STYLE
+      title: "Missing blank line after guard-clause if block in profileHandler (CS-0010)"
+      file: lib/examples/http_middleware/main.go
+      line: 181
+      standard: "coding_style.md CS-0010"
+      description: |
+        In `profileHandler`, the guard `if !ok { http.Error(...); return }` (lines 178–181)
+        is immediately followed by `writeJSON(...)` on line 182 with no blank line.
+        CS-0010 requires an empty line after if blocks; the exception is only for
+        `if err != nil` error-check pairs, not boolean-flag guards.
+      current_code: |
+        user, ok := authclient.UserFromContext(r.Context())
+        if !ok {
+            http.Error(w, "no user", http.StatusInternalServerError)
+            return
+        }
+        writeJSON(w, http.StatusOK, map[string]string{
+      recommended_fix: |
+        user, ok := authclient.UserFromContext(r.Context())
+        if !ok {
+            http.Error(w, "no user", http.StatusInternalServerError)
+            return
+        }
+
+        writeJSON(w, http.StatusOK, map[string]string{
+      reason: "CS-0010 block spacing — blank line after guard clearly separates error path from success path."
+
+    - id: HTTPM-W004
+      category: STYLE
+      title: "Missing blank line after if block in getenvOr (CS-0010)"
+      file: lib/examples/http_middleware/main.go
+      line: 200
+      standard: "coding_style.md CS-0010"
+      description: |
+        In `getenvOr`, the if block (lines 198–200) is immediately followed by
+        `return def` on line 201 with no blank line. CS-0010 applies to all if blocks.
+      current_code: |
+        func getenvOr(key, def string) string {
+            if v := os.Getenv(key); v != "" {
+                return v
+            }
+            return def
+        }
+      recommended_fix: |
+        func getenvOr(key, def string) string {
+            if v := os.Getenv(key); v != "" {
+                return v
+            }
+
+            return def
+        }
+      reason: "CS-0010 block spacing — consistent with the rule applied across the codebase."
+
+  suggestions:
+    - id: HTTPM-S001
+      category: PERFORMANCE
+      title: "Use strconv.Itoa instead of fmt.Sprintf for Retry-After header value (ES-0110)"
+      file: lib/examples/http_middleware/main.go
+      line: 136
+      standard: "effective_standards.md ES-0110"
+      description: |
+        `fmt.Sprintf("%d", int(d.Seconds()))` performs an integer-to-string conversion.
+        ES-0110 recommends `strconv.Itoa` or `strconv.FormatInt` over `fmt.Sprintf`
+        for numeric conversions — it is faster, allocates less, and expresses intent clearly.
+        The `strconv` package is already available as a stdlib import.
+      current_code: |
+        w.Header().Set("Retry-After", fmt.Sprintf("%d", int(d.Seconds())))
+      recommended_fix: |
+        w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())))
+        // Add "strconv" to the import block.
+      reason: "strconv.Itoa is the idiomatic and more performant approach for int-to-string conversion."
+
+# ─────────────────────────────────────────────
+# Statistics
+# ─────────────────────────────────────────────
+statistics:
+  critical: 0
+  warning: 4
+  suggestions: 1
+
+# ─────────────────────────────────────────────
+# Positive Observations
+# ─────────────────────────────────────────────
+positive:
+  - "Correct gocritic exitAfterDefer pattern: main() contains only os.Exit(run()); all defers in run() execute normally."
+  - "Compile-time interface assertion var _ authclient.Logger = slogAdapter{} catches signature drift at build time."
+  - "slogAdapter.Error correctly prepends the err as a structured 'error' key before variadic fields, matching the SDK Logger contract."
+  - "Graceful shutdown is textbook: signal.NotifyContext + buffered(1) serverErr channel + srv.Shutdown with 5s timeout context."
+  - "Buffered channel serverErr(1) prevents the server goroutine from blocking if nobody drains after srv.Shutdown returns."
+  - "Idempotent logout: errors.Is(lerr, authclient.ErrInvalidToken) correctly swallows the stale-cookie error."
+  - "ReadHeaderTimeout: 5s protects against Slowloris without requiring external middleware."
+  - "Method-prefixed mux routing (POST /auth/login, GET /api/profile) leverages Go 1.22+ enhanced ServeMux safely on go 1.25."
+  - "Package doc comment is present, starts with 'Package main', and describes all three endpoints plus the demonstrated patterns."
+  - "README is accurate: cookie path /auth/refresh claim verified against lib/cookies.go defaultRefreshCookiePath; curl examples are runnable; Expected output section matches actual response shapes."
+  - "No exported identifiers in an example package — correct since it is package main."
+  - "No //nolint directives — clean lint posture maintained."
+
+# ─────────────────────────────────────────────
+# Verdict
+# ─────────────────────────────────────────────
+verdict: APPROVED_WITH_COMMENTS
+verdict_reason: |
+  No critical issues. Four CS-0010 block-spacing warnings remain (three if-guards and one
+  switch block lack a trailing blank line). One ES-0110 suggestion (fmt.Sprintf → strconv.Itoa
+  for Retry-After). All functional concerns — graceful shutdown, goroutine lifecycle,
+  idempotent logout, slogAdapter correctness, error handling, Slowloris mitigation —
+  are correctly implemented. The file can be merged after addressing the spacing warnings.
+
+# ─────────────────────────────────────────────
+# Rules Verified
+# ─────────────────────────────────────────────
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt — fmt status: pass
+      - "ES-0002"  # tabs indentation — verified
+      - "ES-0003"  # brace placement — verified
+      - "ES-0010"  # package name lowercase — 'main' OK for example binary
+      - "ES-0011"  # exported vs unexported — all unexported, correct
+      - "ES-0014"  # -er suffix for single-method interfaces — N/A (no new interfaces)
+      - "ES-0015"  # MixedCaps — verified
+      - "ES-0016"  # function naming MixedCaps — verified
+      - "ES-0020"  # initialization in conditions — used correctly (if v := ...; if lerr := ...)
+      - "ES-0021"  # early return guard clauses — used throughout
+      - "ES-0022"  # minimize scope — verified
+      - "ES-0030"  # prefer slices — N/A
+      - "ES-0032"  # composite literals with field names — Config{Endpoint:, Logger:} correct
+      - "ES-0033"  # pre-allocate slices — make([]any, 0, len(fields)+2) in Error() correct
+      - "ES-0042"  # defer for resource cleanup — defer client.Close(), defer stop(), defer cancel() correct
+      - "ES-0043"  # no defer in loops — no loops with defer
+      - "ES-0050"  # small focused interfaces — Logger interface 3 methods, appropriate
+      - "ES-0051"  # interfaces at consumer — no new interfaces defined in this example
+      - "ES-0052"  # type assertions comma-ok — UserFromContext returns (User, bool), used with ok check
+      - "ES-0053"  # compile-time interface assertion — var _ authclient.Logger = slogAdapter{}
+      - "ES-0055"  # no generalized interfaces in provider — N/A (package main, no provider)
+      - "ES-0056"  # prefer unexported interfaces — N/A (no interface definitions)
+      - "ES-0060"  # handle errors explicitly — pass (all errors handled)
+      - "ES-0061"  # wrap errors with context — errors from SDK already wrapped; example does not add new wrapping
+      - "ES-0062"  # sentinel errors — uses authclient.ErrInvalidToken etc. correctly
+      - "ES-0063"  # no panic in production — no panic() calls
+      - "ES-0070"  # consistent receiver types — slogAdapter value receiver consistent across Info/Warn/Error
+      - "ES-0072"  # value receiver for read-only — slogAdapter methods are read-only, value receiver correct
+      - "ES-0080"  # doc comments — package doc present; handler funcs have no exported godoc (not required for unexported)
+      - "ES-0110"  # strconv vs fmt — VIOLATION at line 136 (fmt.Sprintf for int-to-string)
+      - "ES-0120"  # functional options — N/A (no constructor with many options in this file)
+      - "ES-0130"  # import order — stdlib then external; correct
+      - "ES-0131"  # import aliases — authclient alias for github.com/webdelo/auth-client-go/lib is necessary and correct
+      - "ES-0140"  # constructor name New — N/A
+      - "ES-0171"  # no nolint — no //nolint directives present
+      - "ES-0172"  # full names in log messages — "http server listening", "shutdown signal received" are descriptive
+      - "ES-0173"  # no unclear abbreviations — lerr, cerr, serr are single-use error vars in narrow scope; acceptable
+    critical_rules_checked:
+      - "ES-0051"  # Interface at consumer — no interfaces defined; N/A
+      - "ES-0060"  # Handle errors explicitly — PASS
+      - "ES-0063"  # No panic — PASS
+
+  effective_concurrency:
+    checked: true
+    total_rules: 35
+    concurrency_detected: true
+    trigger_found:
+      - "go func"     # line 66
+      - "chan "        # line 65 (chan error)
+      - "<-"          # lines 69, 75, 77
+      - "select {"    # line 74
+    rules_applied:
+      - "EC-0010"  # goroutine lifecycle — server goroutine exits via ListenAndServe return after Shutdown. PASS.
+      - "EC-0011"  # cancel context — defer stop() (signal context) and defer cancel() (shutdown context) present. PASS.
+      - "EC-0012"  # no goroutine leaks — buffered channel prevents send-block; goroutine exits cleanly. PASS.
+      - "EC-0020"  # channel size — serverErr make(chan error, 1); size=1 appropriate for single-producer. PASS.
+      - "EC-0021"  # close on sender side — goroutine (sender) closes serverErr. PASS.
+      - "EC-0050"  # context as first param — all ctx usage correct. PASS.
+      - "EC-0051"  # no context in struct — no context stored in any struct. PASS.
+      - "EC-0052"  # context.Background() as root — used for signal context and shutdown context. PASS.
+      - "EC-0053"  # reasonable timeouts — shutdown context 5s. PASS.
+      - "EC-0055"  # always call cancel — defer stop() for signal ctx, defer cancel() for shutdown ctx. PASS.
+      - "EC-0056"  # custom types for context keys — N/A (no context.WithValue in this file)
+      - "EC-0080"  # signal shutdown via context — signal.NotifyContext cancels on SIGINT/SIGTERM. PASS.
+      - "EC-0081"  # wait for goroutines — srv.Shutdown() ensures all in-flight requests complete; no WaitGroup needed. PASS (idiomatic).
+      - "EC-0082"  # OS signals — signal.NotifyContext(SIGINT, SIGTERM). PASS.
+      - "EC-0091"  # capture loop variables — no loops with goroutines. N/A.
+      - "EC-0092"  # no shared state without sync — no shared mutable state between goroutines. PASS.
+    critical_rules_checked:
+      - "EC-0010"  # Goroutine lifecycle — PASS
+      - "EC-0012"  # No goroutine leaks — PASS
+      - "EC-0021"  # Close channels on sender side — PASS
+      - "EC-0051"  # Never store context in structs — PASS
+      - "EC-0081"  # Wait for goroutines — PASS (srv.Shutdown handles this)
+      - "EC-0082"  # OS signals — PASS
+      - "EC-0091"  # Capture loop variables — N/A
+    rules_skipped:
+      - "EC-0030 through EC-0034"  # No mutex usage in this file
+      - "EC-0040 through EC-0041"  # No WaitGroup in this file
+      - "EC-0060 through EC-0064"  # No atomic operations in this file
+      - "EC-0070 through EC-0071"  # No worker patterns
+      - "EC-0100 through EC-0102"  # No test files reviewed
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # line length 120 — verified; longest lines are within limit
+      - "CS-0002"  # explicit returns — all returns are explicit (no naked returns)
+      - "CS-0003"  # no magic numbers — 5*time.Second repeated; borderline but context is clear
+      - "CS-0004"  # no global state — only var _ authclient.Logger = slogAdapter{} (compile check, not state)
+      - "CS-0010"  # block spacing — VIOLATIONS at lines 32, 146, 181, 200
+      - "CS-0020"  # code reads top-to-bottom — verified; run() flows logically
+      - "CS-0021"  # clear meaningful names — verified
+      - "CS-0022"  # extract meaningful actions — handler functions extracted; PASS
+      - "CS-0023"  # low cyclomatic complexity — handlers are flat with early returns; PASS
+      - "CS-0024"  # avoid over-engineering — single file, no unnecessary abstractions; PASS
+      - "CS-0031"  # nolint justification — no //nolint directives at all; PASS
+      - "CS-0040"  # anonymous functions max 5 lines in parameters — go func(){} not passed as parameter; N/A
+      - "CS-0060"  # godoc for public methods — no public methods (package main); N/A
+      - "CS-0070"  # English-only naming — verified
+      - "CS-0071"  # meaningful variable names — verified
+      - "CS-0072"  # idiomatic casing — verified
+      - "CS-0082"  # function length — run() ~63 lines, loginHandler closure ~42 lines; within 80-line limit
+      - "CS-0110"  # no internal standard references in comments — no such references present; PASS
+      - "CS-0111"  # no restating-the-obvious inline comments — "best-effort logging; headers already written" explains WHY; PASS
+      - "CS-0112"  # no decorative separators — none present; PASS
+    rules_skipped:
+      - "CS-0050 through CS-0053"  # Package structure rules apply to library packages, not example binaries
+      - "CS-0080"  # Distinct types — no domain types defined here; N/A
+      - "CS-0100"  # No envDefault — no struct config tags; N/A
+      - "CS-0113 through CS-0122"  # Entity/VO/DTO design rules — N/A (no domain types)
+
+  dba_rules:
+    checked: false
+    note: "No database access in this file."
+
+  devops_rules:
+    checked: false
+    note: "No Docker/K8s configuration in this file."

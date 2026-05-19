@@ -1,0 +1,241 @@
+metadata:
+  task_id: REQ-001-TASK-006
+  report_date: "2026-05-19"
+  source_report: task_management/reviews/REQ-001-TASK-006-CODE-REVIEW.yaml
+  verification_report: task_management/reviews/REQ-001-TASK-006-CODE-REVIEW-PASS2.yaml
+  branch: feature/req-001-task-006
+  packages:
+    - lib/examples/basic
+    - lib/examples/http_middleware
+    - lib/examples/grpc_interceptor
+
+pre_validation:
+  build: PASS
+  test: PASS    # 214/214
+  lint: PASS    # 0 issues
+  race: PASS    # 214/214
+  notes: >
+    Baseline clean before fixes. Source report (CODE-REVIEW pass 2) had
+    0 critical / 5 warnings / 6 suggestions across 3 example packages.
+
+execution_plan:
+  approach: >
+    Single wave — all 11 issues are localised cosmetic/style/doc edits with
+    no cross-file dependencies. Grouped per file to honour the
+    "one agent per file" rule.
+  waves:
+    - wave: 1
+      agents:
+        - agent: refactorer
+          model: haiku
+          scope: lib/examples/http_middleware/main.go
+          issues: [CR-001, CR-002, CR-003, CR-004, CR-008]
+          rationale: >
+            Four CS-0010 blank-line insertions + one ES-0110 mechanical
+            substitution (fmt.Sprintf -> strconv.Itoa with import add).
+        - agent: refactorer
+          model: haiku
+          scope: lib/examples/grpc_interceptor/main.go
+          issues: [CR-005, CR-009, CR-010]
+          rationale: >
+            CS-0010 blank line, CS-0003 magic-number extraction (three
+            named timeout constants), EC-0053 separate Logout context.
+        - agent: refactorer
+          model: haiku
+          scope: lib/examples/basic/main.go
+          issues: [CR-006]
+          rationale: >
+            safeTrunc contract fix — return original string when no
+            truncation occurred, append ellipsis only on actual truncation.
+        - agent: refactorer
+          model: haiku
+          scope:
+            - lib/examples/basic/README.md
+            - lib/examples/grpc_interceptor/README.md
+          issues: [CR-007, CR-011]
+          rationale: >
+            Two pure documentation edits — clarifying note about deferred
+            Close ordering + expanding `/Watch` to full gRPC method path.
+
+fixes:
+  - id: CR-001
+    severity: WARNING
+    standard: "coding_style.md CS-0010"
+    file: lib/examples/http_middleware/main.go
+    line_before: 32
+    line_after: 34
+    change: >
+      Added blank line after the `if endpoint == "" { ...; return 0 }`
+      guard clause, before `addr := getenvOr(...)`.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-002
+    severity: WARNING
+    standard: "coding_style.md CS-0010"
+    file: lib/examples/http_middleware/main.go
+    line_before: 146
+    line_after: 149
+    change: >
+      Added blank line after the switch-on-Login-error block, before
+      `authclient.SetRefreshCookie(...)`.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-003
+    severity: WARNING
+    standard: "coding_style.md CS-0010"
+    file: lib/examples/http_middleware/main.go
+    line_before: 181
+    line_after: 185
+    change: >
+      Added blank line after the `if !ok` guard in `profileHandler`
+      before `writeJSON(...)`.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-004
+    severity: WARNING
+    standard: "coding_style.md CS-0010"
+    file: lib/examples/http_middleware/main.go
+    line_before: 200
+    line_after: 205
+    change: >
+      Added blank line in `getenvOr` after the `if v := os.Getenv(...)`
+      block and before `return def`.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-005
+    severity: WARNING
+    standard: "coding_style.md CS-0010"
+    file: lib/examples/grpc_interceptor/main.go
+    line_before: 125
+    line_after: 132
+    change: >
+      Added blank line after the RPC3 assertion
+      `if !ok || st.Code() != codes.Unauthenticated` block before the
+      success `fmt.Printf` line.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-006
+    severity: SUGGESTION
+    category: LOGIC
+    file: lib/examples/basic/main.go
+    line_before: 93
+    line_after: 93
+    change: >
+      `safeTrunc` reworked: returns original string when `len(s) <= n`;
+      otherwise returns `s[:n] + "…"`. Eliminates misleading ellipsis on
+      short inputs.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-007
+    severity: SUGGESTION
+    category: DOCUMENTATION
+    file: lib/examples/basic/README.md
+    line_before: 33
+    line_after: 36
+    change: >
+      Added italicised clarifying note after the expected-output block
+      explaining that `step 5: Close ok (deferred)` is printed before
+      `client.Close()` runs.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-008
+    severity: SUGGESTION
+    standard: "effective_standards.md ES-0110"
+    file: lib/examples/http_middleware/main.go
+    line_before: 136
+    line_after: 138
+    change: >
+      Replaced `fmt.Sprintf("%d", int(d.Seconds()))` with
+      `strconv.Itoa(int(d.Seconds()))` for the Retry-After header.
+      Added `"strconv"` to the import block (alphabetically between
+      `"os/signal"` and `"syscall"`).
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-009
+    severity: SUGGESTION
+    standard: "coding_style.md CS-0003"
+    file: lib/examples/grpc_interceptor/main.go
+    lines_after: [31-35, 60, 107]
+    change: >
+      Introduced file-scope `const` block with `loginTimeout = 10*time.Second`,
+      `rpcTimeout = 5*time.Second`, `logoutTimeout = 5*time.Second`. Updated
+      the two existing `context.WithTimeout` calls to use the constants.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-010
+    severity: SUGGESTION
+    standard: "effective_concurrency.md EC-0053"
+    file: lib/examples/grpc_interceptor/main.go
+    line_before: 128
+    lines_after: [135-138]
+    change: >
+      Created dedicated `logoutCtx`/`cancelLogout` with `logoutTimeout`
+      budget for `client.Logout`, instead of reusing `rpcCtx` shared by
+      the three preceding RPCs.
+    agent: refactorer (haiku)
+    status: FIXED
+  - id: CR-011
+    severity: SUGGESTION
+    standard: "coding_style.md CS-0021"
+    file: lib/examples/grpc_interceptor/README.md
+    line: 11
+    change: >
+      Replaced abbreviated `/Watch` with full method path
+      `/grpc.health.v1.Health/Watch` to match what consumers pass to
+      `WithOpenMethods` and what the SDK registers in defaultOpenMethods.
+    agent: refactorer (haiku)
+    status: FIXED
+
+skipped: []
+
+summary:
+  total_issues: 11
+  fixed: 11
+  skipped: 0
+  by_severity:
+    critical: { total: 0, fixed: 0 }
+    warning:  { total: 5, fixed: 5 }
+    suggestion: { total: 6, fixed: 6 }
+  files_modified:
+    - lib/examples/basic/main.go
+    - lib/examples/basic/README.md
+    - lib/examples/http_middleware/main.go
+    - lib/examples/grpc_interceptor/main.go
+    - lib/examples/grpc_interceptor/README.md
+
+final_validation:
+  build: PASS
+  build_examples: PASS   # all 3 binaries built into .temp/examples/
+  test: PASS             # 214/214
+  lint: PASS             # 0 issues
+  race: PASS             # 214/214
+  gofmt: PASS            # no files need reformatting
+  code_review:
+    verdict: APPROVED
+    report: task_management/reviews/REQ-001-TASK-006-CODE-REVIEW-PASS2.yaml
+    new_critical: 0
+    new_warnings: 0
+    new_suggestions: 0
+    regressions: 0
+
+dod_validation:
+  - criterion: "lib/examples/basic/main.go собирается, демонстрирует Login → Validate → Logout flow"
+    status: MET
+  - criterion: "lib/examples/http_middleware/main.go собирается, имеет 3 endpoint'а (/api/profile защищённый, /auth/login, /auth/logout)"
+    status: MET
+  - criterion: "lib/examples/grpc_interceptor/main.go собирается, использует grpc.UnaryInterceptor(client.UnaryInterceptor()), демонстрирует skip Health/Check"
+    status: MET
+  - criterion: "Каждый пример имеет README.md с командой запуска и expected output"
+    status: MET
+  - criterion: "make build-examples собирает все три без warnings и без новых записей в go.sum"
+    status: MET
+  - criterion: "Старый placeholder lib/examples/basic/main.go заменён"
+    status: MET
+  - criterion: "Examples используют только публичный API SDK (никаких internal/ импортов)"
+    status: MET
+  - criterion: "Examples не добавляют сторонних deps — go.sum after build-examples идентичен go.sum до"
+    status: MET
+  - criterion: "make audit проходит"
+    status: MET
+
+verdict: ALL_FIXED

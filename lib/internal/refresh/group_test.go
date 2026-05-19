@@ -15,7 +15,7 @@ func TestGroup_Do(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		run  func(*testing.T, *Group)
+		run func(*testing.T, *Group)
 	}{
 		"happy_path": {
 			run: func(t *testing.T, g *Group) {

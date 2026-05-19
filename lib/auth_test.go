@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -50,9 +50,9 @@ func TestClient_Login(t *testing.T) {
 			prepareMocks: func(t *testing.T, m *testMocks) {
 				m.auth.LoginFunc = func(_ context.Context, _ *auth_v1.LoginRequest, _ ...grpc.CallOption) (*auth_v1.LoginResponse, error) {
 					return &auth_v1.LoginResponse{
-						AccessToken:          "access-tok",
-						RefreshToken:         "refresh-tok",
-						AccessTokenExpiresAt: time.Now().Add(15 * time.Minute).Unix(),
+						AccessToken:           "access-tok",
+						RefreshToken:          "refresh-tok",
+						AccessTokenExpiresAt:  time.Now().Add(15 * time.Minute).Unix(),
 						RefreshTokenExpiresAt: time.Now().Add(7 * 24 * time.Hour).Unix(),
 						User: &auth_v1.User{
 							Uuid:  "u-123",
