@@ -1,0 +1,283 @@
+task_id: REQ-001-TASK-005
+package: lib
+review_date: 2026-05-18
+reviewer: security-auditor
+scope_files:
+  - lib/cookies.go
+  - lib/helpers.go
+issues_by_severity:
+  critical: 0
+  high: 0
+  medium: 0
+  low: 1
+  info: 3
+verdict: APPROVED_WITH_COMMENTS
+findings:
+  - id: SA-LIB-001
+    severity: LOW
+    category: input_validation
+    file: lib/helpers.go
+    line: 33
+    title: X-Real-IP returned verbatim without syntax validation
+    description: |
+      IPFromRequest returns the value of the X-Real-IP header as-is without
+      any net.ParseIP validation. A malicious client (or misconfigured proxy)
+      can inject a syntactically invalid string such as "not-an-ip", an IPv6
+      address with zone IDs ("::1%eth0"), or an excessively long string
+      (thousands of bytes). This string is then forwarded to the AUTH service
+      as the ClientIP field. AUTH computes the fingerprint from it; a
+      structurally malformed value will not match any real /24 block.
+      The immediate damage is limited because AUTH's fingerprint check is a
+      detection hint (ADR §R2), not a hard block — a stolen refresh token
+      from a different /24 is still rejected. However:
+      - If AUTH passes the raw value into a log line without escaping,
+        log-injection is possible (newline characters in the header value).
+      - If a future AUTH version trusts the IP field for rate-limiting or
+        geo-blocking, the forged value matters more.
+      Go's net/http server does strip bare CR/LF when reading request headers
+      (RFC 7230 §3.5), so newline injection via X-Real-IP is NOT possible in
+      practice on the server side. However, the function is also usable in
+      test/proxy contexts where the request is constructed manually, and the
+      upstream AUTH service owns all downstream risk.
+      Severity assessed as LOW because: (a) SECURITY godoc is present and
+      explicit, (b) AUTH fingerprint is a hint not a hard gate, (c) Go stdlib
+      rejects CRLF in headers on the receiving HTTP path.
+    impact: |
+      Syntactically invalid IP forwarded to AUTH service; potential for
+      AUTH-side log injection if AUTH logs the field without sanitisation;
+      future misuse if AUTH adds IP-based controls.
+    suggestion: |
+      Add an optional net.ParseIP validation pass before returning X-Real-IP
+      and XFF-extracted values. If the parsed value is nil, fall through to
+      the next source. This is a two-line change:
+
+        if v := r.Header.Get("X-Real-IP"); v != "" {
+            if net.ParseIP(v) != nil {
+                return v
+            }
+        }
+
+      Apply the same pattern to the XFF first-entry result. Do NOT apply to
+      r.RemoteAddr — Go's HTTP server guarantees that value is well-formed.
+      This change is backward-compatible: real proxies always set a valid IP.
+      If the change is deferred to v0.2.0 (with WithTrustedProxies), document
+      it explicitly in a TODO comment referencing the ticket.
+    references:
+      - "OWASP Input Validation Cheat Sheet"
+      - "RFC 7230 §3.5 (CRLF in headers)"
+      - "REQ-001-ADR §A12"
+
+  - id: SA-LIB-002
+    severity: INFO
+    category: other
+    file: lib/cookies_test.go
+    line: 23
+    title: No test for base64url / special-character token values in SetRefreshCookie
+    description: |
+      The PRP Gotcha G12 explicitly specifies a test case: "token with
+      base64url value (AbCdEf123-_.=) correctly serialises." The
+      cookies_test.go uses only "abc.def.ghi" (JWT-shaped but ASCII-only with
+      dots) for all SetRefreshCookie test cases. A base64url token containing
+      "+" or "=" would be percent-encoded or quoted by http.Cookie.String(),
+      and the test does not verify round-trip fidelity.
+      In practice, Go's net/http SetCookie correctly quotes special characters
+      per RFC 6265 and the round-trip is safe. This is a test-coverage gap,
+      not a production defect. However, since cookie defaults are intended to
+      FREEZE at v1.0.0, the missing regression test means a future Go stdlib
+      change or a dependency shimming http.Cookie could silently break token
+      delivery.
+    impact: |
+      If a future Go stdlib update changes cookie serialisation for tokens
+      containing "+", "=", or "/" (standard base64 alphabet), there is no
+      regression test to catch it. Refresh flow would silently fail for those
+      token values.
+    suggestion: |
+      Add a test case in TestSetRefreshCookie:
+
+        "base64url_token_value": {
+            token: "AbCdEf123-_.=+/xYz",
+            opts:  nil,
+            want: func(t *testing.T, c *http.Cookie) {
+                assert.Equal(t, "AbCdEf123-_.=+/xYz", c.Value)
+                assert.True(t, c.Secure)
+                assert.True(t, c.HttpOnly)
+            },
+        },
+
+      This verifies http.SetCookie round-trips the token through
+      rec.Result().Cookies()[0].Value without corruption.
+    references:
+      - "RFC 6265 §4.1.1 (cookie-value grammar)"
+      - "REQ-001-TASK-005-PRP §Gotchas G12"
+
+  - id: SA-LIB-003
+    severity: INFO
+    category: other
+    file: lib/helpers_test.go
+    line: 12
+    title: No test for X-Real-IP containing whitespace or invalid IP syntax
+    description: |
+      TestIPFromRequest covers valid IPs (IPv4, IPv6, XFF multi-hop) but does
+      not include cases for:
+      1. X-Real-IP with leading/trailing whitespace (e.g., " 203.0.113.1 ") —
+         the function returns it verbatim, not trimmed, unlike the XFF branch
+         which calls strings.TrimSpace.
+      2. X-Real-IP with an invalid value (e.g., "not-an-ip") — returned
+         verbatim.
+      The asymmetry between X-Real-IP (no trim) and XFF (trim) is a subtle
+      inconsistency that a test case would expose and document as intentional
+      or trigger a fix.
+    impact: |
+      If a reverse proxy emits X-Real-IP with surrounding whitespace, the
+      SDK forwards " 203.0.113.1 " to AUTH. AUTH fingerprint uses the raw
+      string; if AUTH does its own trimming the result is the same, but if
+      AUTH does not trim, the fingerprint computed at login and at validate
+      would differ — causing spurious 401s.
+    suggestion: |
+      Add test cases:
+
+        "x_real_ip_with_whitespace": {
+            xRealIP: " 203.0.113.1 ",
+            want:    "203.0.113.1",  // after trim — or document as "203.0.113.1 " if no-trim is intentional
+        },
+        "x_real_ip_invalid_syntax": {
+            xRealIP: "not-an-ip",
+            want:    "",  // if validation added per SA-LIB-001; or "not-an-ip" documenting pass-through
+        },
+
+      If the current no-trim behaviour is intentional, add a code comment in
+      IPFromRequest explaining the asymmetry.
+    references:
+      - "RFC 7239 §4 (Forwarded header whitespace rules)"
+      - "OWASP Input Validation Cheat Sheet"
+
+  - id: SA-LIB-004
+    severity: INFO
+    category: other
+    file: lib/cookies.go
+    line: 40
+    title: WithCookieMaxAge with zero duration produces session cookie silently
+    description: |
+      WithCookieMaxAge(0) sets cookie.MaxAge = 0. Per RFC 6265 and Go's
+      http.Cookie, MaxAge == 0 means "unset" (session cookie — expires when
+      browser closes), not "expire immediately". The godoc says "fractional
+      seconds are truncated" and warns about negative durations, but does not
+      explicitly document the zero-duration edge case.
+      This is unlikely to cause a security incident (a session cookie for a
+      refresh token is worse than a persistent one, but not catastrophic), but
+      a consumer who writes WithCookieMaxAge(someConfig.TTL) and passes 0 by
+      accident will produce a session cookie silently instead of an error or
+      the SDK default 14-day cookie.
+    impact: |
+      Silent downgrade from 14-day persistent refresh cookie to session
+      cookie, causing users to be logged out on every browser close.
+      Not a confidentiality or integrity risk, but a usability regression that
+      a consumer will not detect without inspecting Set-Cookie headers.
+    suggestion: |
+      Extend the godoc of WithCookieMaxAge to explicitly state:
+
+        // Zero duration produces a session cookie (MaxAge=0 = unset per
+        // RFC 6265 §5.2.2). To restore the 14-day default, do not call
+        // WithCookieMaxAge at all. To expire immediately, use a negative
+        // duration or call ClearRefreshCookie instead.
+
+      Optionally, treat 0 as "use default" by not applying the option when
+      maxAge == 0, but this is a behaviour change requiring a CHANGELOG entry.
+    references:
+      - "RFC 6265 §5.2.2 (Max-Age attribute)"
+      - "Go net/http Cookie.MaxAge godoc"
+
+checks_performed:
+  - name: HttpOnly enforcement after options loop
+    result: pass
+    detail: "lib/cookies.go:105 — cookie.HttpOnly = true is set unconditionally after the options loop. No CookieOption can set it to false because HttpOnly is not in the option interface."
+
+  - name: Secure enforcement after options loop
+    result: pass
+    detail: "lib/cookies.go:106 — cookie.Secure = true is set unconditionally after the options loop. Same protection as HttpOnly."
+
+  - name: No backdoor options (WithCookieInsecure / WithCookieAllowJS / etc.)
+    result: pass
+    detail: "Grep across all lib/*.go found zero occurrences of WithCookieInsecure, WithCookieAllowJS, WithCookieSecure, WithCookieHttpOnly, WithCookieDisable, or any assignment of .HttpOnly=false / .Secure=false."
+
+  - name: Default Path is /auth/refresh (narrow)
+    result: pass
+    detail: "lib/cookies.go:10 — defaultRefreshCookiePath = \"/auth/refresh\". Verified in TestSetRefreshCookie happy_path assert."
+
+  - name: Default SameSite is Strict
+    result: pass
+    detail: "lib/cookies.go:100 — SameSite: http.SameSiteStrictMode set in struct literal. TestSetRefreshCookie happy_path asserts http.SameSiteStrictMode."
+
+  - name: Default Domain is empty string (host-only)
+    result: pass
+    detail: "lib/cookies.go:95-101 — Domain is not set in the struct literal, defaults to Go zero-value \"\". TestSetRefreshCookie happy_path asserts c.Domain == \"\"."
+
+  - name: MaxAge constant sanity (14 days = 1209600 seconds)
+    result: pass
+    detail: "lib/cookies.go:11 — defaultRefreshCookieMaxAge = 14 * 24 * 60 * 60 = 1209600. Verified by Python evaluation. Matches AUTH refresh-token TTL claim in PRP."
+
+  - name: ClearRefreshCookie sets MaxAge=-1 AND Value="" AND Expires=epoch
+    result: pass
+    detail: "lib/cookies.go:81-85 — all three are explicitly set after newRefreshCookie returns. TestClearRefreshCookie happy_path and expires_is_epoch_for_legacy_compat both assert all three fields."
+
+  - name: ClearRefreshCookie inherits same Path/Domain defaults as SetRefreshCookie (RFC 6265 identity)
+    result: pass
+    detail: "lib/cookies.go:80 — ClearRefreshCookie calls newRefreshCookie(\"\", opts) which applies the same defaults. TestClearRefreshCookie with_domain_preserved and with_path_preserved assert Path/Domain are preserved."
+
+  - name: No manual refresh token escaping in SetRefreshCookie
+    result: pass
+    detail: "lib/cookies.go:67-68 — token is passed directly to newRefreshCookie which sets cookie.Value = value. http.SetCookie handles escaping via stdlib. No double-escape risk."
+
+  - name: No logging of refresh token in cookies.go or helpers.go
+    result: pass
+    detail: "Grep found no log.*, fmt.Print*, or logger.* calls in either file. The token value is only assigned to cookie.Value and passed to http.SetCookie."
+
+  - name: IPFromRequest SECURITY godoc warning present
+    result: pass
+    detail: "lib/helpers.go:24-31 — godoc contains 'SECURITY:' keyword, explicitly names X-Real-IP and X-Forwarded-For as user-controllable, states 'reverse proxy that strips client-supplied values', and cites v0.2.0 WithTrustedProxies plan."
+
+  - name: No false-confidence IP validation in v0.1.0
+    result: pass
+    detail: "lib/helpers.go:32-44 — no net.ParseIP, net.ParseCIDR, or any CIDR validation. Function correctly does NOT pretend to do trust validation it doesn't do."
+
+  - name: XFF parsing uses SplitN+TrimSpace (no CRLF injection risk)
+    result: pass
+    detail: "lib/helpers.go:37 — strings.SplitN(xff, \",\", 2)[0] + strings.TrimSpace. Go HTTP server rejects bare CRLF in header values (RFC 7230 §3.5), so injection via XFF is not possible on the receive path."
+
+  - name: IPv6 in RemoteAddr handled via net.SplitHostPort
+    result: pass
+    detail: "lib/helpers.go:39 — net.SplitHostPort correctly strips brackets from [::1]:5678 → host=::1. TestIPFromRequest remote_addr_ipv6_with_port covers this case."
+
+  - name: UserAgentFromRequest is a thin passthrough with no transformation
+    result: pass
+    detail: "lib/helpers.go:51 — single return r.UserAgent(). No transformation, no truncation. No transformation bugs possible."
+
+  - name: Defaults are const not var (immutable at runtime)
+    result: pass
+    detail: "lib/cookies.go:8-12 — all three defaults declared as const block. Cannot be mutated by another package."
+
+  - name: No race conditions (functional options on single *http.Cookie)
+    result: pass
+    detail: "newRefreshCookie creates a new *http.Cookie each call; options applied sequentially with a range loop. No shared mutable state. Confirmed by make test-race (165/165 pass, 0 data races)."
+
+  - name: No unsafe package or reflect usage in scope files
+    result: pass
+    detail: "Grep for 'unsafe.' and 'reflect' in lib/cookies.go and lib/helpers.go returned no results."
+
+  - name: No os.Getenv or network calls in scope files (pure functions)
+    result: pass
+    detail: "Grep for os.Getenv, net.Dial, http.Get, http.Post in scope files returned no results. Both files are pure stdlib (net/http, net, strings, time)."
+
+  - name: Test coverage >= 90% for both scope files
+    result: pass
+    detail: "go test -coverprofile shows 100% statement coverage for all functions in cookies.go and helpers.go (SetRefreshCookie, ClearRefreshCookie, newRefreshCookie, all 4 With* options, IPFromRequest, UserAgentFromRequest)."
+
+  - name: All 165 tests pass including race detector
+    result: pass
+    detail: "make test and make test-race both report 165/165 passed, 0 failed."
+
+execution_metrics:
+  agent: security-auditor
+  duration_seconds: 95
+  tokens_used: 0
+  cost_usd: 0

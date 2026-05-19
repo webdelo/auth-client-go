@@ -18,7 +18,7 @@
 
 ## WHAT
 
-1. **Создать `lib/context.go`.** Определить:
+1. **Создать `lib/context.go`.** **(✅ Перенесено в [TASK-003](./REQ-001-TASK-003.md) по [alternatives analysis 2026-05-18](../session_analysis/2026-05-18-REQ-001-TASK-003-alternatives-analysis.md). Пункт оставлен для исторической трассировки — TASK-005 PRP Task 0 верифицирует существующий surface, а не создаёт файл заново.)** Определить:
     - `Role string` тип + константы `RoleUnknown=""`, `RoleUser="user"`, `RoleAdmin="admin"` (values синхронизированы с `auth.v1.proto`, мапятся в TASK-003 через `Role(resp.Role)`).
     - `User struct{UUID, Role Role, Email string}`.
     - Методы: `(u User).IsZero() bool` (UUID==""), `(u User).IsAdmin() bool`, `(u User).HasRole(role Role) bool`.
@@ -61,9 +61,9 @@
 
 ## DOD (Definition of Done)
 
-- [ ] `lib/context.go` экспортирует `Role`, константы `RoleUnknown/User/Admin`, `User` struct с методами `IsZero/IsAdmin/HasRole`, `WithUser`, `UserFromContext`.
-- [ ] `UserFromContext` использует comma-ok идиому (`(User, bool)`).
-- [ ] `userCtxKey` — unexported `struct{}` (EC-0056).
+- [x] ✅ Done in TASK-003: `lib/context.go` экспортирует `Role`, константы `RoleUnknown/User/Admin`, `User` struct с методами `IsZero/IsAdmin/HasRole`, `WithUser`, `UserFromContext`.
+- [x] ✅ Done in TASK-003: `UserFromContext` использует comma-ok идиому (`(User, bool)`).
+- [x] ✅ Done in TASK-003: `userCtxKey` — unexported `struct{}` (EC-0056).
 - [ ] `lib/cookies.go` экспортирует `CookieOption`, 4 опции (`WithCookieDomain/Path/MaxAge/SameSite`), `SetRefreshCookie`, `ClearRefreshCookie`.
 - [ ] Defaults `SetRefreshCookie` ВКЛЮЧАЮТ: `HttpOnly=true`, `Secure=true`, `SameSite=http.SameSiteStrictMode`, `Path="/auth/refresh"`, `MaxAge=14*24*60*60`.
 - [ ] `HttpOnly` и `Secure` НЕ имеют опций для отключения (table-driven test проверяет — нет `WithCookieInsecure`/`WithCookieAllowJS`).

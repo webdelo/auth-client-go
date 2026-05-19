@@ -1,0 +1,228 @@
+task_id: REQ-001-TASK-005
+package: lib
+review_date: 2026-05-19
+reviewer: code-reviewer
+review_type: post-fix
+scope_files:
+  - lib/cookies.go
+  - lib/cookies_test.go
+  - lib/helpers.go
+  - lib/helpers_test.go
+
+static_analysis:
+  build:
+    status: pass
+    errors: []
+  fmt:
+    status: pass
+    files_need_formatting: []
+  vet:
+    status: pass
+    errors: []
+  lint:
+    status: pass
+    issues: []
+  tests:
+    status: pass
+    failed: []
+    total: 174
+    passed: 174
+    coverage_lib: "97.1%"
+  race_detector:
+    status: pass
+    failed: []
+  coverage_per_file:
+    - file: "lib/cookies.go"
+      coverage: "100.0%"
+    - file: "lib/helpers.go"
+      coverage: "100.0%"
+
+fixes_verified:
+  CR-001:
+    status: skipped
+    note: "Informational item, skipped with user consent as documented in original review."
+  CR-002:
+    status: pass
+    detail: |
+      TestSetRefreshCookie_SecurityRegressionGuard exists at lib/cookies_test.go:221.
+      t.Parallel() called at top-level (line 222) and in each subtest (line 241).
+      Two subtests present: "happy_path" (nil opts) and "with_many_options_still_secure"
+      (4 options including Domain, Path, MaxAge, SameSite).
+      Both subtests assert cookies[0].Secure==true and cookies[0].HttpOnly==true.
+      All assertions correct.
+  CR-003:
+    status: pass
+    detail: |
+      lib/helpers.go IPFromRequest (lines 42-58):
+      - X-Real-IP: if v != "" guard (line 43), then strings.TrimSpace(v) + net.ParseIP(ip) != nil
+        (line 44); invalid values fall through to XFF/RemoteAddr branch. Whitespace-only
+        values (e.g., "   ") pass the v!="" guard but TrimSpace returns "" and ParseIP("")==nil,
+        so they correctly fall through.
+      - XFF: strings.TrimSpace on first comma-split entry + net.ParseIP validation (line 49);
+        invalid values fall through to RemoteAddr.
+      - RemoteAddr: unchanged — net.SplitHostPort + verbatim fallback, no ParseIP (Go stdlib
+        guarantee per godoc).
+      - Godoc extended with two new paragraphs describing trimming/validation behaviour and
+        updating SECURITY paragraph to clarify ParseIP rejects only syntactically invalid IPs.
+      - SECURITY paragraph present at lines 32-41.
+  CR-004:
+    status: pass
+    detail: |
+      lib/cookies_test.go line 122-131: "base64url_token_value" test case present with
+      token "AbCdEf123-_.=+/xYz", nil opts. Asserts c.Value == "AbCdEf123-_.=+/xYz"
+      (with descriptive message), c.Secure==true, c.HttpOnly==true.
+  CR-005:
+    status: pass
+    detail: |
+      lib/helpers_test.go lines 67-90: all 5 new test cases present and correct.
+      - "x_real_ip_with_whitespace_trimmed" (line 67): xRealIP=" 203.0.113.1 ", want="203.0.113.1".
+      - "x_real_ip_invalid_falls_through_to_xff" (line 71): xRealIP="not-an-ip", xff="198.51.100.7",
+        want="198.51.100.7".
+      - "x_real_ip_invalid_falls_through_to_remote_addr" (line 76): xRealIP="not-an-ip",
+        remoteAddr="192.0.2.1:54321", want="192.0.2.1".
+      - "xff_invalid_falls_through_to_remote_addr" (line 81): xff="not-an-ip",
+        remoteAddr="192.0.2.1:54321", want="192.0.2.1".
+      - "x_real_ip_empty_after_trim_falls_through" (line 86): xRealIP="   " (whitespace-only),
+        remoteAddr="192.0.2.1:54321", want="192.0.2.1".
+      All 5 cases are structurally sound and exercise the correct fallthrough paths.
+  CR-006:
+    status: pass
+    detail: |
+      lib/cookies.go lines 41-45: WithCookieMaxAge godoc extended with paragraph documenting
+      MaxAge=0 == session cookie behaviour. RFC 6265 §5.2.2 reference present (line 42).
+      Paragraph explains the three outcomes (session cookie for zero, 14-day default when
+      option not called, ClearRefreshCookie for immediate expiry).
+
+checks_performed:
+  - name: "make audit (vet + lint + test)"
+    result: pass
+    detail: "174/174 tests pass, 0 vet issues, 0 lint issues, all modules verified."
+
+  - name: "make test-race"
+    result: pass
+    detail: "174/174 tests pass under -race. No data races detected."
+
+  - name: "make coverage + per-file coverage"
+    result: pass
+    detail: |
+      lib package: 97.1%. Both scope files at 100%:
+      cookies.go — all 7 functions 100.0%.
+      helpers.go — both functions 100.0%.
+
+  - name: "Import-only changes in unrelated test files"
+    result: pass
+    detail: |
+      git diff HEAD confirms only alphabetical reordering within import blocks in 5 files:
+      client_test.go, interceptor_grpc_test.go, middleware_http_test.go,
+      validate_integration_test.go, validate_test.go.
+      In all 5 files the auth_v1/testify/grpc import lines were reordered; no logic changes.
+
+  - name: "Public API stability"
+    result: pass
+    detail: |
+      `go doc ./lib | grep -E '^(func|var|type)' | wc -l` = 22 exported symbols.
+      Matches prior review. No new or removed exported names.
+
+  - name: "go.mod / go.sum unchanged"
+    result: pass
+    detail: "git diff HEAD -- go.mod go.sum produced no output."
+
+  - name: "No nolint directives (ES-0171)"
+    result: pass
+    detail: "grep -r nolint lib/ returned no results."
+
+  - name: "Line length CS-0001 (<=120 chars)"
+    result: pass
+    detail: |
+      awk scan of cookies.go and helpers.go found zero lines exceeding 120 characters.
+
+issues_by_severity:
+  critical: 0
+  warning: 0
+  suggestion: 0
+
+new_findings: []
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt clean — confirmed by make lint/fmt
+      - "ES-0002"  # tabs for indentation — confirmed
+      - "ES-0010"  # package authclient — lowercase, valid
+      - "ES-0015"  # MixedCaps identifiers — confirmed
+      - "ES-0020"  # init-in-conditions used (if v := r.Header.Get(...); v != "")
+      - "ES-0021"  # early return pattern — confirmed
+      - "ES-0040"  # return (value, error) — not applicable (no error returns in scope files)
+      - "ES-0050"  # small focused interfaces — no new interfaces introduced
+      - "ES-0051"  # interfaces at consumer — no provider interfaces introduced
+      - "ES-0055"  # no generalized interfaces in provider — confirmed clean
+      - "ES-0060"  # handle errors explicitly — no swallowed errors
+      - "ES-0061"  # wrap errors with context — not applicable (scope files have no errors)
+      - "ES-0063"  # no panic in production — confirmed: no panic calls
+      - "ES-0080"  # godoc comments precede declarations — all public funcs documented
+      - "ES-0081"  # doc comments start with declaration name — confirmed
+      - "ES-0120"  # functional options pattern used correctly — CookieOption confirmed
+      - "ES-0130"  # import order standard/external/internal — confirmed by goimports reorder
+      - "ES-0140"  # constructor naming New() — not applicable (no constructors in scope files)
+    critical_rules_checked:
+      - "ES-0051"  # Interface at consumer — pass
+      - "ES-0060"  # Handle errors explicitly — pass
+      - "ES-0063"  # No panic — pass
+
+  effective_concurrency:
+    checked: false
+    concurrency_detected: false
+    trigger_found: []
+    note: "lib/cookies.go and lib/helpers.go contain no goroutines, mutex, atomic, channels, or select blocks."
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0001"  # line length <=120 — confirmed (awk scan clean)
+      - "CS-0002"  # no naked returns — confirmed
+      - "CS-0010"  # block spacing after if — confirmed in helpers.go IPFromRequest
+      - "CS-0023"  # low cyclomatic complexity — IPFromRequest is simple chain, confirmed
+      - "CS-0030"  # linter config not modified — confirmed
+      - "CS-0031"  # no nolint without justification — no nolint found
+      - "CS-0060"  # godoc for public methods — all 4 public funcs documented
+      - "CS-0061"  # gofmt + golangci-lint pass — confirmed
+      - "CS-0070"  # English-only naming — confirmed
+      - "CS-0071"  # meaningful variable names — confirmed (ip, v, xff, host)
+      - "CS-0110"  # no internal standard refs in code comments — CR-006 uses RFC 6265 (external standard, acceptable)
+      - "CS-0111"  # no restating-the-obvious inline comments — confirmed
+      - "CS-0112"  # no decorative separators — confirmed
+
+  dba_rules:
+    checked: false
+    note: "No database code in scope files."
+
+  devops_rules:
+    checked: false
+    note: "No infrastructure code in scope files."
+
+positive:
+  - "CR-003 fix is technically precise: whitespace trim applied before ParseIP, ensuring
+    ' 203.0.113.1 ' parses correctly while '   ' (whitespace-only) still falls through
+    because TrimSpace produces '' which net.ParseIP rejects."
+  - "CR-006 godoc extension is clear and actionable: three distinct outcomes (session cookie,
+    14-day default, immediate expiry) each explained in one sentence with RFC reference."
+  - "CR-002 TestSetRefreshCookie_SecurityRegressionGuard correctly places t.Parallel() at
+    both the top-level and each subtest, and uses require.Len to gate the assertion on cookie
+    count before indexing — no risk of index-out-of-range panic in test output."
+  - "All 5 import-reorder-only files confirmed clean — no logic changes smuggled in."
+  - "100% line coverage maintained on both cookies.go and helpers.go after the additions."
+
+verdict: APPROVED
+verdict_reason: "All 5 applicable fixes (CR-002 through CR-006) verified correct. Zero new findings.
+  Build, vet, lint, 174 unit tests, and race detector all pass. cookies.go and helpers.go
+  both at 100% line coverage. Public API surface unchanged (22 exported symbols).
+  go.mod/go.sum unmodified. No nolint directives."
+
+execution_metrics:
+  agent: code-reviewer
+  duration_seconds: null
+  tokens_used: null
+  cost_usd: null

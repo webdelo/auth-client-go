@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	authclient "github.com/webdelo/auth-client-go/lib"
 	"github.com/stretchr/testify/require"
+	authclient "github.com/webdelo/auth-client-go/lib"
 )
 
 func TestClient_ValidateAccessToken_Integration(t *testing.T) {

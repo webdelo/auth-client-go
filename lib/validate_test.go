@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
