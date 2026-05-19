@@ -1,0 +1,115 @@
+verdict: APPROVED_WITH_COMMENTS
+
+metadata:
+  task_id: REQ-001-TASK-004
+  date: "2026-05-18"
+  review_date: "2026-05-18"
+  report_types_aggregated:
+    - code-review
+    - test-review
+  source_reports:
+    code_review:
+      - .memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-004_lib_v2.yaml
+      - .memory_bank/agent_task_results/2026-05-18_code-review_REQ-001-TASK-004_refresh_v2.yaml
+    test_review:
+      - .memory_bank/agent_task_results/2026-05-18_test-review_REQ-001-TASK-004_v2.yaml
+
+summary:
+  critical_count: 0
+  warning_count: 2
+  suggestion_count: 1
+  description: |
+    Independent re-review of post-fix state of REQ-001-TASK-004.
+    All 9 PRP gotchas verified.
+    Test review found 0 issues — all previous-round fixes hold.
+    Two new style warnings (CS-0110 / CS-0111) and one suggestion remain
+    for next cleanup pass; non-blocking.
+
+counts:
+  critical: 0
+  error: 0
+  warning: 2
+  suggestion: 1
+
+static_analysis:
+  build: pass
+  fmt: pass
+  vet: pass
+  lint: pass
+  tests: pass
+  race_detector: pass
+  make_audit: pass
+
+test_results:
+  total: 173
+  passed: 173
+  failed: 0
+  skipped: 0
+  coverage:
+    lib: "97.2%"
+    lib_internal_cache: "88.9%"
+    lib_internal_refresh: "100.0%"
+    lib_auth_go_refresh_function: "94.7%"
+    dod_threshold_met: true
+
+dod_coverage:
+  status: PASS
+  notes: All 9 DOD criteria verified by test-reviewer.
+
+findings:
+  - id: CR-001
+    source_report: 2026-05-18_code-review_REQ-001-TASK-004_lib_v2.yaml
+    original_id: AUTH-LIB-001
+    severity: WARNING
+    rule: CS-0111
+    package: lib
+    file: lib/client.go
+    line: "116,121"
+    message: >
+      Duplicate sentence in Config.DialOptions godoc comment. The sentence "Caller-supplied
+      options come after SDK defaults so they win." appears twice — at line 116 and again
+      at line 121, immediately after the SECURITY warning block.
+    fix: Remove the second occurrence at line 121.
+
+  - id: CR-002
+    source_report: 2026-05-18_code-review_REQ-001-TASK-004_refresh_v2.yaml
+    original_id: REFRESH-W001
+    severity: WARNING
+    rule: CS-0110
+    package: lib/internal/refresh
+    file: lib/internal/refresh/group.go
+    line: 33
+    message: >
+      Do doc comment contains internal task identifier "TASK-004" — CS-0110
+      forbids internal planning artifact references in source comments.
+      The comment reads: "v0.1.0 does not surface it (TASK-004 contract is '(any, error)')".
+    fix: >
+      Rewrite the parenthetical to explain the design in domain terms rather than citing
+      the task ticket, e.g.: "The underlying singleflight.Group.Do returns a `shared` bool
+      indicating whether more than one caller received the same result. This wrapper does not
+      surface it — the public contract is (any, error); if metrics on deduplication are needed
+      in the future, expose via a Stats() method."
+
+  - id: CR-003
+    source_report: 2026-05-18_code-review_REQ-001-TASK-004_lib_v2.yaml
+    original_id: AUTH-LIB-002
+    severity: SUGGESTION
+    rule: EC-0053
+    package: lib
+    file: lib/auth.go
+    line: 138
+    message: >
+      In Refresh, follower callers allocate their own callCtx/cancel pair but never use them
+      when sharing the leader's in-flight result. The behavior is correct per ADR §R8 and works
+      correctly today. However, a brief comment clarifying that follower callers' callCtx is
+      intentionally unused when sharing a leader result would help future readers not
+      misinterpret the apparent dead allocation as a bug.
+    fix: >
+      Add a short inline note after the callCtx+cancel block, e.g.:
+      "// callCtx bounds this caller's wait. If this goroutine is a singleflight follower,
+      // the gRPC call runs under the leader's callCtx; this callCtx is used only by leaders."
+
+recommendations:
+  - Address CR-001 (trivial — remove duplicate sentence in lib/client.go).
+  - Address CR-002 (rewrite TASK-004 reference in group.go:33 in domain terms).
+  - Address CR-003 (optional — add follower-callCtx clarifying comment).

@@ -9,10 +9,13 @@ package authclient
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"google.golang.org/grpc"
+
+	"github.com/webdelo/auth-client-go/lib/internal/refresh"
 )
 
 // FakeAuthClient is a hand-written test double for the unexported
@@ -27,6 +30,26 @@ import (
 type FakeAuthClient struct {
 	ValidateFunc  func(ctx context.Context, in *auth_v1.ValidateTokenRequest, opts ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error)
 	ValidateCalls int
+
+	LoginFunc  func(ctx context.Context, in *auth_v1.LoginRequest, opts ...grpc.CallOption) (*auth_v1.LoginResponse, error)
+	LoginCalls int
+
+	// RefreshTokenCalls uses atomic.Int32 because TestClient_Refresh_SingleFlight
+	// invokes RefreshToken from multiple goroutines and asserts .Load() == 1.
+	RefreshTokenFunc  func(ctx context.Context, in *auth_v1.RefreshTokenRequest, opts ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error)
+	RefreshTokenCalls atomic.Int32
+
+	LogoutFunc  func(ctx context.Context, in *auth_v1.LogoutRequest, opts ...grpc.CallOption) (*auth_v1.LogoutResponse, error)
+	LogoutCalls int
+
+	LogoutAllFunc  func(ctx context.Context, in *auth_v1.LogoutAllRequest, opts ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error)
+	LogoutAllCalls int
+
+	ChangePasswordFunc  func(ctx context.Context, in *auth_v1.ChangePasswordRequest, opts ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error)
+	ChangePasswordCalls int
+
+	GetCurrentUserFunc  func(ctx context.Context, in *auth_v1.GetCurrentUserRequest, opts ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error)
+	GetCurrentUserCalls int
 }
 
 // ValidateToken implements authServiceClient.
@@ -35,10 +58,48 @@ func (f *FakeAuthClient) ValidateToken(ctx context.Context, in *auth_v1.Validate
 	return f.ValidateFunc(ctx, in, opts...)
 }
 
+// Login implements authServiceClient.
+func (f *FakeAuthClient) Login(ctx context.Context, in *auth_v1.LoginRequest, opts ...grpc.CallOption) (*auth_v1.LoginResponse, error) {
+	f.LoginCalls++
+	return f.LoginFunc(ctx, in, opts...)
+}
+
+// RefreshToken implements authServiceClient.
+func (f *FakeAuthClient) RefreshToken(ctx context.Context, in *auth_v1.RefreshTokenRequest, opts ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
+	f.RefreshTokenCalls.Add(1)
+	return f.RefreshTokenFunc(ctx, in, opts...)
+}
+
+// Logout implements authServiceClient.
+func (f *FakeAuthClient) Logout(ctx context.Context, in *auth_v1.LogoutRequest, opts ...grpc.CallOption) (*auth_v1.LogoutResponse, error) {
+	f.LogoutCalls++
+	return f.LogoutFunc(ctx, in, opts...)
+}
+
+// LogoutAll implements authServiceClient.
+func (f *FakeAuthClient) LogoutAll(ctx context.Context, in *auth_v1.LogoutAllRequest, opts ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error) {
+	f.LogoutAllCalls++
+	return f.LogoutAllFunc(ctx, in, opts...)
+}
+
+// ChangePassword implements authServiceClient.
+func (f *FakeAuthClient) ChangePassword(ctx context.Context, in *auth_v1.ChangePasswordRequest, opts ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error) {
+	f.ChangePasswordCalls++
+	return f.ChangePasswordFunc(ctx, in, opts...)
+}
+
+// GetCurrentUser implements authServiceClient.
+func (f *FakeAuthClient) GetCurrentUser(ctx context.Context, in *auth_v1.GetCurrentUserRequest, opts ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error) {
+	f.GetCurrentUserCalls++
+	return f.GetCurrentUserFunc(ctx, in, opts...)
+}
+
 // ClientConfig groups the parameters used by NewTestClient.
 type ClientConfig struct {
 	ValidateCacheTTL time.Duration
 	ValidateTimeout  time.Duration
+	LoginTimeout     time.Duration
+	RefreshTimeout   time.Duration
 	FailMode         FailMode
 	OpenMethods      map[string]struct{}
 }
@@ -57,12 +118,15 @@ func NewTestClient(cfg ClientConfig, cache Cache, auth *FakeAuthClient, logger L
 		cfg: Config{
 			ValidateCacheTTL: cfg.ValidateCacheTTL,
 			ValidateTimeout:  cfg.ValidateTimeout,
+			LoginTimeout:     cfg.LoginTimeout,
+			RefreshTimeout:   cfg.RefreshTimeout,
 		},
 		cache:       cache,
 		authClient:  auth,
 		logger:      logger,
 		failMode:    cfg.FailMode,
 		openMethods: openMethods,
+		sf:          &refresh.Group{},
 	}
 }
 
