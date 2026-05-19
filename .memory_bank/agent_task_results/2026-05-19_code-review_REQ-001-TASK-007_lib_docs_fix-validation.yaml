@@ -1,0 +1,238 @@
+review_type: fix-validation
+task: REQ-001-TASK-007
+package: "lib (documentation deliverables)"
+date: "2026-05-19"
+reviewer: code-reviewer
+branch: feature/req-001-task-007
+original_review: ".memory_bank/agent_task_results/2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+
+files_validated:
+  - README.md
+  - CHANGELOG.md
+  - lib/doc.go
+
+# ─────────────────────────────────────────────
+# Static analysis (pre-validated by orchestrator)
+# ─────────────────────────────────────────────
+static_analysis:
+  build:
+    status: "pass"
+    note: "Confirmed by orchestrator: make audit 214/214 pass, lint clean."
+  fmt:
+    status: "pass"
+  vet:
+    status: "pass"
+  lint:
+    status: "pass"
+  tests:
+    status: "pass"
+    total: 214
+    passed: 214
+    failed: 0
+  examples_build:
+    status: "pass"
+    note: "Confirmed by orchestrator: all 3 examples built."
+  readme_smoke_test:
+    status: "pass"
+    note: "Confirmed by orchestrator: /tmp/authclient-smoke2 with replace-directive → go build exit 0, binary 17MB."
+
+# ─────────────────────────────────────────────
+# Fix validation results
+# ─────────────────────────────────────────────
+fix_validation:
+
+  - original_id: "C-001"
+    status: "FIXED"
+    title: "Cache interface signatures in README"
+    file: "README.md:188-193"
+    expected: |
+      Get(ctx context.Context, key string) (user User, ok bool)
+      Set(ctx context.Context, key string, user User, ttl time.Duration)
+      Delete(ctx context.Context, key string)
+    actual_in_file: |
+      type Cache interface {
+          Get(ctx context.Context, key string) (user User, ok bool)
+          Set(ctx context.Context, key string, user User, ttl time.Duration)
+          Delete(ctx context.Context, key string)
+      }
+    verdict_note: >
+      The Cache interface block in README §"Adapter Interfaces / Cache" now matches
+      the actual lib/client.go Cache interface exactly — context parameters and
+      concrete User type are present. The critical accuracy issue is resolved.
+      A consumer implementing a Redis-backed Cache from the README example will
+      now produce code that satisfies the interface at compile time.
+
+  - original_id: "W-001"
+    status: "FIXED"
+    title: "WithCache(nil) row description"
+    file: "README.md:93"
+    expected: >
+      nil is a no-op (falls through to Config.Cache or the built-in MemoryCache).
+      To disable caching set Config.ValidateCacheTTL = 0.
+    actual_in_file: >
+      Overrides Config.Cache with a custom implementation. nil is a no-op (falls
+      through to Config.Cache or the built-in MemoryCache). To disable caching set
+      Config.ValidateCacheTTL = 0.
+    verdict_note: >
+      The WithCache row in the functional options table now accurately describes the
+      no-op semantics of passing nil and redirects the consumer to ValidateCacheTTL = 0
+      for disabling caching. The previous inaccuracy (claiming nil disables caching)
+      is corrected.
+
+  - original_id: "W-002"
+    status: "FIXED"
+    title: "CHANGELOG AuthError field name"
+    file: "CHANGELOG.md:63"
+    expected: "AuthError{Err, RetryAfterHint} wrapper."
+    actual_in_file: "AuthError{Err, RetryAfterHint} wrapper."
+    verdict_note: >
+      CHANGELOG line 63 now reads AuthError{Err, RetryAfterHint}, matching the
+      actual exported struct field name in lib/errors.go. The previous RetryAfter
+      (absent from the public API) has been corrected.
+
+  - original_id: "W-003"
+    status: "WONT_FIX"
+    title: "CHANGELOG date"
+    file: "CHANGELOG.md:10"
+    actual_in_file: "## [v0.1.0] — 2026-05-19"
+    decision: "option_b_accepted"
+    justification: >
+      The reviewer's W-003 offered two options: (a) revert to 2026-05-18 to satisfy
+      the literal DOD grep, or (b) keep 2026-05-19 as the accurate release date and
+      accept that the PRP DOD template literal is a planning artifact. The task
+      specification for this validation pass explicitly endorses option (b): the
+      decision is acceptable, today's system date (2026-05-19) is the correct
+      publication date, and the PRP DOD literal 2026-05-18 is acknowledged as a
+      template artifact written before the actual implementation day. WONT_FIX is
+      the correct status — this is a deliberate choice, not an unfixed issue.
+
+  - original_id: "S-001"
+    status: "FIXED"
+    title: "ValidateCacheTTL=0 clarification in README config table"
+    file: "README.md:78"
+    expected: "0 makes every ValidateAccessToken call reach AUTH (Set is a no-op for TTL=0)."
+    actual_in_file: >
+      0 makes every ValidateAccessToken call reach AUTH (Set is a no-op for
+      TTL=0).
+    verdict_note: >
+      The ValidateCacheTTL row in the Configuration table now clarifies that the
+      cache object is still allocated but Set becomes a no-op, making every
+      ValidateAccessToken call reach gRPC. The wording precisely mirrors the
+      implementation comment in lib/client.go.
+
+  - original_id: "S-002"
+    status: "FIXED"
+    title: "doc.go Quickstart inline comment"
+    file: "lib/doc.go:22-25"
+    expected: >
+      A comment above user, _ := authclient.UserFromContext(...) stating
+      "the middleware guarantees the user is present, so the second return is safe to drop"
+    actual_in_file: |
+      // Inside the handler — the middleware guarantees the user is present, so the
+      // second return is safe to drop:
+      //
+      //	user, _ := authclient.UserFromContext(r.Context())
+    verdict_note: >
+      The comment is present and placed as a lead-in sentence immediately before the
+      user, _ := line in the Quickstart godoc block. It explains why ignoring the ok
+      return is safe in a middleware-protected handler, preventing copy-paste misuse
+      in unprotected handlers.
+
+  - original_id: "S-003"
+    status: "FIXED"
+    title: "User helper methods (IsZero/IsAdmin/HasRole) in README Quickstart"
+    file: "README.md:52-62"
+    expected: >
+      A short example showing user.IsAdmin() + http.Error(403) under Quickstart.
+    actual_in_file: |
+      `User` exposes three small helpers for role checks inside protected handlers:
+
+      ```go
+      user, _ := authclient.UserFromContext(r.Context())
+      if !user.IsAdmin() {
+          http.Error(w, "forbidden", http.StatusForbidden)
+          return
+      }
+      // user.HasRole(authclient.RoleUser) — exact-match role check.
+      // user.IsZero() — true only if the middleware was skipped (FailOpen on AUTH-down).
+      ```
+    verdict_note: >
+      All three User convenience methods (IsAdmin, HasRole, IsZero) are now documented
+      in the README Quickstart section with a concrete role-gate example. The addition
+      immediately follows the Quickstart code block, making the helpers easily
+      discoverable without requiring consumers to read go doc output.
+
+# ─────────────────────────────────────────────
+# Summary
+# ─────────────────────────────────────────────
+summary:
+  total_original_issues: 7
+  fixed: 6
+  wont_fix: 1
+  not_fixed: 0
+
+  fixed_ids: ["C-001", "W-001", "W-002", "S-001", "S-002", "S-003"]
+  wont_fix_ids: ["W-003"]
+  not_fixed_ids: []
+
+  note: >
+    All actionable issues from the original review have been resolved. The single
+    WONT_FIX item (W-003 — CHANGELOG date) was a deliberate choice accepted by
+    the team: keeping 2026-05-19 as the accurate release date supersedes the
+    PRP DOD template literal 2026-05-18. The fix for C-001 (critical) removes the
+    risk of consumers writing non-compiling Cache adapters from the README example.
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt: pass (static analysis confirmed by orchestrator)
+      - "ES-0080"  # godoc precedes declaration: doc.go comment placement verified
+      - "ES-0081"  # start doc comments with package name: doc.go line 1 confirmed
+    rules_not_applicable:
+      - "ES-0030 through ES-0035"  # no data structure code changed
+      - "ES-0040 through ES-0044"  # no function signatures changed
+      - "ES-0050 through ES-0057"  # no interface definitions changed (README docs only)
+      - "ES-0060 through ES-0065"  # no error handling code changed
+      - "ES-0070 through ES-0073"  # no receiver changes
+      - "ES-0090"                  # no enum changes
+      - "ES-0110 through ES-0142"  # no code structure changes
+
+  effective_concurrency:
+    checked: false
+    total_rules: 35
+    concurrency_detected: false
+    trigger_found: []
+    reason: >
+      Validation scope is limited to README.md, CHANGELOG.md, and lib/doc.go.
+      No executable code was modified. No concurrency primitives present.
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0060"  # godoc for public methods: doc.go updated comment verified
+      - "CS-0061"  # gofmt + golangci-lint: pass (confirmed by orchestrator)
+      - "CS-0110"  # no internal standard refs in comments: verified in doc.go additions
+      - "CS-0111"  # no restating-the-obvious inline comments: doc.go comment is explanatory not redundant
+      - "CS-0112"  # no decorative separators: none present in modified files
+    rules_not_applicable:
+      - "CS-0010"   # block spacing: no control flow code
+      - "CS-0050 through CS-0053"  # package structure: unchanged
+      - "CS-0080 through CS-0082"  # no new functions
+      - "CS-0113 through CS-0122"  # no struct changes
+
+  dba_rules:
+    checked: false
+    reason: "No database code in scope."
+
+  devops_rules:
+    checked: false
+    reason: "No infrastructure files in scope."
+
+verdict: "APPROVED"
+verdict_reason: >
+  All 6 actionable issues are FIXED. W-003 is WONT_FIX by explicit team decision
+  (accurate release date over PRP template artifact). The branch is ready to merge
+  and v0.1.0 is ready to tag.

@@ -1,0 +1,141 @@
+review_type: code-review
+task: REQ-001-TASK-007
+title: "README + godoc + CHANGELOG + tag v0.1.0"
+package: "lib (documentation deliverables)"
+date: "2026-05-19"
+reviewer: code-reviewer
+branch: feature/req-001-task-007
+
+source_reports:
+  original: ".memory_bank/agent_task_results/2026-05-19_code-review_REQ-001-TASK-007_lib_docs.yaml"
+  fix_validation: ".memory_bank/agent_task_results/2026-05-19_code-review_REQ-001-TASK-007_lib_docs_fix-validation.yaml"
+
+files_reviewed:
+  - lib/doc.go
+  - lib/client.go
+  - lib/cookies.go
+  - README.md
+  - CHANGELOG.md
+
+static_analysis:
+  build:    { status: pass }
+  fmt:      { status: pass }
+  vet:      { status: pass }
+  lint:     { status: pass, issues: 0 }
+  tests:    { status: pass, total: 214, passed: 214, failed: 0 }
+  race:     { status: pass, total: 214 }
+  examples: { status: pass, built: [basic, http_middleware, grpc_interceptor] }
+  smoke:    { status: pass, note: "README Quickstart copy-paste compiles via replace-directive" }
+
+original_verdict: "CHANGES_REQUESTED"
+debug_verdict: "APPROVED"
+verdict: "APPROVED"
+
+issues:
+  critical:
+    - id: C-001
+      title: "Cache interface in README has wrong method signatures"
+      file: "README.md:175-179"
+      status: "FIXED"
+      description: >
+        Original review found README Cache interface code-block showed signatures
+        without ctx parameter and with `any` instead of `User` — would cause compile
+        errors for any consumer implementing a Redis-backed adapter.
+      fix: >
+        README §Adapter Interfaces / Cache now shows actual signatures from
+        lib/client.go: Get(ctx, key) (User, bool), Set(ctx, key, User, ttl),
+        Delete(ctx, key). Verified by fix-validation reviewer.
+
+  warnings:
+    - id: W-001
+      title: "WithCache(nil) described as disabling caching — inaccurate"
+      file: "README.md:80"
+      status: "FIXED"
+      description: >
+        WithCache(nil) is a no-op (falls through to Config.Cache or default
+        MemoryCache). Disabling caching requires Config.ValidateCacheTTL = 0.
+      fix: >
+        Functional-options table updated: "nil is a no-op (falls through to
+        Config.Cache or the built-in MemoryCache). To disable caching set
+        Config.ValidateCacheTTL = 0."
+
+    - id: W-002
+      title: "CHANGELOG AuthError field name wrong: RetryAfter vs RetryAfterHint"
+      file: "CHANGELOG.md:63"
+      status: "FIXED"
+      description: >
+        Actual exported field in lib/errors.go is RetryAfterHint, not RetryAfter.
+      fix: "CHANGELOG line 63: `AuthError{Err, RetryAfterHint}` wrapper."
+
+    - id: W-003
+      title: "CHANGELOG date is 2026-05-19 but PRP DOD specifies 2026-05-18"
+      file: "CHANGELOG.md:10"
+      status: "WONT_FIX"
+      decision: "option_b_accepted"
+      justification: >
+        The reviewer's W-003 offered two options. Option (b) — keep 2026-05-19 as
+        the accurate release date and accept the PRP DOD literal as a template
+        artifact — is the explicit team choice. Today's system date is 2026-05-19;
+        the PRP was authored 2026-05-18, before the implementation day. Keep-a-
+        Changelog format prescribes the actual release date, which is what is
+        recorded. The fix-validation reviewer endorsed this decision.
+
+  suggestions:
+    - id: S-001
+      title: "ValidateCacheTTL=0 description could clarify cache object still allocated"
+      file: "README.md:65"
+      status: "FIXED"
+      fix: >
+        Config table row for ValidateCacheTTL updated: "0 makes every
+        ValidateAccessToken call reach AUTH (Set is a no-op for TTL=0)."
+
+    - id: S-002
+      title: "doc.go Quickstart uses user, _ (blank error) — may invite misuse"
+      file: "lib/doc.go:24"
+      status: "FIXED"
+      fix: >
+        lib/doc.go Quickstart now leads with: "Inside the handler — the middleware
+        guarantees the user is present, so the second return is safe to drop:"
+        before the user, _ := authclient.UserFromContext(...) line.
+
+    - id: S-003
+      title: "README does not mention IsZero / IsAdmin / HasRole User helper methods"
+      file: "README.md"
+      status: "FIXED"
+      fix: >
+        README Quickstart now references the role-check helpers with a concrete
+        gating example using user.IsAdmin() + http.Error(403), plus comments
+        describing user.HasRole and user.IsZero.
+
+dod_verification:
+  - { item: "lib/doc.go exists with package-level godoc",                                                status: PASS }
+  - { item: "All exported types/funcs/methods/constants/sentinel-errors have godoc",                     status: PASS }
+  - { item: "README contains all 14 content sections from WHAT §3 TASK-007",                             status: PASS, note: "16 sections present" }
+  - { item: "README has CAPSLOCK security warning for FailOpen",                                         status: PASS }
+  - { item: "README has typed errors table and errors.Is example",                                       status: PASS }
+  - { item: "CHANGELOG contains ## [v0.1.0] with Added, Known limitations, Acknowledgements",            status: PASS }
+  - { item: "CHANGELOG footer-link [v0.1.0]",                                                            status: PASS }
+  - { item: "Public surface matches ADR §API (5 sentinels, 4+4 options, 10 *Client methods, 7 funcs)",   status: PASS }
+  - { item: "git tag v0.1.0 published",                                                                  status: DEFERRED, note: "make release is interactive — requires maintainer" }
+  - { item: "GOPROXY=direct go list -m @v0.1.0",                                                         status: DEFERRED, note: "Requires published tag" }
+  - { item: "BFF-validator < 30 minutes",                                                                status: DEFERRED, note: "External developer; smoke self-review PASS recorded in bff-validation.md" }
+  - { item: "go mod why github.com/webdelo/auth-proto/go confirms direct dependency v0.1.0",             status: PASS,     note: "Verified for auth_v1 subpackage; go.mod has direct require without // indirect" }
+  - { item: "make audit + make build-examples + make test-integration green",                            status: PARTIAL,  note: "audit + build-examples GREEN; test-integration SKIPPED — auth Dockerfile requires Go 1.25, local Docker has 1.24 (external auth repo issue, not SDK)" }
+
+positive:
+  - "Package godoc in doc.go is concise, accurate, ES-0081 compliant."
+  - "CAPSLOCK FailOpen security warning in README is prominent and accurate."
+  - "WithCookieSameSite SECURITY WARNING in cookies.go godoc is thorough."
+  - "CHANGELOG v0.1.0 entry is comprehensive — covers all TASK-001..006 features."
+  - "Public API surface matches ADR exactly (5/4/4/10/7 verified)."
+  - "All 214 unit tests pass; lint clean; all 3 examples build; race detector chist."
+  - "Cache interface accuracy fix prevents compile errors for consumers of README Quickstart."
+
+summary: >
+  Final documentation deliverables for REQ-001-TASK-007 are accurate, complete, and
+  match the actual public surface of the SDK. The critical Cache interface accuracy
+  issue (C-001) was caught in code-review and fixed before merge — consumers will
+  no longer pull non-compiling code from the README. All 6 actionable issues from
+  the original review are FIXED; W-003 (CHANGELOG date) is an explicit WONT_FIX
+  team decision (accurate release date supersedes PRP template literal). The
+  branch is ready to merge; v0.1.0 is ready to tag via make release.

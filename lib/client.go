@@ -1,10 +1,3 @@
-// Package authclient is the official Go SDK for the webdelo/auth service.
-//
-// The SDK is a thin wrapper over the gRPC contract from
-// github.com/webdelo/auth-proto with non-trivial concerns baked in: a
-// ValidateToken TTL cache, an HTTP middleware, a gRPC unary interceptor,
-// refresh-race serialization, and typed errors. Create a Client with New,
-// dispose with Close.
 package authclient
 
 import (

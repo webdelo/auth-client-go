@@ -1,0 +1,378 @@
+review_type: code-review
+task: REQ-001-TASK-007
+package: "lib (documentation deliverables)"
+date: "2026-05-19"
+reviewer: code-reviewer
+branch: feature/req-001-task-007
+
+files_reviewed:
+  - lib/doc.go
+  - lib/client.go          # 8-line package-doc removal
+  - lib/cookies.go         # WithCookieSameSite SECURITY WARNING godoc
+  - README.md
+  - CHANGELOG.md
+
+static_analysis:
+  build:
+    status: "pass"
+    errors: []
+  fmt:
+    status: "pass"
+    files_need_formatting: []
+  vet:
+    status: "pass"
+    errors: []
+  lint:
+    status: "pass"
+    issues: []
+  tests:
+    status: "pass"
+    total: 214
+    passed: 214
+    failed: 0
+    skipped: 0
+  examples_build:
+    status: "pass"
+    built:
+      - .temp/examples/basic
+      - .temp/examples/http_middleware
+      - .temp/examples/grpc_interceptor
+
+issues:
+  critical:
+    - id: C-001
+      category: LOGIC
+      title: "Cache interface in README has wrong method signatures"
+      file: "README.md:175-179"
+      description: |
+        The Cache interface block in the README Adapter Interfaces section shows
+        signatures that do not exist in the actual lib/client.go Cache interface:
+
+        README shows:
+          Get(key string) (value any, ok bool)
+          Set(key string, value any, ttl time.Duration)
+          Delete(key string)
+
+        Actual Cache interface (lib/client.go:73-79) is:
+          Get(ctx context.Context, key string) (user User, ok bool)
+          Set(ctx context.Context, key string, user User, ttl time.Duration)
+          Delete(ctx context.Context, key string)
+
+        A consumer implementing a custom Cache (e.g. Redis-backed) from the README
+        example will write code that does NOT satisfy the interface and will get a
+        compile error. This is the most dangerous accuracy issue in the deliverable.
+      recommended_fix: |
+        Replace the Cache interface block in README (## Adapter Interfaces → ### Cache)
+        with the correct signatures from lib/client.go:
+
+        ```go
+        type Cache interface {
+            Get(ctx context.Context, key string) (user User, ok bool)
+            Set(ctx context.Context, key string, user User, ttl time.Duration)
+            Delete(ctx context.Context, key string)
+        }
+        ```
+
+  warnings:
+    - id: W-001
+      category: LOGIC
+      title: "WithCache(nil) described as disabling caching — inaccurate"
+      file: "README.md:80"
+      description: |
+        README options table states:
+          WithCache(c) | Overrides Config.Cache. nil disables caching (each call hits AUTH).
+
+        The actual code in lib/client.go:151-153 is:
+          func WithCache(cache Cache) Option {
+              return func(c *Client) { c.cache = cache }
+          }
+
+        Passing nil sets c.cache = nil, which causes New to fall through to
+        Config.Cache (if non-nil) or the default built-in MemoryCache. Nil does NOT
+        disable caching — the built-in MemoryCache is still created and used.
+
+        To truly disable caching the consumer must set Config.ValidateCacheTTL = 0,
+        which is correctly documented in the Configuration table and Known Limitations.
+        The WithCache(nil) claim contradicts the WithCache godoc which explicitly states
+        "Passing nil here is a no-op for the option".
+      recommended_fix: |
+        Change the WithCache row description to:
+          Overrides Config.Cache with a custom implementation. nil is a no-op (falls
+          through to Config.Cache or built-in MemoryCache). To disable caching set
+          Config.ValidateCacheTTL = 0.
+
+    - id: W-002
+      category: LOGIC
+      title: "CHANGELOG AuthError field name wrong: RetryAfter vs RetryAfterHint"
+      file: "CHANGELOG.md:63"
+      description: |
+        The CHANGELOG v0.1.0 Added section reads:
+          AuthError{Err, RetryAfter} wrapper.
+
+        The actual exported struct field in lib/errors.go:41-45 is named RetryAfterHint:
+          type AuthError struct {
+              Err            error
+              RetryAfterHint time.Duration
+          }
+
+        This is a factual inaccuracy in a release changelog that will be referenced
+        by consumers looking up the AuthError struct.
+      recommended_fix: |
+        Change the CHANGELOG line 63 to:
+          `AuthError{Err, RetryAfterHint}` wrapper.
+
+    - id: W-003
+      category: LOGIC
+      title: "CHANGELOG date is 2026-05-19 but PRP DOD specifies 2026-05-18"
+      file: "CHANGELOG.md:10"
+      description: |
+        The CHANGELOG header reads:
+          ## [v0.1.0] — 2026-05-19
+
+        The PRP DOD (task_management/plans/REQ-001-TASK-007-PRP.md:1048) requires:
+          ## [v0.1.0] — 2026-05-18
+
+        The PRP was authored on 2026-05-18 and specifies that date as the release date.
+        The CHANGELOG was written on today (2026-05-19). While the actual git tag date
+        is what matters for Keep-a-Changelog, the DOD criterion literally checks for
+        "2026-05-18". This causes the DOD checkbox to evaluate as FAILED against
+        automated grep of "2026-05-18".
+      recommended_fix: |
+        Either:
+        a) Change CHANGELOG date to 2026-05-18 to satisfy the DOD literal check, OR
+        b) Confirm with the team that 2026-05-19 (actual release date) is intentional
+           and update the PRP DOD to reference the correct date.
+        Option (b) is preferable for accuracy; the DOD text is a template artifact.
+
+  suggestions:
+    - id: S-001
+      category: LOGIC
+      title: "ValidateCacheTTL = 0 description could clarify cache object is still allocated"
+      file: "README.md:65"
+      description: |
+        README config table says ValidateCacheTTL "0 disables cache entirely".
+        The actual behavior (from lib/client.go godoc): "New still allocates an
+        in-memory cache object, but Set is a no-op for TTL=0 so no entries are ever
+        stored. Effectively every ValidateAccessToken call reaches gRPC."
+
+        Practically indistinguishable from the consumer's perspective, but technically
+        the cache object exists. Low priority — the observable effect matches the doc.
+      recommended_fix: |
+        Minor clarification: change "0 disables cache entirely" to
+        "0 makes every ValidateToken call hit AUTH (Set is a no-op for TTL=0)."
+
+    - id: S-002
+      category: STYLE
+      title: "doc.go Quickstart uses user, _ (blank error) — may invite misuse"
+      file: "lib/doc.go:24"
+      description: |
+        The Quickstart code example in lib/doc.go uses:
+          user, _ := authclient.UserFromContext(r.Context())
+
+        UserFromContext returns (User, bool) — the blank identifier on the bool is
+        intentional for brevity in a quickstart snippet. However, it teaches consumers
+        to ignore the ok signal that indicates whether a user is actually present in
+        context. Inside a middleware-protected handler the user will always be present,
+        so ignoring ok is safe here. But the pattern could be copied verbatim to
+        unprotected handlers. A short inline comment would mitigate the concern.
+      recommended_fix: |
+        Consider adding a brief inline comment:
+          user, _ := authclient.UserFromContext(r.Context()) // ok is always true inside HTTPMiddleware
+        Or expand to the two-return form with a comment that the middleware guarantees presence.
+        Minor — quickstart brevity is a valid tradeoff.
+
+    - id: S-003
+      category: LOGIC
+      title: "README does not mention IsZero / IsAdmin / HasRole User helper methods"
+      file: "README.md"
+      description: |
+        The public API includes three User convenience methods (lib/context.go:35-41):
+          func (u User) IsZero() bool
+          func (u User) IsAdmin() bool
+          func (u User) HasRole(role Role) bool
+
+        These are useful for handler authorization checks (e.g., gating admin endpoints)
+        but are not mentioned in README. The omission is not critical — go doc covers them
+        — but a note in the Context / Cookie Helpers section or a small example would
+        help discoverability.
+      recommended_fix: |
+        Add a brief mention under the Quickstart or Adapter Interfaces section, e.g.:
+          // role-based gate in a handler:
+          user, _ := authclient.UserFromContext(r.Context())
+          if !user.IsAdmin() { http.Error(w, "forbidden", http.StatusForbidden); return }
+
+dod_verification:
+  - item: "lib/doc.go exists with package-level godoc"
+    status: PASS
+    note: "File exists, starts with '// Package authclient is the official Go SDK...' (ES-0081 compliant)"
+
+  - item: "All exported types/funcs/methods/constants/sentinel-errors have godoc"
+    status: PASS
+    note: "go doc -all shows complete godoc; make lint passes with 0 issues"
+
+  - item: "README contains all 14 content sections from WHAT §3 TASK-007"
+    status: PASS
+    note: "README has 16 ## sections (14 content + Development + License). All PRP-required sections present."
+
+  - item: "README has CAPSLOCK security warning for FailOpen"
+    status: PASS
+    note: "README:94-98 contains blockquote with CAPSLOCK warning. Prominent and accurate."
+
+  - item: "README has typed errors table and errors.Is example"
+    status: PASS
+    note: "README:108-137 has full table (5 sentinels, all gRPC codes, HTTP statuses) and Login example with errors.Is."
+
+  - item: "CHANGELOG contains ## [v0.1.0] with Added, Known limitations, Acknowledgements"
+    status: PARTIAL
+    note: >
+      Sections exist and are complete. Date is 2026-05-19 vs PRP DOD literal '2026-05-18'.
+      DOD grep for '2026-05-18' fails. See W-003.
+
+  - item: "CHANGELOG has footer-link [v0.1.0]"
+    status: PASS
+    note: "CHANGELOG:104-105 has both [Unreleased] and [v0.1.0] footer links."
+
+  - item: "Public surface matches ADR §API (5 sentinels, 4 With*Option, 4 WithCookie*Option, 10 *Client methods, 7 pkg-level funcs)"
+    status: PASS
+    note: |
+      Verified via 'go doc -all':
+        Sentinels: ErrInvalidToken, ErrExpired, ErrBlocked, ErrRateLimited, ErrUnavailable = 5 ✓
+        With*Option: WithFailMode, WithLogger, WithCache, WithOpenMethods = 4 ✓
+        WithCookie*Option: WithCookieDomain, WithCookiePath, WithCookieMaxAge, WithCookieSameSite = 4 ✓
+        *Client methods: Close, ValidateAccessToken, Login, Refresh, Logout, LogoutAll, ChangePassword, GetCurrentUser, HTTPMiddleware, UnaryInterceptor = 10 ✓
+        Package-level funcs: SetRefreshCookie, ClearRefreshCookie, IPFromRequest, UserAgentFromRequest, WithUser, UserFromContext, RetryAfter = 7 ✓
+
+  - item: "git tag v0.1.0 published (git ls-remote --tags origin v0.1.0)"
+    status: DEFERRED
+    note: "Cannot verify without network access to remote. Mark as DEFERRED per instructions."
+
+  - item: "GOPROXY=direct go list -m github.com/webdelo/auth-client-go@v0.1.0"
+    status: DEFERRED
+    note: "Requires published tag and GOPROXY access. DEFERRED."
+
+  - item: "BFF-validator validated working middleware via go get @v0.1.0"
+    status: DEFERRED
+    note: "External validation step. task_management/results/REQ-001-TASK-007-bff-validation.md exists but content not verified in this review."
+
+  - item: "go mod why github.com/webdelo/auth-proto/go confirms direct dependency v0.1.0"
+    status: DEFERRED
+    note: "Requires go.sum state; network-dependent."
+
+  - item: "make audit + make build-examples + make test-integration green"
+    status: PARTIAL
+    note: >
+      make audit: PASS (vet + lint + 214 tests).
+      make build-examples: PASS (all 3 examples built).
+      make test-integration: SKIP — auth Dockerfile requires Go 1.25, local Docker has Go 1.24.
+      This is documented as an external auth repo bug, not SDK issue.
+
+godoc_conventions:
+  doc_go:
+    starts_with_package_name: true
+    package_name_used: "authclient"
+    first_line: "// Package authclient is the official Go SDK for the webdelo/auth service."
+    es_0081_compliant: true
+
+  cookies_go:
+    with_cookie_same_site_has_security_warning: true
+    security_warning_text_starts_with: "SECURITY WARNING: SameSite=Lax/None weakens CSRF protection."
+
+  client_go:
+    package_doc_removed: true
+    now_starts_with: "package authclient"
+    fail_open_has_security_warning: true
+
+security_warnings_verified:
+  fail_open_in_readme: true
+  fail_open_format: CAPSLOCK blockquote
+  fail_open_in_client_go: true
+  with_cookie_same_site_godoc: true
+  ip_from_request_spoofing_note: true
+
+rules_verified:
+  effective_standards:
+    checked: true
+    total_rules: 45
+    rules_applied:
+      - "ES-0001"  # gofmt: pass
+      - "ES-0002"  # tabs: pass
+      - "ES-0010"  # package name 'authclient': pass
+      - "ES-0011"  # exported identifiers: pass
+      - "ES-0014"  # -er suffix: CookieOption, Logger, Cache: pass
+      - "ES-0050"  # interfaces minimal: pass
+      - "ES-0051"  # interfaces at consumer: Cache/Logger defined in lib, used in lib — SDK public API, acceptable
+      - "ES-0055"  # no generalized interfaces in provider: N/A for SDK public API
+      - "ES-0060"  # handle errors explicitly: pass — doc.go has no code; client.go changes only remove comments
+      - "ES-0063"  # no panic: doc.go has no code; verified
+      - "ES-0080"  # godoc precedes declaration: pass
+      - "ES-0081"  # start doc comments with name: pass — "// Package authclient ..."
+      - "ES-0130"  # import order: unchanged (doc.go has no imports)
+    rules_not_applicable:
+      - "ES-0030 through ES-0035"  # no data structure code added
+      - "ES-0040 through ES-0044"  # no function design changes
+      - "ES-0070 through ES-0073"  # no receiver changes
+      - "ES-0090"                  # no enum changes
+      - "ES-0110 through ES-0112"  # no numeric conversion code
+      - "ES-0120 through ES-0142"  # no functional options or constructor added
+
+  effective_concurrency:
+    checked: false
+    total_rules: 35
+    concurrency_detected: false
+    trigger_found: []
+    reason: >
+      doc.go contains no executable code. client.go change removes 8 lines of doc comment
+      (no concurrency code added). cookies.go change adds 7 lines of godoc comment
+      (no concurrency code). No concurrency primitives in scope of this diff.
+
+  coding_style:
+    checked: true
+    total_rules: 30
+    rules_applied:
+      - "CS-0060"  # godoc for public methods: pass (lint passes, all exported have docs)
+      - "CS-0061"  # gofmt + golangci-lint: pass
+      - "CS-0110"  # no internal standard refs in modified files: pass (auth.go refs are pre-existing, not in diff)
+      - "CS-0111"  # no restating-the-obvious inline comments: pass
+      - "CS-0112"  # no decorative separators: pass — doc.go and cookies.go additions contain none
+    rules_not_applicable:
+      - "CS-0010"   # block spacing: no control flow code added
+      - "CS-0050 through CS-0053"  # package structure: unchanged
+      - "CS-0080 through CS-0082"  # type/function length: no new functions
+      - "CS-0113 through CS-0122"  # struct visibility: no struct changes
+
+  dba_rules:
+    checked: false
+    reason: "No database code in scope."
+
+  devops_rules:
+    checked: false
+    reason: "No infrastructure files in scope."
+
+summary: >
+  The documentation deliverables (lib/doc.go, README.md, CHANGELOG.md, and the godoc
+  additions to client.go and cookies.go) are substantially correct and complete: the
+  public surface matches the ADR, security warnings are present and prominent, DOD
+  section counts are satisfied, and the build + unit tests are fully green. One critical
+  accuracy issue was found — the Cache interface code block in README shows the wrong
+  method signatures (missing ctx parameter and using any instead of User), which would
+  cause a compile error for any consumer implementing a custom Cache adapter from the
+  README example. Two warnings cover a misnamed AuthError struct field in the CHANGELOG
+  (RetryAfter vs RetryAfterHint) and an inaccurate claim that WithCache(nil) disables
+  caching. All three issues require a targeted fix before the branch is merged.
+
+positive:
+  - "Package godoc in doc.go is concise, accurate, and ES-0081 compliant."
+  - "CAPSLOCK FailOpen security warning in README is prominently placed in a blockquote and accurate."
+  - "WithCookieSameSite SECURITY WARNING in cookies.go godoc is thorough and correctly describes the CSRF risk."
+  - "CHANGELOG v0.1.0 entry is comprehensive — covers all TASK-001..006 features, known limitations, and acknowledgements."
+  - "Public API surface matches the ADR exactly (5 sentinels, 4+4 options, 10 Client methods, 7 pkg-level funcs)."
+  - "All 214 unit tests pass; lint clean; all 3 examples compile."
+  - "TLS setup, Troubleshooting, and Known Limitations sections in README are accurate and well-scoped."
+  - "The fingerprint-binding rationale in HTTP Request Helpers is clear and actionable."
+
+verdict: CHANGES_REQUESTED
+verdict_reason: >
+  C-001 (Cache interface wrong signatures in README) is a critical accuracy issue that
+  would cause a compile error for consumers implementing a custom Cache adapter.
+  W-002 (wrong AuthError field name in CHANGELOG) is a factual error in a release artifact.
+  Both must be fixed before the branch is merged and v0.1.0 is tagged.
