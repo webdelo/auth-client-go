@@ -14,10 +14,10 @@ serialization, typed errors, and fail-closed-by-default semantics.
 go get github.com/webdelo/auth-client-go@v0.1.0
 ```
 
-For the most recent release use `@latest`. Both the SDK and the underlying contract module
-`github.com/webdelo/auth-proto/go` live in the private `webdelo` GitHub organization — you need
-`GOPRIVATE=github.com/webdelo/*` and a Personal Access Token with `read:packages` (and read access
-to the organization) configured for `go get`.
+For the most recent release use `@latest`. The SDK and its contract dependency
+`github.com/webdelo/auth-proto/go` are public; no `GOPRIVATE` or Personal Access Token is
+required. The actual AUTH service (`webdelo/auth`) remains private — only the SDK and its
+gRPC contract are needed to integrate.
 
 ## Quickstart
 
