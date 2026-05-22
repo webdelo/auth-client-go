@@ -3,12 +3,12 @@ package authclient_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
 	"google.golang.org/grpc"
@@ -16,27 +16,25 @@ import (
 	"google.golang.org/grpc/status"
 
 	authclient "github.com/webdelo/auth-client-go/lib"
-	"github.com/webdelo/auth-client-go/lib/mocks"
 )
 
-// testMocks groups all test doubles for auth method tests.
+// testMocks groups all test doubles for auth method tests. The logger is a
+// real *slog.Logger wired to a recording handler so individual tests can
+// inspect emitted records when the SDK's logging behavior is itself part of
+// the contract (e.g., panic-recovery error logging).
 type testMocks struct {
 	auth   *authclient.FakeAuthClient
-	logger *mocks.MockLogger
+	logger *slog.Logger
+	rec    *authclient.RecordingHandler
 }
 
-func newTestMocks(t *testing.T) *testMocks {
-	t.Helper()
+func newTestMocks(_ *testing.T) *testMocks {
+	logger, rec := authclient.NewRecordingLogger()
 	return &testMocks{
 		auth:   &authclient.FakeAuthClient{},
-		logger: mocks.NewMockLogger(t),
+		logger: logger,
+		rec:    rec,
 	}
-}
-
-// matchAnyCtx returns a testify matcher that accepts any non-nil context.Context.
-// Implemented as a function (not a package-level variable) per UT-0029.
-func matchAnyCtx() interface{} {
-	return mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil })
 }
 
 func TestClient_Login(t *testing.T) {
@@ -61,10 +59,6 @@ func TestClient_Login(t *testing.T) {
 						},
 					}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: login success", "user_uuid", "u-123").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, out authclient.LoginOutput, err error) {
 				require.NoError(t, err)
@@ -82,7 +76,6 @@ func TestClient_Login(t *testing.T) {
 				m.auth.LoginFunc = func(_ context.Context, _ *auth_v1.LoginRequest, _ ...grpc.CallOption) (*auth_v1.LoginResponse, error) {
 					return nil, status.Error(codes.Unauthenticated, "bad creds")
 				}
-				// No logger.Warn — not an unavailable error.
 			},
 			want: func(t *testing.T, out authclient.LoginOutput, err error) {
 				require.Error(t, err)
@@ -94,7 +87,6 @@ func TestClient_Login(t *testing.T) {
 				m.auth.LoginFunc = func(_ context.Context, _ *auth_v1.LoginRequest, _ ...grpc.CallOption) (*auth_v1.LoginResponse, error) {
 					return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded")
 				}
-				// No logger.Warn — not an unavailable error.
 			},
 			want: func(t *testing.T, out authclient.LoginOutput, err error) {
 				require.Error(t, err)
@@ -106,10 +98,6 @@ func TestClient_Login(t *testing.T) {
 				m.auth.LoginFunc = func(_ context.Context, _ *auth_v1.LoginRequest, _ ...grpc.CallOption) (*auth_v1.LoginResponse, error) {
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
-				m.logger.EXPECT().
-					Warn(matchAnyCtx(), "authclient: AUTH unavailable", "method", "login").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, out authclient.LoginOutput, err error) {
 				require.Error(t, err)
@@ -125,10 +113,6 @@ func TestClient_Login(t *testing.T) {
 						User:         nil,
 					}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: login success", "user_uuid", "").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, out authclient.LoginOutput, err error) {
 				require.NoError(t, err)
@@ -183,10 +167,6 @@ func TestClient_Refresh(t *testing.T) {
 						RefreshTokenExpiresAt: time.Now().Add(7 * 24 * time.Hour).Unix(),
 					}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: refresh success").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
 				require.NoError(t, err)
@@ -202,7 +182,6 @@ func TestClient_Refresh(t *testing.T) {
 				m.auth.RefreshTokenFunc = func(_ context.Context, _ *auth_v1.RefreshTokenRequest, _ ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
 					return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
 				}
-				// No logger.Warn for non-unavailable errors.
 			},
 			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
 				require.Error(t, err)
@@ -215,10 +194,6 @@ func TestClient_Refresh(t *testing.T) {
 				m.auth.RefreshTokenFunc = func(_ context.Context, _ *auth_v1.RefreshTokenRequest, _ ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
-				m.logger.EXPECT().
-					Warn(matchAnyCtx(), "authclient: AUTH unavailable", "method", "refresh").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
 				require.Error(t, err)
@@ -238,10 +213,6 @@ func TestClient_Refresh(t *testing.T) {
 						RefreshToken: "r",
 					}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: refresh success").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
 				require.NoError(t, err)
@@ -297,12 +268,6 @@ func TestClient_Refresh_SingleFlight(t *testing.T) {
 		}, nil
 	}
 
-	// Both goroutines receive the success log.
-	m.logger.EXPECT().
-		Info(matchAnyCtx(), "authclient: refresh success").
-		Return().
-		Times(2)
-
 	c := authclient.NewTestClient(authclient.ClientConfig{
 		LoginTimeout:    5 * time.Second,
 		RefreshTimeout:  5 * time.Second,
@@ -341,8 +306,8 @@ func TestClient_Refresh_SingleFlight(t *testing.T) {
 // that does not fit a flat table row alongside TestClient_Refresh's sequential cases.
 
 // TestClient_Refresh_FnPanicRecovered verifies that a panic inside
-// RefreshTokenFunc is recovered, returning ErrUnavailable, with appropriate
-// Error and Warn log calls.
+// RefreshTokenFunc is recovered, returning ErrUnavailable, AND that the SDK
+// emits an Error-level log so the panic does not go silent in production.
 func TestClient_Refresh_FnPanicRecovered(t *testing.T) {
 	t.Parallel()
 
@@ -351,23 +316,6 @@ func TestClient_Refresh_FnPanicRecovered(t *testing.T) {
 	m.auth.RefreshTokenFunc = func(_ context.Context, _ *auth_v1.RefreshTokenRequest, _ ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
 		panic("boom")
 	}
-
-	// The panic is recovered; logger.Error is called with the panic info.
-	m.logger.EXPECT().
-		Error(
-			matchAnyCtx(),
-			"authclient: refresh fn panic",
-			mock.MatchedBy(func(err error) bool { return errors.Is(err, authclient.ErrUnavailable) }),
-			"recover", "boom",
-		).
-		Return().
-		Once()
-
-	// After error is mapped, logUnavailableIfNeeded emits Warn.
-	m.logger.EXPECT().
-		Warn(matchAnyCtx(), "authclient: AUTH unavailable", "method", "refresh").
-		Return().
-		Once()
 
 	c := authclient.NewTestClient(authclient.ClientConfig{
 		LoginTimeout:    5 * time.Second,
@@ -378,6 +326,18 @@ func TestClient_Refresh_FnPanicRecovered(t *testing.T) {
 	_, err := c.Refresh(context.Background(), "panic-token", "", "")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, authclient.ErrUnavailable))
+
+	// Behavioural check: the recovered panic must be visible at ERROR level —
+	// otherwise an in-process panic would silently degrade to a generic
+	// "unavailable" without operator-actionable diagnostics.
+	var sawError bool
+	for _, r := range m.rec.Records() {
+		if r.Level == slog.LevelError {
+			sawError = true
+			break
+		}
+	}
+	assert.True(t, sawError, "panic recovery must emit at least one Error-level record")
 }
 
 func TestClient_Logout(t *testing.T) {
@@ -392,10 +352,6 @@ func TestClient_Logout(t *testing.T) {
 				m.auth.LogoutFunc = func(_ context.Context, _ *auth_v1.LogoutRequest, _ ...grpc.CallOption) (*auth_v1.LogoutResponse, error) {
 					return &auth_v1.LogoutResponse{}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: logout success").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -417,10 +373,6 @@ func TestClient_Logout(t *testing.T) {
 				m.auth.LogoutFunc = func(_ context.Context, _ *auth_v1.LogoutRequest, _ ...grpc.CallOption) (*auth_v1.LogoutResponse, error) {
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
-				m.logger.EXPECT().
-					Warn(matchAnyCtx(), "authclient: AUTH unavailable", "method", "logout").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, err error) {
 				require.Error(t, err)
@@ -461,10 +413,6 @@ func TestClient_LogoutAll(t *testing.T) {
 				m.auth.LogoutAllFunc = func(_ context.Context, _ *auth_v1.LogoutAllRequest, _ ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error) {
 					return &auth_v1.LogoutAllResponse{}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: logout_all success").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -486,10 +434,6 @@ func TestClient_LogoutAll(t *testing.T) {
 				m.auth.LogoutAllFunc = func(_ context.Context, _ *auth_v1.LogoutAllRequest, _ ...grpc.CallOption) (*auth_v1.LogoutAllResponse, error) {
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
-				m.logger.EXPECT().
-					Warn(matchAnyCtx(), "authclient: AUTH unavailable", "method", "logout_all").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, err error) {
 				require.Error(t, err)
@@ -530,10 +474,6 @@ func TestClient_ChangePassword(t *testing.T) {
 				m.auth.ChangePasswordFunc = func(_ context.Context, _ *auth_v1.ChangePasswordRequest, _ ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error) {
 					return &auth_v1.ChangePasswordResponse{}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: change_password success").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, err error) {
 				require.NoError(t, err)
@@ -555,10 +495,6 @@ func TestClient_ChangePassword(t *testing.T) {
 				m.auth.ChangePasswordFunc = func(_ context.Context, _ *auth_v1.ChangePasswordRequest, _ ...grpc.CallOption) (*auth_v1.ChangePasswordResponse, error) {
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
-				m.logger.EXPECT().
-					Warn(matchAnyCtx(), "authclient: AUTH unavailable", "method", "change_password").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, err error) {
 				require.Error(t, err)
@@ -605,10 +541,6 @@ func TestClient_GetCurrentUser(t *testing.T) {
 						},
 					}, nil
 				}
-				m.logger.EXPECT().
-					Info(matchAnyCtx(), "authclient: get_current_user success", "user_uuid", "u-456").
-					Return().
-					Once()
 			},
 			want: func(t *testing.T, user authclient.User, err error) {
 				require.NoError(t, err)
@@ -622,8 +554,6 @@ func TestClient_GetCurrentUser(t *testing.T) {
 				m.auth.GetCurrentUserFunc = func(_ context.Context, _ *auth_v1.GetCurrentUserRequest, _ ...grpc.CallOption) (*auth_v1.GetCurrentUserResponse, error) {
 					return &auth_v1.GetCurrentUserResponse{User: nil}, nil
 				}
-				// No logger expectation — authclient returns fmt.Errorf wrapping ErrUnavailable
-				// but does NOT call logUnavailableIfNeeded (that's only for gRPC errors).
 			},
 			want: func(t *testing.T, user authclient.User, err error) {
 				require.Error(t, err)

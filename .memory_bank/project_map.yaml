@@ -8,7 +8,7 @@ project:
 structure:
   root_files:
     - file: "go.mod"
-      description: "Go module: github.com/webdelo/auth-client-go (Go 1.24)"
+      description: "Go module: github.com/webdelo/auth-client-go (Go 1.25)"
     - file: "Makefile"
       description: "Build / test / lint / generate-mocks targets (lib-style, no Docker)"
     - file: "scratch.yaml"
@@ -68,4 +68,5 @@ scope_boundaries:
     - "Session management: ListSessions, RevokeSession (то же)"
     - "Хранение токенов пользователя (это policy consumer'а)"
     - "DI framework (consumer выбирает свой)"
-    - "Логгер и метрики (передаются через adapter-интерфейсы)"
+    - "Метрики (в v0.2.0 не реализованы — consumer измеряет на месте вызова)"
+    - "Конкретный backend логгера (SDK принимает *slog.Logger из stdlib напрямую — consumer передаёт любой slog.Handler)"

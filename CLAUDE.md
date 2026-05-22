@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-**auth-client-go** — Go SDK for [webdelo/auth](https://github.com/webdelo/auth) service. Thin wrapper over the gRPC contract from [webdelo/auth-proto](https://github.com/webdelo/auth-proto) with non-trivial concerns baked in: ValidateToken cache, HTTP middleware, gRPC unary interceptor, refresh race serialization, typed errors. Go 1.24, lib-type project scaffolded with `scratch`.
+**auth-client-go** — Go SDK for [webdelo/auth](https://github.com/webdelo/auth) service. Thin wrapper over the gRPC contract from [webdelo/auth-proto](https://github.com/webdelo/auth-proto) with non-trivial concerns baked in: ValidateToken cache, HTTP middleware, gRPC unary interceptor, refresh race serialization, typed errors. Go 1.25, lib-type project scaffolded with `scratch`.
 
 Consumers: BFF, simple-trader, arbitrage-trader, and future Go services that need to validate AUTH tokens or proxy login/refresh flows.
 
@@ -87,7 +87,9 @@ lib/
 **Key design principles:**
 
 - **No DI framework** — SDK uses plain constructors + functional options. Consumer brings own DI.
-- **Adapter interfaces** for logger and metrics — SDK does not depend on concrete logger/Prometheus libs.
+- **Logging via stdlib `log/slog`** — SDK accepts `*slog.Logger` directly (no custom adapter). Default is `slog.New(slog.DiscardHandler)`. Backends (JSON, text, OTLP, zap-bridge, etc.) plug in via `slog.Handler`.
+- **No metrics adapter** in v0.2.0 — consumers instrument at the call site.
+- **Adapter interface for cache** (`Cache`) — built-in `MemoryCache` swappable for Redis-backed implementations.
 - **Fail-closed by default** — when AUTH is unavailable, middleware blocks the request. Override with `FailOpen` option.
 - **Token version awareness** — cache invalidates entries when AUTH bumps `token_version` (via short TTL, 30s default).
 - **Fingerprint binding** — SDK helpers extract client IP / UserAgent from `http.Request` and forward to AUTH (NOT BFF's own IP — that would break security).
@@ -101,7 +103,7 @@ lib/
 | `google.golang.org/grpc` | pinned | gRPC framework — client side |
 | `google.golang.org/protobuf` | pinned | Protobuf runtime |
 
-**Intentionally excluded:** any DI framework (`fx`, `wire`), any concrete logger (`zap`, `logrus`), Prometheus client. These are consumer's choice.
+**Intentionally excluded:** any DI framework (`fx`, `wire`), any third-party logger (`zap`, `logrus`, `zerolog` — the SDK uses stdlib `log/slog` directly), Prometheus client. These are consumer's choice.
 
 ## Scope Boundaries
 
@@ -115,7 +117,9 @@ lib/
 - Admin operations (ListUsers, CreateUser, UpdateUserRole, BlockUser) — consumer calls AUTH directly
 - Session management (ListSessions, RevokeSession) — same
 - Token storage policy — consumer's choice
-- DI / logger / metrics implementations — adapter interfaces only
+- DI framework — consumer's choice
+- Metrics implementation — consumer instruments at call site (no SDK adapter in v0.2.0)
+- Concrete logger backend — consumer passes any `*slog.Logger` (SDK uses stdlib `log/slog`)
 
 ---
 

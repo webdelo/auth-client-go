@@ -3,6 +3,7 @@ package authclient
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"runtime/debug"
 
 	"google.golang.org/grpc"
@@ -32,9 +33,9 @@ func (c *Client) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	) (resp interface{}, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				c.logger.Error(ctx, "authclient: grpc handler panic", nil,
-					"panic", r,
-					"stack", string(debug.Stack()),
+				c.logger.ErrorContext(ctx, "authclient: grpc handler panic",
+					slog.Any("panic", r),
+					slog.String("stack", string(debug.Stack())),
 				)
 				err = status.Error(codes.Internal, "internal error")
 				resp = nil
@@ -64,7 +65,7 @@ func (c *Client) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		switch {
 		case errors.Is(vErr, ErrUnavailable):
 			if c.failMode == FailOpen {
-				c.logger.Warn(ctx, "authclient: AUTH unavailable, fail-open pass-through")
+				c.logger.WarnContext(ctx, "authclient: AUTH unavailable, fail-open pass-through")
 				return handler(WithUser(ctx, User{}), req)
 			}
 			return nil, status.Error(codes.Unavailable, "auth unavailable")

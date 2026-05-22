@@ -1,7 +1,9 @@
 core:
   language: "Go"
-  language_version: "1.24"
+  language_version: "1.25"
   type: "lib"
+  notes:
+    - "Go 1.25 is the minimum (go.mod). slog.DiscardHandler (added in 1.24) is used as the silent default logger."
 
 patterns:
   - name: "Thin gRPC client wrapper"

@@ -81,7 +81,7 @@ curl -H 'Authorization: Bearer <ACCESS_TOKEN>' http://localhost:8080/api/me
 | `LoginTimeout`     | `5s`                         | Per-call deadline for `Login` / `ChangePassword` (bcrypt ~100ms upstream).                                 |
 | `RefreshTimeout`   | `5s`                         | Per-call deadline for `Refresh` / `Logout`.                                                                |
 | `DialOptions`      | `[]grpc.DialOption{}`        | Extra `grpc.Dial` options (TLS credentials, keepalive overrides, interceptors). See [TLS Setup](#tls-setup).|
-| `Logger`           | `NoopLogger{}`               | Adapter for structured logs. See [Adapter Interfaces](#adapter-interfaces).                                |
+| `Logger`           | `slog.New(slog.DiscardHandler)` | A `*slog.Logger` for diagnostic logs. The SDK uses `log/slog` from stdlib directly — no custom interface. See [Logging](#logging). |
 | `Cache`            | built-in `MemoryCache`       | Adapter for `ValidateToken` result cache.                                                                  |
 
 Functional options (applied after `Config`):
@@ -89,7 +89,7 @@ Functional options (applied after `Config`):
 | Option                       | Purpose                                                                                       |
 |------------------------------|-----------------------------------------------------------------------------------------------|
 | `WithFailMode(mode)`         | Overrides `Config.FailMode`. See [Fail Mode](#fail-mode) — `FailOpen` is auth bypass.         |
-| `WithLogger(l)`              | Overrides `Config.Logger`. `nil` collapses to `NoopLogger{}`.                                 |
+| `WithLogger(l)`              | Overrides `Config.Logger`. `nil` collapses to `slog.New(slog.DiscardHandler)`.                |
 | `WithCache(c)`               | Overrides `Config.Cache` with a custom implementation. `nil` is a no-op (falls through to `Config.Cache` or the built-in `MemoryCache`). To disable caching set `Config.ValidateCacheTTL = 0`. |
 | `WithOpenMethods(methods…)`  | gRPC interceptor — whitelist of full method names that skip auth (e.g. health probes).        |
 
@@ -161,38 +161,38 @@ default:
 }
 ```
 
+## Logging
+
+The SDK uses `log/slog` from the Go standard library directly — no custom logger
+interface, no adapter required. Pass any `*slog.Logger` and the SDK calls the
+`*Context` variants (`InfoContext` / `WarnContext` / `ErrorContext`) so your
+handlers see the request context.
+
+```go
+import "log/slog"
+
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+client, _ := authclient.New(authclient.Config{
+    Endpoint: "auth:50051",
+    Logger:   logger,
+})
+
+// Or via option:
+client, _ = authclient.New(cfg, authclient.WithLogger(slog.Default()))
+```
+
+The default when `Config.Logger == nil` is `slog.New(slog.DiscardHandler)` — silent,
+zero allocations per call. To wire in a different backend (zap, zerolog, OpenTelemetry,
+file, syslog), use any `slog.Handler` implementation: the SDK does not care which.
+
+The SDK never logs token contents, passwords, or full IP addresses (only `user_uuid`
+and operation name).
+
 ## Adapter Interfaces
 
-The SDK avoids hard dependencies on a concrete logger or metrics library. Consumers plug in
-their own via two small interfaces.
-
-### Logger
-
-```go
-type Logger interface {
-    Info(ctx context.Context, msg string, fields ...any)
-    Warn(ctx context.Context, msg string, fields ...any)
-    Error(ctx context.Context, msg string, err error, fields ...any)
-}
-```
-
-Default is `authclient.NoopLogger{}` (zero-cost). Variadic fields follow slog convention:
-alternating key-string + value. Example slog adapter:
-
-```go
-type slogAdapter struct{ l *slog.Logger }
-
-func (a slogAdapter) Info(ctx context.Context, msg string, fields ...any)  { a.l.InfoContext(ctx, msg, fields...) }
-func (a slogAdapter) Warn(ctx context.Context, msg string, fields ...any)  { a.l.WarnContext(ctx, msg, fields...) }
-func (a slogAdapter) Error(ctx context.Context, msg string, err error, fields ...any) {
-    a.l.ErrorContext(ctx, msg, append([]any{"err", err}, fields...)...)
-}
-
-client, _ := authclient.New(cfg, authclient.WithLogger(slogAdapter{l: slog.Default()}))
-```
-
-The SDK never logs token contents, passwords, or full IP addresses (only `user_uuid` and
-operation name).
+The SDK has one consumer-facing adapter interface: `Cache`. Logging is handled via
+the standard `*slog.Logger` (see [Logging](#logging) above), and the SDK does not
+provide a metrics adapter in this release.
 
 ### Cache
 
@@ -329,8 +329,8 @@ Consumer-supplied transport credentials override the SDK default — the SDK doe
 
 ### Debugging 401 responses
 
-1. Plug in a real `Logger` (slog adapter above) and re-run — the SDK logs the operation
-   (`validate` / `login` / `refresh` / …) and the mapped sentinel.
+1. Plug in a real `*slog.Logger` (see [Logging](#logging)) and re-run — the SDK logs
+   the operation (`validate` / `login` / `refresh` / …) and the mapped sentinel.
 2. Inspect `WWW-Authenticate` on the 401:
    - `Bearer realm="api"` — the `Authorization` header was missing or malformed.
    - `Bearer realm="api", error="invalid_token"` — AUTH rejected the token.
@@ -389,8 +389,9 @@ This SDK follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html
 - **Pre-v1.0.0**: breaking changes are allowed but must be flagged in `CHANGELOG.md`.
 - **Post-v1.0.0**: breaking changes only on major bumps (`v2.0.0`). Within a major:
   - **Frozen**: method signatures on `*Client`, names / values of `Role` and `FailMode`
-    constants, sentinel error names, exported struct field names and types, `Logger` and
-    `Cache` method signatures, cookie defaults.
+    constants, sentinel error names, exported struct field names and types, `Cache`
+    method signatures, the `*slog.Logger` shape of `Config.Logger` and `WithLogger`,
+    cookie defaults.
   - **Additive**: new methods, new `Role` / `FailMode` constants, new sentinel errors, new
     struct fields (zero-value-compatible), new `With…` options, future `Metrics` interface.
 

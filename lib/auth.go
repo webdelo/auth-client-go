@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
@@ -102,7 +103,7 @@ func (c *Client) Login(ctx context.Context, in LoginInput) (LoginOutput, error) 
 		}
 	}
 
-	c.logger.Info(ctx, "authclient: login success", "user_uuid", out.User.UUID)
+	c.logger.InfoContext(ctx, "authclient: login success", slog.String("user_uuid", out.User.UUID))
 	return out, nil
 }
 
@@ -147,7 +148,10 @@ func (c *Client) Refresh(ctx context.Context, refreshToken, clientIP, userAgent 
 		defer func() {
 			if r := recover(); r != nil {
 				fnErr = fmt.Errorf("authclient: refresh fn panic: %v: %w", r, ErrUnavailable)
-				c.logger.Error(ctx, "authclient: refresh fn panic", fnErr, "recover", fmt.Sprint(r))
+				c.logger.ErrorContext(ctx, "authclient: refresh fn panic",
+					slog.Any("error", fnErr),
+					slog.String("recover", fmt.Sprint(r)),
+				)
 			}
 		}()
 
@@ -183,7 +187,7 @@ func (c *Client) Refresh(ctx context.Context, refreshToken, clientIP, userAgent 
 		AccessExpiresIn:  expiresIn(resp.GetAccessTokenExpiresAt()),
 		RefreshExpiresIn: expiresIn(resp.GetRefreshTokenExpiresAt()),
 	}
-	c.logger.Info(ctx, "authclient: refresh success")
+	c.logger.InfoContext(ctx, "authclient: refresh success")
 	return out, nil
 }
 
@@ -211,7 +215,7 @@ func (c *Client) Logout(ctx context.Context, refreshToken string) error {
 		return mapped
 	}
 
-	c.logger.Info(ctx, "authclient: logout success")
+	c.logger.InfoContext(ctx, "authclient: logout success")
 	return nil
 }
 
@@ -237,7 +241,7 @@ func (c *Client) LogoutAll(ctx context.Context, accessToken string) error {
 		return mapped
 	}
 
-	c.logger.Info(ctx, "authclient: logout_all success")
+	c.logger.InfoContext(ctx, "authclient: logout_all success")
 	return nil
 }
 
@@ -271,7 +275,7 @@ func (c *Client) ChangePassword(ctx context.Context, accessToken, currentPasswor
 		return mapped
 	}
 
-	c.logger.Info(ctx, "authclient: change_password success")
+	c.logger.InfoContext(ctx, "authclient: change_password success")
 	return nil
 }
 
@@ -305,7 +309,7 @@ func (c *Client) GetCurrentUser(ctx context.Context, accessToken string) (User, 
 		Role:  Role(u.GetRole()),
 		Email: u.GetEmail(),
 	}
-	c.logger.Info(ctx, "authclient: get_current_user success", "user_uuid", user.UUID)
+	c.logger.InfoContext(ctx, "authclient: get_current_user success", slog.String("user_uuid", user.UUID))
 	return user, nil
 }
 
@@ -314,6 +318,6 @@ func (c *Client) GetCurrentUser(ctx context.Context, accessToken string) (User, 
 // not logged at SDK level — they are business outcomes for the caller.
 func (c *Client) logUnavailableIfNeeded(ctx context.Context, method string, err error) {
 	if errors.Is(err, ErrUnavailable) {
-		c.logger.Warn(ctx, "authclient: AUTH unavailable", "method", method)
+		c.logger.WarnContext(ctx, "authclient: AUTH unavailable", slog.String("method", method))
 	}
 }
