@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.2.0] — 2026-05-22
+
+### Changed (BREAKING)
+
+- **Logger contract switched to `*slog.Logger`.** The custom `authclient.Logger`
+  interface and `authclient.NoopLogger` type are removed. `Config.Logger` and
+  `WithLogger` now accept `*slog.Logger` directly; `nil` collapses to
+  `slog.New(slog.DiscardHandler)`. Consumers that previously wrote a
+  `slog -> authclient.Logger` adapter should delete that adapter and pass
+  their `*slog.Logger` straight in.
+
+  Migration:
+
+  ```go
+  // Before (v0.1.0):
+  client, _ := authclient.New(cfg, authclient.WithLogger(slogAdapter{l: logger}))
+
+  // After (v0.2.0+):
+  client, _ := authclient.New(cfg, authclient.WithLogger(logger))
+  ```
+
+  Rationale: `log/slog` has been part of the stdlib since Go 1.21 and is the
+  de-facto standard for structured logging. The SDK's custom interface forced
+  every consumer to maintain a near-identical adapter for no extension benefit
+  — `slog.Handler` is already the swap-point for backends (JSON / text / zap /
+  OTLP / custom). Removing the wrapper is a one-line change for consumers and
+  drops ~80 LOC of adapter + mock + test from the SDK.
+
+### Removed
+
+- `authclient.Logger` interface (replaced by `*slog.Logger`).
+- `authclient.NoopLogger` type (replaced by `slog.New(slog.DiscardHandler)`).
+- `lib/mocks/mock_Logger.go` (no longer needed — slog is exercised via a
+  recording `slog.Handler` in tests).
+
 ## [v0.1.0] — 2026-05-19
 
 Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth).
@@ -66,6 +101,7 @@ Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth
 
 - **Adapter interfaces**:
   - `Logger` (`Info` / `Warn` / `Error`) with slog-style variadic fields; `NoopLogger{}` default.
+    *(Replaced by `*slog.Logger` in [Unreleased] — see migration note above.)*
   - `Cache` (`Get` / `Set` / `Delete`) — built-in TTL implementation; consumer can swap.
 
 - **Examples** ([`lib/examples/`](lib/examples/)):
@@ -103,5 +139,6 @@ Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth
   [OWASP A07:2025 — Authentication Failures](https://owasp.org/Top10/) for fail-closed
   semantics.
 
-[Unreleased]: https://github.com/webdelo/auth-client-go/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/webdelo/auth-client-go/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.1.0

@@ -28,13 +28,22 @@ planned_for_implementation:
 intentionally_excluded:
   - name: "go.uber.org/fx"
     reason: "SDK не должен навязывать DI-framework consumer'у."
-  - name: "github.com/sirupsen/logrus / go.uber.org/zap"
-    reason: "Логирование — через adapter-интерфейс (consumer передаёт свой logger)."
+  - name: "github.com/sirupsen/logrus / go.uber.org/zap / github.com/rs/zerolog"
+    reason: "SDK использует log/slog из stdlib напрямую (с Go 1.21). Любой backend подключается через slog.Handler — внешние логгеры не нужны."
   - name: "github.com/prometheus/client_golang"
-    reason: "Метрики — через adapter-интерфейс (опционально, не required)."
+    reason: "В v0.2.0 SDK не реализует metrics adapter. Consumer измеряет на месте вызова."
   - name: "github.com/webdelo/go-ctx-logger"
-    reason: "См. логирование выше — SDK не должен зависеть от конкретной либы."
+    reason: "См. логирование — slog покрывает все нужды через slog.Handler."
+
+logging:
+  contract: "log/slog (stdlib)"
+  config_field: "Config.Logger *slog.Logger"
+  default: "slog.New(slog.DiscardHandler)"
+  notes:
+    - "SDK вызывает *Context-варианты (InfoContext / WarnContext / ErrorContext), чтобы передавать ctx в handler (trace-id, request-id и т.п.)."
+    - "Backend подменяется через slog.Handler — JSON, text, OTLP, zap-bridge и т.д."
+    - "Никакого собственного Logger-интерфейса нет (был в v0.1.0, удалён в v0.2.0)."
 
 policy:
   - "Минимизировать публичные зависимости. Каждая прямая dependency = что consumer тянет в свой проект."
-  - "Все adapter-интерфейсы (logger, metrics, transport options) описаны в lib/ — реализации не входят в SDK."
+  - "Adapter-интерфейсы используются только там, где stdlib не покрывает (Cache). Логирование — через *slog.Logger напрямую."

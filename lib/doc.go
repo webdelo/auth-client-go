@@ -4,8 +4,9 @@
 // non-trivial concerns baked in: a TTL cache for ValidateToken, an HTTP
 // middleware, a gRPC unary interceptor, refresh-race serialization via
 // singleflight, typed errors, and fail-closed-by-default semantics. The SDK
-// has no DI, logger, or metrics dependencies — consumers plug in their own
-// via small adapter interfaces (Logger, Cache).
+// has no DI or metrics dependencies. Logging is via the standard library's
+// log/slog package: pass a *slog.Logger (or omit for silent). The cache is
+// pluggable via the Cache adapter interface.
 //
 // # Quickstart
 //

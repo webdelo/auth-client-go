@@ -9,6 +9,8 @@ package authclient
 
 import (
 	"context"
+	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -106,9 +108,9 @@ type ClientConfig struct {
 
 // NewTestClient constructs a Client with injected dependencies, bypassing the
 // gRPC dial that New performs. Used exclusively by external test packages.
-func NewTestClient(cfg ClientConfig, cache Cache, auth *FakeAuthClient, logger Logger) *Client {
+func NewTestClient(cfg ClientConfig, cache Cache, auth *FakeAuthClient, logger *slog.Logger) *Client {
 	if logger == nil {
-		logger = NoopLogger{}
+		logger = slog.New(slog.DiscardHandler)
 	}
 	openMethods := defaultOpenMethods()
 	for m := range cfg.OpenMethods {
@@ -128,6 +130,63 @@ func NewTestClient(cfg ClientConfig, cache Cache, auth *FakeAuthClient, logger L
 		openMethods: openMethods,
 		sf:          &refresh.Group{},
 	}
+}
+
+// RecordedLog is one log record captured by RecordingHandler. Attrs flattens
+// slog.Attr into a map for ergonomic assertions in tests.
+type RecordedLog struct {
+	Level slog.Level
+	Msg   string
+	Attrs map[string]any
+}
+
+// RecordingHandler is a slog.Handler that captures every record in memory.
+// Use NewRecordingLogger to obtain a *slog.Logger wired to a fresh handler.
+// Safe for concurrent use; Records returns a snapshot copy.
+type RecordingHandler struct {
+	mu      sync.Mutex
+	records []RecordedLog
+}
+
+// NewRecordingLogger returns a *slog.Logger that captures every record and
+// the *RecordingHandler that owns the captured slice.
+func NewRecordingLogger() (*slog.Logger, *RecordingHandler) {
+	h := &RecordingHandler{}
+	return slog.New(h), h
+}
+
+// Enabled always returns true — recording every level keeps the test author
+// free of level filtering surprises.
+func (*RecordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+// Handle appends a snapshot of the record. Attrs are flattened to a map.
+func (h *RecordingHandler) Handle(_ context.Context, r slog.Record) error {
+	attrs := make(map[string]any, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.Any()
+		return true
+	})
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, RecordedLog{Level: r.Level, Msg: r.Message, Attrs: attrs})
+	return nil
+}
+
+// WithAttrs / WithGroup return h unchanged — test code does not exercise
+// attr/group inheritance and the simpler implementation keeps record output
+// predictable.
+func (h *RecordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+// WithGroup is a no-op for the same reason as WithAttrs.
+func (h *RecordingHandler) WithGroup(string) slog.Handler { return h }
+
+// Records returns a snapshot copy of all captured records.
+func (h *RecordingHandler) Records() []RecordedLog {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]RecordedLog, len(h.records))
+	copy(out, h.records)
+	return out
 }
 
 // HashToken is the exported alias of hashToken for use in external test packages.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -113,8 +114,11 @@ type Config struct {
 	// supply grpc.WithTransportCredentials(...) here to enable TLS.
 	DialOptions []grpc.DialOption
 
-	// Logger is the diagnostic logger. Defaults to NoopLogger if nil.
-	Logger Logger
+	// Logger is the diagnostic logger. Defaults to a slog.Logger wrapping
+	// slog.DiscardHandler when nil. Pass slog.Default() or any *slog.Logger
+	// built around a custom slog.Handler (e.g., slog.NewJSONHandler) to wire
+	// in your own logging stack.
+	Logger *slog.Logger
 
 	// Cache is the ValidateToken result cache. Defaults to nil (no cache).
 	Cache Cache
@@ -131,11 +135,12 @@ func WithFailMode(mode FailMode) Option {
 	return func(c *Client) { c.failMode = mode }
 }
 
-// WithLogger overrides Config.Logger. nil collapses to NoopLogger{}.
-func WithLogger(l Logger) Option {
+// WithLogger overrides Config.Logger. nil collapses to a *slog.Logger
+// wrapping slog.DiscardHandler (silent default).
+func WithLogger(l *slog.Logger) Option {
 	return func(c *Client) {
 		if l == nil {
-			l = NoopLogger{}
+			l = slog.New(slog.DiscardHandler)
 		}
 		c.logger = l
 	}
@@ -192,7 +197,7 @@ type Client struct {
 	authClient  authServiceClient
 	cache       Cache                 // token validation cache (default = cacheAdapter wrapping cache.MemoryCache)
 	memCache    *cachepkg.MemoryCache // non-nil only when SDK created the default MemoryCache
-	logger      Logger
+	logger      *slog.Logger
 	failMode    FailMode
 	openMethods map[string]struct{}
 
@@ -232,9 +237,9 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 	cfg = applyDefaults(cfg)
 
 	if !isLocalEndpoint(cfg.Endpoint) && len(cfg.DialOptions) == 0 {
-		cfg.Logger.Warn(context.Background(),
+		cfg.Logger.WarnContext(context.Background(),
 			"authclient: insecure (plaintext) transport for non-local endpoint — supply WithTransportCredentials(TLS) in DialOptions for production",
-			"endpoint", cfg.Endpoint,
+			slog.String("endpoint", cfg.Endpoint),
 		)
 	}
 
@@ -318,7 +323,7 @@ func applyDefaults(cfg Config) Config {
 	}
 
 	if cfg.Logger == nil {
-		cfg.Logger = NoopLogger{}
+		cfg.Logger = slog.New(slog.DiscardHandler)
 	}
 
 	return cfg

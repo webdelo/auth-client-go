@@ -5,7 +5,9 @@ template-data:
   unroll-variadic: true
 
 packages:
-  # All consumer-side interfaces in this module: Cache, Logger, authServiceClient.
+  # All consumer-side interfaces in this module: Cache, authServiceClient.
+  # Diagnostic logging uses *slog.Logger directly — no SDK-defined Logger
+  # interface, no mock required.
   github.com/webdelo/auth-client-go/lib:
     config:
       all: true

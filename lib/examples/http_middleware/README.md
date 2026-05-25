@@ -8,7 +8,7 @@ Single-file `net/http` server with:
 - `POST /auth/logout` — clears the refresh cookie via `client.Logout`.
 - `GET /api/profile` — protected by `client.HTTPMiddleware`; reads `UserFromContext`.
 
-Shows the `slog` → `authclient.Logger` adapter pattern and the
+Shows passing a `*slog.Logger` directly into `authclient.New` and the
 `IPFromRequest` / `UserAgentFromRequest` fingerprint helpers.
 
 ## Prerequisites

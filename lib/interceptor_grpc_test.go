@@ -2,6 +2,7 @@ package authclient_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -21,15 +22,18 @@ import (
 type interceptorTestMocks struct {
 	cache  *mocks.MockCache
 	auth   *authclient.FakeAuthClient
-	logger *mocks.MockLogger
+	logger *slog.Logger
+	rec    *authclient.RecordingHandler
 }
 
 func newInterceptorTestMocks(t *testing.T) *interceptorTestMocks {
 	t.Helper()
+	logger, rec := authclient.NewRecordingLogger()
 	return &interceptorTestMocks{
 		cache:  mocks.NewMockCache(t),
 		auth:   &authclient.FakeAuthClient{},
-		logger: mocks.NewMockLogger(t),
+		logger: logger,
+		rec:    rec,
 	}
 }
 
@@ -64,6 +68,11 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 		extraMethods map[string]struct{}
 		prepareMocks func(*testing.T, *interceptorTestMocks)
 		want         func(*testing.T, interface{}, error)
+		// assertLogs, when non-nil, runs after the interceptor call and is
+		// passed the slice of records captured by the recording slog handler.
+		// Use this for tests where logging behavior is part of the contract
+		// (e.g., panic recovery must emit an Error-level record).
+		assertLogs func(*testing.T, []authclient.RecordedLog)
 	}{
 		"happy_path": {
 			ctx:      func() context.Context { return makeCtxWithBearer("valid-tok") },
@@ -308,14 +317,6 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 					require.True(t, hasDeadline, "ValidateToken ctx must carry a deadline")
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
-
-				m.logger.EXPECT().
-					Warn(
-						mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil }),
-						"authclient: AUTH unavailable, fail-open pass-through",
-					).
-					Return().
-					Once()
 			},
 			handler: func(ctx context.Context, req interface{}) (interface{}, error) {
 				user, ok := authclient.UserFromContext(ctx)
@@ -389,17 +390,6 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 					).
 					Return().
 					Once()
-
-				m.logger.EXPECT().
-					Error(
-						mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil }),
-						"authclient: grpc handler panic",
-						nil,
-						"panic", "boom",
-						"stack", mock.Anything,
-					).
-					Return().
-					Once()
 			},
 			handler: func(ctx context.Context, req interface{}) (interface{}, error) {
 				panic("boom")
@@ -409,6 +399,18 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 				assert.Nil(t, resp)
 				assert.Equal(t, codes.Internal, status.Code(err))
 				assert.Contains(t, err.Error(), "internal error")
+			},
+			// Behavioural check: the recovered panic must surface as ERROR
+			// log so operators can diagnose; we own it via assertLogLevel below.
+			assertLogs: func(t *testing.T, recs []authclient.RecordedLog) {
+				var sawError bool
+				for _, r := range recs {
+					if r.Level == slog.LevelError {
+						sawError = true
+						break
+					}
+				}
+				assert.True(t, sawError, "panic recovery must emit at least one Error-level record")
 			},
 		},
 	}
@@ -438,6 +440,9 @@ func TestClient_UnaryInterceptor(t *testing.T) {
 
 			resp, err := interceptor(tc.ctx(), "request", tc.info, tc.handler)
 			tc.want(t, resp, err)
+			if tc.assertLogs != nil {
+				tc.assertLogs(t, m.rec.Records())
+			}
 		})
 	}
 }

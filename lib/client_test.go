@@ -2,6 +2,7 @@ package authclient
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -11,27 +12,19 @@ import (
 	"google.golang.org/grpc"
 )
 
-// recordingLogger and stubCache are hand-written stubs for the Logger and
-// Cache interfaces. They live in client_test.go (package authclient) rather
-// than using the mockery-generated lib/mocks.* mocks because the mocks
-// package imports lib, which would create a circular import for tests
-// that live inside package authclient itself. For tests in
-// package authclient_test (validate_test.go, middleware_http_test.go,
-// interceptor_grpc_test.go), the mockery mocks are used directly — see
-// export_test.go for the FakeAuthClient counterpart.
+// customTestLogger is reused by the WithLogger identity test below to verify
+// that the SDK stores the caller's *slog.Logger verbatim.
+var customTestLogger = slog.New(slog.DiscardHandler)
+
+// stubCache is a hand-written stub for the Cache interface. It lives in
+// client_test.go (package authclient) rather than using the mockery-generated
+// lib/mocks.MockCache because lib/mocks imports lib, which would create an
+// import cycle for tests that live inside package authclient itself. For
+// tests in package authclient_test (validate_test.go, middleware_http_test.go,
+// interceptor_grpc_test.go), the mockery mocks are used directly.
 //
 // UT-0020 waiver: this file is in package authclient (not authclient_test)
-// to retain access to unexported fields. lib/mocks imports lib, so importing
-// lib/mocks from this same-package test would create a cycle. The waiver is
-// scoped to recordingLogger and stubCache only.
-type recordingLogger struct {
-	infos int
-}
-
-func (r *recordingLogger) Info(_ context.Context, _ string, _ ...any)           { r.infos++ }
-func (r *recordingLogger) Warn(_ context.Context, _ string, _ ...any)           {}
-func (r *recordingLogger) Error(_ context.Context, _ string, _ error, _ ...any) {}
-
+// to retain access to unexported fields. The waiver is scoped to stubCache.
 type stubCache struct{}
 
 func (*stubCache) Get(_ context.Context, _ string) (User, bool)             { return User{}, false }
@@ -60,8 +53,7 @@ func TestClient_New(t *testing.T) {
 				})
 				assert.Equal(t, time.Duration(0), c.cfg.ValidateCacheTTL, "zero TTL preserved as cache-disabled")
 				assert.Equal(t, FailClosed, c.failMode)
-				_, ok := c.logger.(NoopLogger)
-				assert.True(t, ok, "default logger should be NoopLogger")
+				assert.NotNil(t, c.logger, "default logger should be a non-nil *slog.Logger")
 			},
 		},
 		"missing_endpoint_returns_error": {
@@ -99,7 +91,7 @@ func TestClient_New(t *testing.T) {
 				assert.Equal(t, FailOpen, c.failMode)
 			},
 		},
-		"with_logger_nil_uses_noop": {
+		"with_logger_nil_uses_discard": {
 			cfg:  Config{Endpoint: "x:1"},
 			opts: []Option{WithLogger(nil)},
 			want: func(t *testing.T, c *Client, err error) {
@@ -110,13 +102,12 @@ func TestClient_New(t *testing.T) {
 						t.Logf("close error: %v", cerr)
 					}
 				})
-				_, ok := c.logger.(NoopLogger)
-				assert.True(t, ok, "nil logger should fall back to NoopLogger")
+				assert.NotNil(t, c.logger, "nil logger should fall back to a discard *slog.Logger")
 			},
 		},
-		"with_logger_custom": {
+		"with_logger_custom_is_used_verbatim": {
 			cfg:  Config{Endpoint: "x:1"},
-			opts: []Option{WithLogger(&recordingLogger{})},
+			opts: []Option{WithLogger(customTestLogger)},
 			want: func(t *testing.T, c *Client, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, c)
@@ -125,8 +116,7 @@ func TestClient_New(t *testing.T) {
 						t.Logf("close error: %v", cerr)
 					}
 				})
-				_, ok := c.logger.(*recordingLogger)
-				assert.True(t, ok, "custom logger should be set on client")
+				assert.Same(t, customTestLogger, c.logger, "WithLogger must set the exact *slog.Logger instance")
 			},
 		},
 		"with_open_methods_appends": {

@@ -61,7 +61,7 @@ func (c *Client) HTTPMiddleware(next http.Handler) http.Handler {
 		switch {
 		case errors.Is(err, ErrUnavailable):
 			if c.failMode == FailOpen {
-				c.logger.Warn(r.Context(), "authclient: AUTH unavailable, fail-open pass-through")
+				c.logger.WarnContext(r.Context(), "authclient: AUTH unavailable, fail-open pass-through")
 				next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), User{})))
 				return
 			}

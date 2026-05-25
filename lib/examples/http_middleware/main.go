@@ -1,8 +1,8 @@
 // Package main is the http_middleware authclient SDK example: it wires
 // client.HTTPMiddleware onto a protected /api/profile endpoint, exposes
 // /auth/login (sets HttpOnly refresh cookie) and /auth/logout (clears it).
-// Demonstrates the slog -> authclient.Logger adapter and IPFromRequest /
-// UserAgentFromRequest fingerprint extraction.
+// Demonstrates passing a *slog.Logger directly to the SDK and the
+// IPFromRequest / UserAgentFromRequest fingerprint helpers.
 package main
 
 import (
@@ -37,7 +37,7 @@ func run() int {
 
 	client, err := authclient.New(authclient.Config{
 		Endpoint: endpoint,
-		Logger:   slogAdapter{l: logger},
+		Logger:   logger,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "authclient.New: %v\n", err)
@@ -89,28 +89,6 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "http shutdown: %v\n", serr)
 	}
 	return 0
-}
-
-// slogAdapter bridges *slog.Logger to authclient.Logger.
-type slogAdapter struct{ l *slog.Logger }
-
-var _ authclient.Logger = slogAdapter{}
-
-func (a slogAdapter) Info(ctx context.Context, msg string, fields ...any) {
-	a.l.InfoContext(ctx, msg, fields...)
-}
-
-func (a slogAdapter) Warn(ctx context.Context, msg string, fields ...any) {
-	a.l.WarnContext(ctx, msg, fields...)
-}
-
-func (a slogAdapter) Error(ctx context.Context, msg string, err error, fields ...any) {
-	args := make([]any, 0, len(fields)+2)
-	if err != nil {
-		args = append(args, "error", err)
-	}
-	args = append(args, fields...)
-	a.l.ErrorContext(ctx, msg, args...)
 }
 
 func loginHandler(c *authclient.Client) http.HandlerFunc {
