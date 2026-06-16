@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0] — 2026-06-16
+
+### Added
+
+- **`(*Client).ConnHealth() ConnHealth`** — a read-only, by-value snapshot of the client's
+  underlying gRPC connection for health-endpoint diagnostics. Returns the current
+  `connectivity.State` (`ClientConn.GetState()`) and dial `Target` (`ClientConn.Target()`).
+  O(1), no network call, safe for concurrent use. Reports
+  `{State: connectivity.Shutdown, Target: ""}` when there is no live connection.
+
+  ```go
+  h := client.ConnHealth()
+  // h.State  — connectivity.State
+  // h.Target — dial-target ("host:port")
+  ```
+
+- **`ConnHealth` struct** (`{State connectivity.State; Target string}`) — the snapshot value
+  type. Designed to be extended additively (e.g. future `LastError`, `LatencyMs` fields).
+
+  Rationale: consumers (notably the funding-bot BFF `GET /api/v1/health` endpoint) need the
+  **real** connection state and target of the AUTH dependency to drive an ok/degraded/down
+  traffic-light. The snapshot deliberately does **not** expose `*grpc.ClientConn`, preserving
+  the SDK's encapsulation and connection lifecycle — external code cannot close or mutate it.
+  This is an additive, non-breaking change (minor bump, pre-1.0). The state reflects the
+  transport connection only; an active health-probe RPC remains out of scope.
+
 ## [v0.2.0] — 2026-05-22
 
 ### Changed (BREAKING)
@@ -139,6 +165,7 @@ Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth
   [OWASP A07:2025 — Authentication Failures](https://owasp.org/Top10/) for fail-closed
   semantics.
 
-[Unreleased]: https://github.com/webdelo/auth-client-go/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/webdelo/auth-client-go/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.1.0

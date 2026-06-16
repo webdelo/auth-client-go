@@ -268,6 +268,45 @@ incoming request. Deploy behind an ingress (Nginx, ALB, Cloudflare) that strips 
 from untrusted clients before passing the request through. v0.1.0 does **not** ship a
 trusted-proxies allowlist — that is planned for v0.2.0.
 
+## Connection Health
+
+`(*Client).ConnHealth()` returns a read-only, by-value snapshot of the underlying gRPC
+connection — its current `connectivity.State` and dial `Target`. It is O(1), performs **no**
+network call, and is safe for concurrent use. The snapshot intentionally does **not** expose
+`*grpc.ClientConn`, so callers cannot close or mutate the connection.
+
+```go
+import "google.golang.org/grpc/connectivity"
+
+h := client.ConnHealth()
+// h.State  — connectivity.State (Idle / Connecting / Ready / TransientFailure / Shutdown)
+// h.Target — dial-target the client connects to ("host:port")
+```
+
+When the client has no live connection (`grpcConn == nil`), `ConnHealth` reports
+`{State: connectivity.Shutdown, Target: ""}`.
+
+**Health-endpoint integration** — map the connection state to a traffic-light status (the
+pattern a BFF `GET /api/v1/health` uses across its gRPC dependencies):
+
+```go
+func authStatus(client *authclient.Client) (string, string) {
+    h := client.ConnHealth()
+    switch h.State {
+    case connectivity.Ready, connectivity.Idle:
+        return "ok", h.Target
+    case connectivity.Connecting:
+        return "degraded", h.Target
+    default: // TransientFailure, Shutdown
+        return "down", h.Target
+    }
+}
+```
+
+> **Connection-level only.** `ConnHealth` reflects the transport state, not the result of an
+> active health-probe RPC against the AUTH server. An explicit `Ping(ctx)` probe is out of
+> scope for now and may be added later as a separate, non-breaking method.
+
 ## Examples
 
 Runnable, end-to-end samples live under [`lib/examples/`](lib/examples/):
