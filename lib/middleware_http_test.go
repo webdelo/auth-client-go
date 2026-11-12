@@ -12,9 +12,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	auth_v1 "github.com/webdelo/auth-proto/go/auth_v1"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	authclient "github.com/webdelo/auth-client-go/lib"
 	mocks "github.com/webdelo/auth-client-go/lib/mocks"
@@ -326,6 +328,87 @@ func TestClient_HTTPMiddleware(t *testing.T) {
 				assert.Equal(t, http.StatusTooManyRequests, rec.Code)
 				// AUTH v0.1.0 does not carry RetryInfo → RetryAfter == 0 → no header.
 				assert.Empty(t, rec.Header().Get("Retry-After"))
+				assert.False(t, nextCalled)
+			},
+		},
+		"rate_limited_subsecond_hint_rounds_up_to_one_second": {
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer tok-rl-500ms") },
+			failMode:     authclient.FailClosed,
+			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
+				expectedKey := authclient.HashToken("tok-rl-500ms")
+
+				m.cache.EXPECT().
+					Get(mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil }), expectedKey).
+					Return(authclient.User{}, false).
+					Once()
+
+				st, err := status.New(codes.ResourceExhausted, "throttled").WithDetails(
+					&errdetails.RetryInfo{RetryDelay: durationpb.New(500 * time.Millisecond)},
+				)
+				require.NoError(t, err)
+				throttledErr := st.Err()
+
+				m.auth.ValidateFunc = func(_ context.Context, _ *auth_v1.ValidateTokenRequest, _ ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error) {
+					return nil, throttledErr
+				}
+			},
+			want: func(t *testing.T, rec *httptest.ResponseRecorder, nextCalled bool) {
+				assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+				assert.Equal(t, "1", rec.Header().Get("Retry-After"))
+				assert.False(t, nextCalled)
+			},
+		},
+		"rate_limited_fractional_hint_rounds_up": {
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer tok-rl-2500ms") },
+			failMode:     authclient.FailClosed,
+			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
+				expectedKey := authclient.HashToken("tok-rl-2500ms")
+
+				m.cache.EXPECT().
+					Get(mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil }), expectedKey).
+					Return(authclient.User{}, false).
+					Once()
+
+				st, err := status.New(codes.ResourceExhausted, "throttled").WithDetails(
+					&errdetails.RetryInfo{RetryDelay: durationpb.New(2500 * time.Millisecond)},
+				)
+				require.NoError(t, err)
+				throttledErr := st.Err()
+
+				m.auth.ValidateFunc = func(_ context.Context, _ *auth_v1.ValidateTokenRequest, _ ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error) {
+					return nil, throttledErr
+				}
+			},
+			want: func(t *testing.T, rec *httptest.ResponseRecorder, nextCalled bool) {
+				assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+				assert.Equal(t, "3", rec.Header().Get("Retry-After"))
+				assert.False(t, nextCalled)
+			},
+		},
+		"rate_limited_whole_second_hint_kept": {
+			setupRequest: func(r *http.Request) { r.Header.Set("Authorization", "Bearer tok-rl-2s") },
+			failMode:     authclient.FailClosed,
+			prepareMocks: func(t *testing.T, m *httpMiddlewareTestMocks) {
+				expectedKey := authclient.HashToken("tok-rl-2s")
+
+				m.cache.EXPECT().
+					Get(mock.MatchedBy(func(ctx context.Context) bool { return ctx != nil }), expectedKey).
+					Return(authclient.User{}, false).
+					Once()
+
+				st, err := status.New(codes.ResourceExhausted, "throttled").WithDetails(
+					&errdetails.RetryInfo{RetryDelay: durationpb.New(2 * time.Second)},
+				)
+				require.NoError(t, err)
+				throttledErr := st.Err()
+
+				m.auth.ValidateFunc = func(_ context.Context, _ *auth_v1.ValidateTokenRequest, _ ...grpc.CallOption) (*auth_v1.ValidateTokenResponse, error) {
+					return nil, throttledErr
+				}
+			},
+			want: func(t *testing.T, rec *httptest.ResponseRecorder, nextCalled bool) {
+				assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+				assert.Equal(t, "2", rec.Header().Get("Retry-After"))
 				assert.False(t, nextCalled)
 			},
 		},

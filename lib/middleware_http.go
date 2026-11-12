@@ -2,6 +2,7 @@ package authclient
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,7 +72,7 @@ func (c *Client) HTTPMiddleware(next http.Handler) http.Handler {
 
 		case errors.Is(err, ErrRateLimited):
 			if d := RetryAfter(err); d > 0 {
-				w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())))
+				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
 			}
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return

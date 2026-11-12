@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] — 2026-11-12
+
+### Added
+
+- **`ErrRefreshRetry`** sentinel — returned by `(*Client).Refresh` when AUTH answers gRPC
+  `ABORTED`: the same refresh cookie is already being rotated, so the session is alive and the
+  caller should repeat `Refresh` after `RetryAfter(err)`. Distinct from `ErrUnavailable`:
+  `errors.Is(err, ErrUnavailable)` is false for it.
+- **`DefaultRefreshRetryAfter`** (`1s`) — the `RetryAfter` hint for `ErrRefreshRetry` when the
+  `ABORTED` status carries no valid positive `google.rpc.RetryInfo`.
+- **`google.rpc.RetryInfo` parsing** — `RetryAfter(err)` now returns the `retry_delay` from the
+  status details for `ErrRateLimited` and `ErrRefreshRetry`. Without details `ErrRateLimited`
+  still yields `0`. The delay is clamped to the new exported `MaxRetryAfter` (`5m`).
+- `HTTPMiddleware` rounds the `Retry-After` header up to whole seconds (minimum `1`) instead of
+  truncating.
+
+### Changed
+
+- **`Refresh` no longer maps `ABORTED` to `ErrUnavailable`** — it returns `ErrRefreshRetry`
+  instead. Behavior change for consumers that check `errors.Is(err, ErrUnavailable)` after
+  `Refresh`: check `ErrRefreshRetry` first, otherwise the retryable case falls through to the
+  generic error branch. The SDK no longer logs a Warn for this outcome (Warn is written only for
+  `ErrUnavailable`): a refresh retry is a business outcome, not a failure. All other RPCs
+  (`ValidateAccessToken`, middleware, interceptor) keep mapping `ABORTED` to `ErrUnavailable`.
+- `google.golang.org/genproto/googleapis/rpc` is now a direct dependency (was indirect); the
+  version is unchanged.
+
 ## [v0.3.0] — 2026-06-16
 
 ### Added
@@ -165,7 +192,8 @@ Initial release of the Go SDK for [webdelo/auth](https://github.com/webdelo/auth
   [OWASP A07:2025 — Authentication Failures](https://owasp.org/Top10/) for fail-closed
   semantics.
 
-[Unreleased]: https://github.com/webdelo/auth-client-go/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/webdelo/auth-client-go/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/webdelo/auth-client-go/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/webdelo/auth-client-go/releases/tag/v0.1.0
