@@ -42,19 +42,24 @@ var ErrRefreshRetry = errors.New("authclient: refresh in progress, retry")
 // when the ABORTED status carries no valid positive google.rpc.RetryInfo.
 const DefaultRefreshRetryAfter = time.Second
 
+// MaxRetryAfter is the upper bound applied to the delay parsed from
+// google.rpc.RetryInfo, so a misbehaving server cannot make callers wait
+// unreasonably long.
+const MaxRetryAfter = 5 * time.Minute
+
 // AuthError carries the sentinel error plus optional context (Retry-After for
-// rate-limited and refresh-retry responses). Use errors.Is(err, ErrXxx) for sentinel detection
-// and RetryAfter(err) for the retry hint.
+// rate-limited and refresh-retry responses). Use errors.Is(err, ErrXxx) for
+// sentinel detection and RetryAfter(err) for the retry hint.
 type AuthError struct {
 	// Err is the wrapped sentinel error (ErrRateLimited, etc.) used by
 	// errors.Is for sentinel detection.
 	Err error
 
 	// RetryAfterHint is the Retry-After value for ErrRateLimited and
-	// ErrRefreshRetry errors, taken from google.rpc.RetryInfo (for
-	// ErrRefreshRetry DefaultRefreshRetryAfter when AUTH sent none). Zero
-	// means "no hint". Read via the RetryAfter helper rather than the field directly
-	// when extracting from a wrapped error.
+	// ErrRefreshRetry errors, taken from google.rpc.RetryInfo and clamped to
+	// MaxRetryAfter. For ErrRefreshRetry it is DefaultRefreshRetryAfter when
+	// AUTH sent none. Zero means "no hint". Read it via the RetryAfter helper
+	// rather than the field directly when extracting from a wrapped error.
 	RetryAfterHint time.Duration
 }
 
@@ -77,8 +82,10 @@ func (e *AuthError) Unwrap() error {
 }
 
 // RetryAfter returns the Retry-After hint for ErrRateLimited and
-// ErrRefreshRetry errors. Returns 0 if err is nil, is not an *AuthError, or
-// the server did not include the hint.
+// ErrRefreshRetry errors, never more than MaxRetryAfter. For ErrRefreshRetry
+// without a server hint it returns DefaultRefreshRetryAfter. For every other
+// error it returns 0: err is nil, is not an *AuthError, or the server did not
+// include a hint and no default applies.
 func RetryAfter(err error) time.Duration {
 	var ae *AuthError
 	if errors.As(err, &ae) {
@@ -143,7 +150,7 @@ func mapRefreshError(err error) error {
 // retryAfterFromStatus extracts the Retry-After hint from the
 // google.rpc.RetryInfo entry in gRPC status details. Returns 0 when the
 // details carry no RetryInfo or its retry_delay is missing, invalid, or not
-// positive.
+// positive. The delay is clamped to MaxRetryAfter.
 func retryAfterFromStatus(st *status.Status) time.Duration {
 	if st == nil {
 		return 0
@@ -161,7 +168,7 @@ func retryAfterFromStatus(st *status.Status) time.Duration {
 		}
 
 		if d := delay.AsDuration(); d > 0 {
-			return d
+			return min(d, MaxRetryAfter)
 		}
 	}
 

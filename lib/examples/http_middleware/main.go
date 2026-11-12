@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -113,7 +114,7 @@ func loginHandler(c *authclient.Client) http.HandlerFunc {
 			return
 		case errors.Is(err, authclient.ErrRateLimited):
 			if d := authclient.RetryAfter(err); d > 0 {
-				w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())))
+				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
 			}
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return

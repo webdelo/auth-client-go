@@ -150,7 +150,7 @@ switch {
 case errors.Is(err, authclient.ErrInvalidToken):
     http.Error(w, "invalid credentials", http.StatusUnauthorized)
 case errors.Is(err, authclient.ErrRateLimited):
-    w.Header().Set("Retry-After", authclient.RetryAfter(err).Round(time.Second).String())
+    w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(authclient.RetryAfter(err).Seconds()))))
     http.Error(w, "slow down", http.StatusTooManyRequests)
 case errors.Is(err, authclient.ErrUnavailable):
     http.Error(w, "auth unavailable", http.StatusServiceUnavailable)
@@ -164,7 +164,8 @@ default:
 
 `RetryAfter(err)` returns the delay hint for `ErrRateLimited` and `ErrRefreshRetry`. It is read
 from the `google.rpc.RetryInfo` detail of the AUTH status; without it `ErrRateLimited` yields `0`,
-while `ErrRefreshRetry` falls back to `authclient.DefaultRefreshRetryAfter` (1 second).
+while `ErrRefreshRetry` falls back to `authclient.DefaultRefreshRetryAfter` (1 second). The
+hint is clamped to `authclient.MaxRetryAfter` (5 minutes).
 
 `ErrRefreshRetry` means the same refresh cookie is already being rotated, so the session is
 still valid. It is distinct from `ErrUnavailable` (`errors.Is(err, ErrUnavailable)` is false for

@@ -154,7 +154,7 @@ func TestClient_Refresh(t *testing.T) {
 		clientIP     string
 		userAgent    string
 		refreshToken string
-		want         func(*testing.T, authclient.RefreshOutput, error)
+		want         func(*testing.T, *testMocks, authclient.RefreshOutput, error)
 	}{
 		"happy_path": {
 			refreshToken: "old-rtok",
@@ -170,7 +170,7 @@ func TestClient_Refresh(t *testing.T) {
 					}, nil
 				}
 			},
-			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
+			want: func(t *testing.T, m *testMocks, out authclient.RefreshOutput, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, "new-access-tok", out.AccessToken)
 				assert.Equal(t, "new-refresh-tok", out.RefreshToken)
@@ -185,7 +185,7 @@ func TestClient_Refresh(t *testing.T) {
 					return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
 				}
 			},
-			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
+			want: func(t *testing.T, m *testMocks, out authclient.RefreshOutput, err error) {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, authclient.ErrInvalidToken))
 			},
@@ -197,7 +197,7 @@ func TestClient_Refresh(t *testing.T) {
 					return nil, status.Error(codes.Unavailable, "auth down")
 				}
 			},
-			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
+			want: func(t *testing.T, m *testMocks, out authclient.RefreshOutput, err error) {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, authclient.ErrUnavailable))
 			},
@@ -205,33 +205,39 @@ func TestClient_Refresh(t *testing.T) {
 		"aborted_without_retry_info_returns_refresh_retry_with_default_hint": {
 			refreshToken: "rtok-aborted",
 			prepareMocks: func(t *testing.T, m *testMocks) {
+				abortedErr := status.Error(codes.Aborted, "refresh in progress")
 				m.auth.RefreshTokenFunc = func(_ context.Context, _ *auth_v1.RefreshTokenRequest, _ ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
-					return nil, status.Error(codes.Aborted, "refresh in progress")
+					return nil, abortedErr
 				}
 			},
-			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
+			want: func(t *testing.T, m *testMocks, out authclient.RefreshOutput, err error) {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, authclient.ErrRefreshRetry))
 				assert.False(t, errors.Is(err, authclient.ErrUnavailable))
 				assert.Equal(t, time.Second, authclient.RetryAfter(err))
+				assert.Equal(t, authclient.RefreshOutput{}, out)
+				assert.Empty(t, m.rec.Records(), "ABORTED must not be logged as AUTH failure")
 			},
 		},
 		"aborted_with_retry_info_returns_refresh_retry_with_server_hint": {
 			refreshToken: "rtok-aborted-info",
 			prepareMocks: func(t *testing.T, m *testMocks) {
+				st, detErr := status.New(codes.Aborted, "refresh in progress").WithDetails(
+					&errdetails.RetryInfo{RetryDelay: durationpb.New(3 * time.Second)},
+				)
+				require.NoError(t, detErr)
+				abortedErr := st.Err()
 				m.auth.RefreshTokenFunc = func(_ context.Context, _ *auth_v1.RefreshTokenRequest, _ ...grpc.CallOption) (*auth_v1.RefreshTokenResponse, error) {
-					st, detErr := status.New(codes.Aborted, "refresh in progress").WithDetails(
-						&errdetails.RetryInfo{RetryDelay: durationpb.New(3 * time.Second)},
-					)
-					require.NoError(t, detErr)
-					return nil, st.Err()
+					return nil, abortedErr
 				}
 			},
-			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
+			want: func(t *testing.T, m *testMocks, out authclient.RefreshOutput, err error) {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, authclient.ErrRefreshRetry))
 				assert.False(t, errors.Is(err, authclient.ErrUnavailable))
 				assert.Equal(t, 3*time.Second, authclient.RetryAfter(err))
+				assert.Equal(t, authclient.RefreshOutput{}, out)
+				assert.Empty(t, m.rec.Records(), "ABORTED must not be logged as AUTH failure")
 			},
 		},
 		"ip_and_user_agent_propagated_to_grpc": {
@@ -248,7 +254,7 @@ func TestClient_Refresh(t *testing.T) {
 					}, nil
 				}
 			},
-			want: func(t *testing.T, out authclient.RefreshOutput, err error) {
+			want: func(t *testing.T, m *testMocks, out authclient.RefreshOutput, err error) {
 				require.NoError(t, err)
 			},
 		},
@@ -269,7 +275,7 @@ func TestClient_Refresh(t *testing.T) {
 			}, nil, m.auth, m.logger)
 
 			out, err := c.Refresh(context.Background(), tc.refreshToken, tc.clientIP, tc.userAgent)
-			tc.want(t, out, err)
+			tc.want(t, m, out, err)
 		})
 	}
 }

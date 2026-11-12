@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ABORTED` status carries no valid positive `google.rpc.RetryInfo`.
 - **`google.rpc.RetryInfo` parsing** — `RetryAfter(err)` now returns the `retry_delay` from the
   status details for `ErrRateLimited` and `ErrRefreshRetry`. Without details `ErrRateLimited`
-  still yields `0`.
+  still yields `0`. The delay is clamped to the new exported `MaxRetryAfter` (`5m`).
+- `HTTPMiddleware` rounds the `Retry-After` header up to whole seconds (minimum `1`) instead of
+  truncating.
 
 ### Changed
 
