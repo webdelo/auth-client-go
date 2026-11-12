@@ -133,6 +133,10 @@ func (c *Client) Login(ctx context.Context, in LoginInput) (LoginOutput, error) 
 // Returns:
 //   - ErrInvalidToken when the refresh token is unknown, malformed, or
 //     reused (AUTH family detection).
+//   - ErrRefreshRetry when the same refresh cookie is replayed within the AUTH
+//     retry window (gRPC ABORTED). The session is still alive: retry Refresh
+//     after the delay returned by RetryAfter(err) (DefaultRefreshRetryAfter
+//     when AUTH sends no RetryInfo). It is not logged as an AUTH failure.
 //   - ErrUnavailable when AUTH is unreachable.
 //   - ErrRateLimited when rate-limited.
 func (c *Client) Refresh(ctx context.Context, refreshToken, clientIP, userAgent string) (RefreshOutput, error) {
@@ -162,7 +166,7 @@ func (c *Client) Refresh(ctx context.Context, refreshToken, clientIP, userAgent 
 		})
 	})
 	if err != nil {
-		mapped := mapGRPCError(err)
+		mapped := mapRefreshError(err)
 		c.logUnavailableIfNeeded(ctx, "refresh", mapped)
 		return RefreshOutput{}, mapped
 	}

@@ -135,6 +135,7 @@ All client methods return one of the SDK sentinels. Use `errors.Is` to branch.
 | `ErrExpired`        | `Unauthenticated` w/ reason  | `401`                    | Call `Refresh` to mint a new access token.                               |
 | `ErrBlocked`        | `PermissionDenied`           | `401`                    | Display "account blocked" — re-auth will not help.                       |
 | `ErrRateLimited`    | `ResourceExhausted`          | `429` + `Retry-After`    | Wait `authclient.RetryAfter(err)` before retrying.                       |
+| `ErrRefreshRetry`   | `Aborted` (`Refresh` only)   | n/a (not middleware)     | Session is alive; repeat `Refresh` after `authclient.RetryAfter(err)`.   |
 | `ErrUnavailable`    | `Unavailable` / deadline     | `503` (FailClosed)       | Retry with backoff; surface to caller as transient.                      |
 
 Example:
@@ -158,6 +159,32 @@ case err != nil:
 default:
     authclient.SetRefreshCookie(w, out.RefreshToken)
     // emit out.AccessToken to the body / response header
+}
+```
+
+`RetryAfter(err)` returns the delay hint for `ErrRateLimited` and `ErrRefreshRetry`. It is read
+from the `google.rpc.RetryInfo` detail of the AUTH status; without it `ErrRateLimited` yields `0`,
+while `ErrRefreshRetry` falls back to `authclient.DefaultRefreshRetryAfter` (1 second).
+
+`ErrRefreshRetry` means the same refresh cookie is already being rotated, so the session is
+still valid. It is distinct from `ErrUnavailable` (`errors.Is(err, ErrUnavailable)` is false for
+it), and only `Refresh` returns it; other RPCs still map `Aborted` to `ErrUnavailable`. Check it
+**before** `ErrUnavailable`:
+
+```go
+out, err := client.Refresh(ctx, refreshToken,
+    authclient.IPFromRequest(r), authclient.UserAgentFromRequest(r))
+switch {
+case errors.Is(err, authclient.ErrRefreshRetry):
+    // Concurrent rotation of the same cookie: the session is alive, do not log the user out.
+    w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(authclient.RetryAfter(err).Seconds()))))
+    http.Error(w, "refresh in progress, retry", http.StatusServiceUnavailable)
+case errors.Is(err, authclient.ErrUnavailable):
+    http.Error(w, "auth unavailable", http.StatusServiceUnavailable)
+case err != nil:
+    http.Error(w, "unauthorized", http.StatusUnauthorized)
+default:
+    authclient.SetRefreshCookie(w, out.RefreshToken)
 }
 ```
 

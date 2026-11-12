@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -30,17 +31,29 @@ var ErrRateLimited = errors.New("authclient: rate limited")
 // down). HTTPMiddleware behavior depends on Config.FailMode.
 var ErrUnavailable = errors.New("authclient: service unavailable")
 
+// ErrRefreshRetry indicates Refresh was answered with gRPC ABORTED: the same
+// refresh cookie is already being rotated, so the session is alive. The caller
+// should repeat Refresh after RetryAfter(err); the hint is
+// DefaultRefreshRetryAfter when AUTH sent no RetryInfo. It is distinct from
+// ErrUnavailable: errors.Is(err, ErrUnavailable) is false for it.
+var ErrRefreshRetry = errors.New("authclient: refresh in progress, retry")
+
+// DefaultRefreshRetryAfter is the Retry-After hint used for ErrRefreshRetry
+// when the ABORTED status carries no valid positive google.rpc.RetryInfo.
+const DefaultRefreshRetryAfter = time.Second
+
 // AuthError carries the sentinel error plus optional context (Retry-After for
-// rate-limited responses). Use errors.Is(err, ErrXxx) for sentinel detection
+// rate-limited and refresh-retry responses). Use errors.Is(err, ErrXxx) for sentinel detection
 // and RetryAfter(err) for the retry hint.
 type AuthError struct {
 	// Err is the wrapped sentinel error (ErrRateLimited, etc.) used by
 	// errors.Is for sentinel detection.
 	Err error
 
-	// RetryAfterHint is the AUTH-server-provided Retry-After value for
-	// ErrRateLimited errors. Zero means "no hint" (AUTH did not include
-	// one). Read via the RetryAfter helper rather than the field directly
+	// RetryAfterHint is the Retry-After value for ErrRateLimited and
+	// ErrRefreshRetry errors, taken from google.rpc.RetryInfo (for
+	// ErrRefreshRetry DefaultRefreshRetryAfter when AUTH sent none). Zero
+	// means "no hint". Read via the RetryAfter helper rather than the field directly
 	// when extracting from a wrapped error.
 	RetryAfterHint time.Duration
 }
@@ -63,9 +76,9 @@ func (e *AuthError) Unwrap() error {
 	return e.Err
 }
 
-// RetryAfter returns the Retry-After hint for ErrRateLimited errors. Returns
-// 0 if err is nil, is not an *AuthError, or the server did not include the
-// hint.
+// RetryAfter returns the Retry-After hint for ErrRateLimited and
+// ErrRefreshRetry errors. Returns 0 if err is nil, is not an *AuthError, or
+// the server did not include the hint.
 func RetryAfter(err error) time.Duration {
 	var ae *AuthError
 	if errors.As(err, &ae) {
@@ -104,11 +117,54 @@ func mapGRPCError(err error) error {
 	}
 }
 
-// retryAfterFromStatus best-effort extracts the Retry-After hint from gRPC
-// status details. AUTH v0.1.0 does not include this field — returns 0 today.
-// TODO: parse google.rpc.RetryInfo from status details once AUTH server
-// starts populating it.
-func retryAfterFromStatus(_ *status.Status) time.Duration {
+// mapRefreshError converts an error from the Refresh RPC into an SDK error.
+// gRPC ABORTED becomes an *AuthError wrapping ErrRefreshRetry, with the
+// RetryInfo delay as hint or DefaultRefreshRetryAfter when AUTH sent none.
+// Every other error is delegated to mapGRPCError unchanged, so the shared
+// mapper keeps ABORTED as ErrUnavailable for all other RPCs.
+func mapRefreshError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	st, ok := statusFromWrapped(err)
+	if !ok || st.Code() != codes.Aborted {
+		return mapGRPCError(err)
+	}
+
+	hint := retryAfterFromStatus(st)
+	if hint <= 0 {
+		hint = DefaultRefreshRetryAfter
+	}
+
+	return &AuthError{Err: ErrRefreshRetry, RetryAfterHint: hint}
+}
+
+// retryAfterFromStatus extracts the Retry-After hint from the
+// google.rpc.RetryInfo entry in gRPC status details. Returns 0 when the
+// details carry no RetryInfo or its retry_delay is missing, invalid, or not
+// positive.
+func retryAfterFromStatus(st *status.Status) time.Duration {
+	if st == nil {
+		return 0
+	}
+
+	for _, detail := range st.Details() {
+		info, ok := detail.(*errdetails.RetryInfo)
+		if !ok {
+			continue
+		}
+
+		delay := info.GetRetryDelay()
+		if delay.CheckValid() != nil {
+			continue
+		}
+
+		if d := delay.AsDuration(); d > 0 {
+			return d
+		}
+	}
+
 	return 0
 }
 
